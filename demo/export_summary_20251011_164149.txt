@@ -1,0 +1,18 @@
+Stash Files Export Summary
+==========================
+
+Export Time: 2025-10-11T16:41:49.582053
+Session ID: ceafe56c-7a7c-45b5-9263-6d96f181060a
+Original File: Unknown
+Category Variable: category_rev
+
+Files Included:
+- jmp_data_20251011_164149.csv (Exact CSV sent to stash)
+- jsl_script_20251011_164149.jsl (Exact JSL script sent to stash)
+- export_summary_20251011_164149.txt (this file)
+
+Usage Instructions:
+- Import jmp_data_20251011_164149.csv directly into JMP
+- Run jsl_script_20251011_164149.jsl in JMP to automate analysis
+- These are the exact files sent to the stash server
+- Use summary file for reference

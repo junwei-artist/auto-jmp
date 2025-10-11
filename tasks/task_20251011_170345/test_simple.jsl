@@ -1,0 +1,6 @@
+//!                               // auto-run flag
+Open("/Users/sun.jun.wei2/Documents/GitHub/auto-jmp/tasks/task_20251011_170345/jmp_data_20251011_164149.csv");
+// Simple test
+Open("demo/jmp_data_20251011_164149.csv");
+Distribution(Y(:Data));
+Save Picture( "/Users/sun.jun.wei2/Documents/GitHub/auto-jmp/tasks/task_20251011_170345/test_output.png", PNG );

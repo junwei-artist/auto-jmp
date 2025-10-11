@@ -1,0 +1,17 @@
+# JMP Runner Module Requirements
+# Core requirements for basic functionality
+psutil>=5.8.0
+
+# Optional requirements for full functionality
+# Uncomment the lines below to enable additional features:
+
+# For JMP automation on macOS
+# applescript>=1.0.0
+
+# For screenshot processing and OCR
+# Pillow>=8.0.0
+# pytesseract>=0.3.8
+
+# For web server functionality (if using the original jmp_server_module.py)
+# Flask>=2.0.0
+# flask-cors>=3.0.0
