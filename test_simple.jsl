@@ -1,4 +1,0 @@
-// Simple test
-Open("demo/jmp_data_20251011_164149.csv");
-Distribution(Y(:Data));
-Save Picture("test_output.png", PNG);
