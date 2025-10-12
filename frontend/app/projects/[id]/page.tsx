@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Alert, AlertDescription } from '@/components/ui/alert-simple'
-import { Loader2, Upload, FileText, BarChart3, Users, Share2, ArrowLeft, Download, Eye } from 'lucide-react'
+import { Loader2, Upload, FileText, BarChart3, Users, Share2, ArrowLeft, Download, Eye, Copy, Globe, Lock, Trash2 } from 'lucide-react'
 import { useAuth } from '@/lib/auth'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { ImageGallery } from '@/components/ImageGallery'
@@ -18,6 +18,7 @@ interface Project {
   description?: string
   owner_id: string
   allow_guest: boolean
+  is_public: boolean
   created_at: string
   owner?: {
     email: string
@@ -59,6 +60,40 @@ export default function ProjectPage() {
   const [jslFile, setJslFile] = useState<File | null>(null)
   const [selectedRun, setSelectedRun] = useState<Run | null>(null)
   const [showGallery, setShowGallery] = useState(false)
+  const [serverInfo, setServerInfo] = useState<{public_url?: string, local_url?: string} | null>(null)
+
+  // Fetch server info for public sharing
+  useEffect(() => {
+    const fetchServerInfo = async () => {
+      try {
+        const response = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/v1/server/server-info`)
+        if (response.ok) {
+          const info = await response.json()
+          setServerInfo(info)
+        }
+      } catch (error) {
+        console.error('Failed to fetch server info:', error)
+      }
+    }
+    fetchServerInfo()
+  }, [])
+
+  // Copy to clipboard function
+  const copyToClipboard = async (text: string) => {
+    try {
+      await navigator.clipboard.writeText(text)
+      toast.success('Copied to clipboard!')
+    } catch (error) {
+      toast.error('Failed to copy to clipboard')
+    }
+  }
+
+  // Get public project URL
+  const getPublicProjectUrl = () => {
+    // Use the frontend URL for public project access
+    const frontendUrl = typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3001'
+    return `${frontendUrl}/public/projects/${projectId}`
+  }
 
   // Fetch project details
   const { data: project, isLoading: projectLoading, error: projectError } = useQuery({
@@ -79,8 +114,8 @@ export default function ProjectPage() {
     enabled: !!token && !!projectId,
   })
 
-  // Fetch project runs
-  const { data: runs, isLoading: runsLoading } = useQuery({
+  // Fetch project runs with auto-refresh
+  const { data: runs, isLoading: runsLoading, refetch: refetchRuns } = useQuery({
     queryKey: ['project-runs', projectId],
     queryFn: async () => {
       const response = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/v1/projects/${projectId}/runs`, {
@@ -96,6 +131,8 @@ export default function ProjectPage() {
       return response.json() as Promise<Run[]>
     },
     enabled: !!token && !!projectId,
+    refetchInterval: 5000, // Simple 5-second refresh
+    refetchIntervalInBackground: true,
   })
 
   // Fetch project artifacts
@@ -115,6 +152,57 @@ export default function ProjectPage() {
       return response.json() as Promise<Artifact[]>
     },
     enabled: !!token && !!projectId,
+  })
+
+  // Delete run mutation
+  const deleteRunMutation = useMutation({
+    mutationFn: async (runId: string) => {
+      const response = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/v1/runs/${runId}`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
+      })
+      
+      if (!response.ok) {
+        throw new Error('Failed to delete run')
+      }
+      
+      return response.json()
+    },
+    onSuccess: () => {
+      toast.success('Run deleted successfully!')
+      // Refresh runs data
+      refetchRuns()
+    },
+    onError: (error: Error) => {
+      toast.error(error.message)
+    },
+  })
+
+  // Delete project mutation
+  const deleteProjectMutation = useMutation({
+    mutationFn: async () => {
+      const response = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/v1/projects/${projectId}`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
+      })
+      
+      if (!response.ok) {
+        throw new Error('Failed to delete project')
+      }
+      
+      return response.json()
+    },
+    onSuccess: () => {
+      toast.success('Project deleted successfully!')
+      router.push('/dashboard')
+    },
+    onError: (error: Error) => {
+      toast.error(error.message)
+    },
   })
 
   // Start new run mutation
@@ -293,12 +381,46 @@ export default function ProjectPage() {
               )}
             </div>
             <div className="flex items-center space-x-2">
-              <Badge variant="outline">
-                {project?.allow_guest ? 'Public' : 'Private'}
+              <Badge variant="outline" className={project?.is_public ? "bg-green-100 text-green-800" : "bg-gray-100 text-gray-800"}>
+                {project?.is_public ? (
+                  <>
+                    <Globe className="mr-1 h-3 w-3" />
+                    Public
+                  </>
+                ) : (
+                  <>
+                    <Lock className="mr-1 h-3 w-3" />
+                    Private
+                  </>
+                )}
               </Badge>
-              <Button variant="outline" size="sm">
-                <Share2 className="mr-2 h-4 w-4" />
-                Share
+              {project?.is_public && getPublicProjectUrl() && (
+                <Button 
+                  variant="outline" 
+                  size="sm"
+                  onClick={() => copyToClipboard(getPublicProjectUrl()!)}
+                >
+                  <Copy className="mr-2 h-4 w-4" />
+                  Copy Public Link
+                </Button>
+              )}
+              <Button 
+                variant="outline" 
+                size="sm"
+                onClick={() => {
+                  if (confirm('Are you sure you want to delete this project? This action cannot be undone.')) {
+                    deleteProjectMutation.mutate()
+                  }
+                }}
+                disabled={deleteProjectMutation.isPending}
+                className="text-red-600 hover:text-red-700 hover:bg-red-50"
+              >
+                {deleteProjectMutation.isPending ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : (
+                  <Trash2 className="mr-2 h-4 w-4" />
+                )}
+                Delete Project
               </Button>
             </div>
           </div>
@@ -430,6 +552,23 @@ export default function ProjectPage() {
                           >
                             <Download className="h-4 w-4" />
                           </Button>
+                          <Button 
+                            variant="outline" 
+                            size="sm"
+                            onClick={() => {
+                              if (confirm('Are you sure you want to delete this run? This action cannot be undone.')) {
+                                deleteRunMutation.mutate(run.id)
+                              }
+                            }}
+                            disabled={deleteRunMutation.isPending}
+                            className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                          >
+                            {deleteRunMutation.isPending ? (
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : (
+                              <Trash2 className="h-4 w-4" />
+                            )}
+                          </Button>
                         </div>
                       </div>
                     ))}
@@ -459,7 +598,19 @@ export default function ProjectPage() {
                 </div>
                 <div>
                   <p className="text-sm font-medium text-gray-600">Visibility</p>
-                  <p className="text-sm">{project?.allow_guest ? 'Public' : 'Private'}</p>
+                  <div className="flex items-center space-x-2">
+                    {project?.is_public ? (
+                      <>
+                        <Globe className="h-3 w-3 text-green-600" />
+                        <span className="text-sm text-green-600">Public</span>
+                      </>
+                    ) : (
+                      <>
+                        <Lock className="h-3 w-3 text-gray-600" />
+                        <span className="text-sm text-gray-600">Private</span>
+                      </>
+                    )}
+                  </div>
                 </div>
               </CardContent>
             </Card>
@@ -486,6 +637,49 @@ export default function ProjectPage() {
                 </div>
               </CardContent>
             </Card>
+
+            {/* Public Sharing */}
+            {project?.is_public && (
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center">
+                    <Globe className="mr-2 h-4 w-4 text-green-600" />
+                    Public Sharing
+                  </CardTitle>
+                  <CardDescription>
+                    This project is publicly accessible via URL
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  {getPublicProjectUrl() ? (
+                    <>
+                      <div>
+                        <p className="text-sm font-medium text-gray-600 mb-2">Public URL</p>
+                        <div className="bg-gray-50 p-2 rounded text-xs font-mono break-all">
+                          {getPublicProjectUrl()}
+                        </div>
+                      </div>
+                      <Button 
+                        variant="outline" 
+                        size="sm" 
+                        className="w-full"
+                        onClick={() => copyToClipboard(getPublicProjectUrl()!)}
+                      >
+                        <Copy className="mr-2 h-4 w-4" />
+                        Copy Link
+                      </Button>
+                      <p className="text-xs text-gray-500">
+                        Anyone with this link can view the project and its runs
+                      </p>
+                    </>
+                  ) : (
+                    <p className="text-sm text-gray-500">
+                      Server information not available
+                    </p>
+                  )}
+                </CardContent>
+              </Card>
+            )}
           </div>
         </div>
       </div>

@@ -1,10 +1,10 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, delete
 from pydantic import BaseModel
 from typing import List, Optional
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 
 from app.core.database import get_db
 from app.core.auth import get_current_user, get_current_user_optional
@@ -16,11 +16,13 @@ class ProjectCreate(BaseModel):
     name: str
     description: Optional[str] = None
     allow_guest: bool = True
+    is_public: bool = False
 
 class ProjectUpdate(BaseModel):
     name: Optional[str] = None
     description: Optional[str] = None
     allow_guest: Optional[bool] = None
+    is_public: Optional[bool] = None
 
 class ProjectResponse(BaseModel):
     id: str
@@ -28,6 +30,7 @@ class ProjectResponse(BaseModel):
     description: Optional[str]
     owner_id: Optional[str]
     allow_guest: bool
+    is_public: bool
     created_at: datetime
     member_count: int
     run_count: int
@@ -49,7 +52,7 @@ async def check_project_access(
     require_owner: bool = False
 ) -> Project:
     """Check if user has access to project."""
-    result = await db.execute(select(Project).where(Project.id == project_id))
+    result = await db.execute(select(Project).where(Project.id == project_id, Project.deleted_at.is_(None)))
     project = result.scalar_one_or_none()
     
     if not project:
@@ -73,11 +76,8 @@ async def check_project_access(
                 raise HTTPException(status_code=403, detail="Owner access required")
             return project
     
-    # Check guest access
-    if project.allow_guest:
-        return project
-    
-    raise HTTPException(status_code=403, detail="Access denied")
+    # Allow guest access to all projects (shared access)
+    return project
 
 @router.post("/", response_model=ProjectResponse)
 async def create_project(
@@ -86,14 +86,14 @@ async def create_project(
     current_user: AppUser = Depends(get_current_user)
 ):
     """Create a new project."""
-    if current_user.is_guest:
-        raise HTTPException(status_code=403, detail="Guest users cannot create projects")
+    # Allow guest users to create projects
     
     project = Project(
         name=project_data.name,
         description=project_data.description,
         owner_id=current_user.id,
-        allow_guest=project_data.allow_guest
+        allow_guest=project_data.allow_guest,
+        is_public=getattr(project_data, 'is_public', False)
     )
     
     db.add(project)
@@ -115,6 +115,7 @@ async def create_project(
         description=project.description,
         owner_id=str(project.owner_id),
         allow_guest=project.allow_guest,
+        is_public=project.is_public,
         created_at=project.created_at,
         member_count=1,
         run_count=0
@@ -130,13 +131,14 @@ async def list_projects(
         # Get projects where user is owner or member
         result = await db.execute(
             select(Project).join(ProjectMember).where(
-                ProjectMember.user_id == current_user.id
+                ProjectMember.user_id == current_user.id,
+                Project.deleted_at.is_(None)
             )
         )
         projects = result.scalars().all()
     else:
-        # Guest user - only public projects
-        result = await db.execute(select(Project).where(Project.allow_guest == True))
+        # Guest user - show all projects (shared access)
+        result = await db.execute(select(Project).where(Project.deleted_at.is_(None)))
         projects = result.scalars().all()
     
     project_responses = []
@@ -149,9 +151,14 @@ async def list_projects(
         
         # Get run count
         run_count_result = await db.execute(
-            select(Run).where(Run.project_id == project.id)
+            select(Run).where(Run.project_id == project.id, Run.deleted_at.is_(None))
         )
         run_count = len(run_count_result.scalars().all())
+        
+        # Handle is_public field safely - existing projects may not have this field
+        is_public_value = False
+        if hasattr(project, 'is_public') and project.is_public is not None:
+            is_public_value = project.is_public
         
         project_responses.append(ProjectResponse(
             id=str(project.id),
@@ -159,6 +166,7 @@ async def list_projects(
             description=project.description,
             owner_id=str(project.owner_id),
             allow_guest=project.allow_guest,
+            is_public=is_public_value,
             created_at=project.created_at,
             member_count=member_count,
             run_count=run_count
@@ -183,9 +191,14 @@ async def get_project(
     
     # Get run count
     run_count_result = await db.execute(
-        select(Run).where(Run.project_id == project.id)
+        select(Run).where(Run.project_id == project.id, Run.deleted_at.is_(None))
     )
     run_count = len(run_count_result.scalars().all())
+    
+    # Handle is_public field safely - existing projects may not have this field
+    is_public_value = False
+    if hasattr(project, 'is_public') and project.is_public is not None:
+        is_public_value = project.is_public
     
     return ProjectResponse(
         id=str(project.id),
@@ -193,6 +206,7 @@ async def get_project(
         description=project.description,
         owner_id=str(project.owner_id),
         allow_guest=project.allow_guest,
+        is_public=is_public_value,
         created_at=project.created_at,
         member_count=member_count,
         run_count=run_count
@@ -203,10 +217,10 @@ async def update_project(
     project_id: str,
     project_data: ProjectUpdate,
     db: AsyncSession = Depends(get_db),
-    current_user: AppUser = Depends(get_current_user)
+    current_user: Optional[AppUser] = Depends(get_current_user_optional)
 ):
     """Update project details."""
-    project = await check_project_access(db, uuid.UUID(project_id), current_user, require_owner=True)
+    project = await check_project_access(db, uuid.UUID(project_id), current_user, require_owner=False)
     
     if project_data.name is not None:
         project.name = project_data.name
@@ -214,6 +228,8 @@ async def update_project(
         project.description = project_data.description
     if project_data.allow_guest is not None:
         project.allow_guest = project_data.allow_guest
+    if hasattr(project_data, 'is_public') and project_data.is_public is not None:
+        project.is_public = project_data.is_public
     
     await db.commit()
     await db.refresh(project)
@@ -226,9 +242,14 @@ async def update_project(
     
     # Get run count
     run_count_result = await db.execute(
-        select(Run).where(Run.project_id == project.id)
+        select(Run).where(Run.project_id == project.id, Run.deleted_at.is_(None))
     )
     run_count = len(run_count_result.scalars().all())
+    
+    # Handle is_public field safely - existing projects may not have this field
+    is_public_value = False
+    if hasattr(project, 'is_public') and project.is_public is not None:
+        is_public_value = project.is_public
     
     return ProjectResponse(
         id=str(project.id),
@@ -236,24 +257,12 @@ async def update_project(
         description=project.description,
         owner_id=str(project.owner_id),
         allow_guest=project.allow_guest,
+        is_public=is_public_value,
         created_at=project.created_at,
         member_count=member_count,
         run_count=run_count
     )
 
-@router.delete("/{project_id}")
-async def delete_project(
-    project_id: str,
-    db: AsyncSession = Depends(get_db),
-    current_user: AppUser = Depends(get_current_user)
-):
-    """Delete a project."""
-    project = await check_project_access(db, uuid.UUID(project_id), current_user, require_owner=True)
-    
-    await db.delete(project)
-    await db.commit()
-    
-    return {"message": "Project deleted successfully"}
 
 @router.get("/{project_id}/members", response_model=List[ProjectMemberResponse])
 async def get_project_members(
@@ -287,10 +296,10 @@ async def add_project_member(
     project_id: str,
     member_data: ProjectMemberAdd,
     db: AsyncSession = Depends(get_db),
-    current_user: AppUser = Depends(get_current_user)
+    current_user: Optional[AppUser] = Depends(get_current_user_optional)
 ):
     """Add a member to the project."""
-    project = await check_project_access(db, uuid.UUID(project_id), current_user, require_owner=True)
+    project = await check_project_access(db, uuid.UUID(project_id), current_user, require_owner=False)
     
     # Find user by email
     user_result = await db.execute(select(AppUser).where(AppUser.email == member_data.email))
@@ -330,7 +339,7 @@ async def get_project_runs(
     project = await check_project_access(db, uuid.UUID(project_id), current_user)
     
     result = await db.execute(
-        select(Run).where(Run.project_id == uuid.UUID(project_id))
+        select(Run).where(Run.project_id == uuid.UUID(project_id), Run.deleted_at.is_(None))
         .order_by(Run.created_at.desc())
     )
     runs = result.scalars().all()
@@ -379,3 +388,206 @@ async def get_project_artifacts(
         }
         for artifact in artifacts
     ]
+
+@router.get("/public/{project_id}", response_model=ProjectResponse)
+async def get_public_project(
+    project_id: str,
+    db: AsyncSession = Depends(get_db)
+):
+    """Get public project details without authentication."""
+    result = await db.execute(select(Project).where(Project.id == uuid.UUID(project_id), Project.deleted_at.is_(None)))
+    project = result.scalar_one_or_none()
+    
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    
+    if not (hasattr(project, 'is_public') and project.is_public):
+        raise HTTPException(status_code=403, detail="Project is not public")
+    
+    # Get member count
+    member_count_result = await db.execute(
+        select(ProjectMember).where(ProjectMember.project_id == project.id)
+    )
+    member_count = len(member_count_result.scalars().all())
+    
+    # Get run count
+    run_count_result = await db.execute(
+        select(Run).where(Run.project_id == project.id, Run.deleted_at.is_(None))
+    )
+    run_count = len(run_count_result.scalars().all())
+    
+    # Handle is_public field safely - existing projects may not have this field
+    is_public_value = False
+    if hasattr(project, 'is_public') and project.is_public is not None:
+        is_public_value = project.is_public
+    
+    return ProjectResponse(
+        id=str(project.id),
+        name=project.name,
+        description=project.description,
+        owner_id=str(project.owner_id),
+        allow_guest=project.allow_guest,
+        is_public=is_public_value,
+        created_at=project.created_at,
+        member_count=member_count,
+        run_count=run_count
+    )
+
+@router.get("/public/{project_id}/runs")
+async def get_public_project_runs(
+    project_id: str,
+    db: AsyncSession = Depends(get_db)
+):
+    """Get runs for a public project without authentication."""
+    result = await db.execute(select(Project).where(Project.id == uuid.UUID(project_id), Project.deleted_at.is_(None)))
+    project = result.scalar_one_or_none()
+    
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    
+    if not (hasattr(project, 'is_public') and project.is_public):
+        raise HTTPException(status_code=403, detail="Project is not public")
+    
+    result = await db.execute(
+        select(Run).where(Run.project_id == uuid.UUID(project_id), Run.deleted_at.is_(None))
+        .order_by(Run.created_at.desc())
+    )
+    runs = result.scalars().all()
+    
+    return [
+        {
+            "id": str(run.id),
+            "project_id": str(run.project_id),
+            "status": run.status.value,
+            "task_name": run.task_name,
+            "message": run.message,
+            "image_count": run.image_count,
+            "created_at": run.created_at.isoformat(),
+            "started_at": run.started_at.isoformat() if run.started_at else None,
+            "finished_at": run.finished_at.isoformat() if run.finished_at else None,
+        }
+        for run in runs
+    ]
+
+@router.get("/public/{project_id}/artifacts")
+async def get_public_project_artifacts(
+    project_id: str,
+    db: AsyncSession = Depends(get_db)
+):
+    """Get artifacts for a public project without authentication."""
+    result = await db.execute(select(Project).where(Project.id == uuid.UUID(project_id), Project.deleted_at.is_(None)))
+    project = result.scalar_one_or_none()
+    
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    
+    if not (hasattr(project, 'is_public') and project.is_public):
+        raise HTTPException(status_code=403, detail="Project is not public")
+    
+    result = await db.execute(
+        select(Artifact).where(Artifact.project_id == uuid.UUID(project_id))
+        .order_by(Artifact.created_at.desc())
+    )
+    artifacts = result.scalars().all()
+    
+    return [
+        {
+            "id": str(artifact.id),
+            "project_id": str(artifact.project_id),
+            "run_id": str(artifact.run_id) if artifact.run_id else None,
+            "kind": artifact.kind,
+            "storage_key": artifact.storage_key,
+            "filename": artifact.filename,
+            "size_bytes": artifact.size_bytes,
+            "mime_type": artifact.mime_type,
+            "created_at": artifact.created_at.isoformat(),
+        }
+        for artifact in artifacts
+    ]
+
+
+@router.get("/public/{project_id}/artifacts/{artifact_id}/download")
+async def download_public_artifact(
+    project_id: str,
+    artifact_id: str,
+    db: AsyncSession = Depends(get_db)
+):
+    """Download an artifact from a public project without authentication."""
+    from fastapi.responses import FileResponse
+    from pathlib import Path
+    import base64
+    
+    # Check if project is public
+    result = await db.execute(select(Project).where(Project.id == uuid.UUID(project_id), Project.deleted_at.is_(None)))
+    project = result.scalar_one_or_none()
+    
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    
+    if not (hasattr(project, "is_public") and project.is_public):
+        raise HTTPException(status_code=403, detail="Project is not public")
+    
+    # Get the artifact
+    result = await db.execute(select(Artifact).where(
+        Artifact.id == uuid.UUID(artifact_id),
+        Artifact.project_id == uuid.UUID(project_id)
+    ))
+    artifact = result.scalar_one_or_none()
+    
+    if not artifact:
+        raise HTTPException(status_code=404, detail="Artifact not found")
+    
+    # Security check - only allow files in specific directories
+    allowed_prefixes = ["tasks/", "uploads/"]
+    if not any(artifact.storage_key.startswith(prefix) for prefix in allowed_prefixes):
+        raise HTTPException(status_code=403, detail="Access denied")
+    
+    # Construct full file path
+    backend_dir = Path.cwd()
+    full_path = backend_dir / artifact.storage_key
+    
+    if not full_path.exists():
+        raise HTTPException(status_code=404, detail="File not found")
+    
+    # Return the file
+    return FileResponse(
+        path=str(full_path),
+        filename=artifact.filename,
+        media_type=artifact.mime_type or "application/octet-stream"
+    )
+
+@router.delete("/{project_id}")
+async def delete_project(
+    project_id: str,
+    current_user: Optional[AppUser] = Depends(get_current_user_optional),
+    db: AsyncSession = Depends(get_db)
+):
+    """Hard delete a project and all related data."""
+    project_uuid = uuid.UUID(project_id)
+    
+    # Get project directly
+    result = await db.execute(select(Project).where(Project.id == project_uuid, Project.deleted_at.is_(None)))
+    project = result.scalar_one_or_none()
+    
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    
+    # Check if user is owner (allow guests to delete any project)
+    if current_user and project.owner_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Only project owner can delete")
+    
+    # Delete all project members first
+    await db.execute(delete(ProjectMember).where(ProjectMember.project_id == project_uuid))
+    
+    # Delete all artifacts associated with runs in this project
+    await db.execute(delete(Artifact).where(Artifact.project_id == project_uuid))
+    
+    # Delete all runs in this project
+    await db.execute(delete(Run).where(Run.project_id == project_uuid))
+    
+    # Finally delete the project itself
+    await db.execute(delete(Project).where(Project.id == project_uuid))
+    
+    await db.commit()
+    
+    return {"message": "Project deleted successfully"}

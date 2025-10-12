@@ -43,7 +43,9 @@ class Project(Base):
     description = Column(Text)
     owner_id = Column(UUID(as_uuid=True), ForeignKey("app_user.id"), nullable=True)
     allow_guest = Column(Boolean, default=True)
+    is_public = Column(Boolean, default=False)  # Public projects can be accessed via URL
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+    deleted_at = Column(DateTime(timezone=True), nullable=True)  # Soft delete timestamp
     
     # Relationships
     owner = relationship("AppUser", back_populates="owned_projects")
@@ -95,6 +97,7 @@ class Run(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     started_at = Column(DateTime(timezone=True))
     finished_at = Column(DateTime(timezone=True))
+    deleted_at = Column(DateTime(timezone=True), nullable=True)  # Soft delete timestamp
     
     # Relationships
     project = relationship("Project", back_populates="runs")

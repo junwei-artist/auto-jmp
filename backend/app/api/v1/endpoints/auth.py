@@ -37,6 +37,7 @@ class TokenResponse(BaseModel):
     token_type: str = "bearer"
     user_id: str
     is_guest: bool = False
+    is_admin: bool = False
 
 class GuestTokenResponse(BaseModel):
     access_token: str
@@ -70,7 +71,8 @@ async def login(
         access_token=access_token,
         refresh_token=refresh_token,
         user_id=str(user.id),
-        is_guest=user.is_guest
+        is_guest=user.is_guest,
+        is_admin=user.is_admin
     )
 
 @router.post("/register", response_model=TokenResponse)
@@ -107,7 +109,8 @@ async def register(
         access_token=access_token,
         refresh_token=refresh_token,
         user_id=str(user.id),
-        is_guest=False
+        is_guest=False,
+        is_admin=False
     )
 
 @router.post("/guest", response_model=GuestTokenResponse)

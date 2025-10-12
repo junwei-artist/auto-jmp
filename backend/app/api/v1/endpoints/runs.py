@@ -4,13 +4,13 @@ from sqlalchemy import select
 from pydantic import BaseModel
 from typing import List, Optional
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 
 from app.core.database import get_db
 from app.core.auth import get_current_user, get_current_user_optional
 from app.core.celery import celery_app
 from app.core.websocket import publish_run_update
-from app.models import Project, Run, RunStatus, AppUser, Artifact
+from app.models import Project, Run, RunStatus, AppUser, Artifact, ProjectMember
 
 router = APIRouter()
 
@@ -38,6 +38,55 @@ class ArtifactResponse(BaseModel):
     mime_type: Optional[str]
     created_at: datetime
     download_url: Optional[str] = None
+
+@router.get("/", response_model=List[RunResponse])
+async def list_runs(
+    current_user: Optional[AppUser] = Depends(get_current_user_optional),
+    db: AsyncSession = Depends(get_db)
+):
+    """List all runs for the current user."""
+    if current_user:
+        # Get all projects the user has access to
+        result = await db.execute(
+            select(Project).where(
+                (Project.owner_id == current_user.id) |
+                (Project.members.any(ProjectMember.user_id == current_user.id))
+            )
+        )
+        user_projects = result.scalars().all()
+        project_ids = [str(p.id) for p in user_projects]
+        
+        if not project_ids:
+            return []
+        
+        # Get all runs for user's projects
+        result = await db.execute(
+            select(Run).where(Run.project_id.in_(project_ids), Run.deleted_at.is_(None))
+            .order_by(Run.created_at.desc())
+        )
+        runs = result.scalars().all()
+    else:
+        # Guest user - show all runs (shared access)
+        result = await db.execute(
+            select(Run).where(Run.deleted_at.is_(None))
+            .order_by(Run.created_at.desc())
+        )
+        runs = result.scalars().all()
+    
+    return [
+        RunResponse(
+            id=str(run.id),
+            project_id=str(run.project_id),
+            status=run.status.value,
+            task_name=run.task_name,
+            message=run.message,
+            image_count=run.image_count,
+            created_at=run.created_at,
+            started_at=run.started_at,
+            finished_at=run.finished_at
+        )
+        for run in runs
+    ]
 
 async def check_project_access(
     db: AsyncSession, 
@@ -68,11 +117,8 @@ async def check_project_access(
         if member:
             return project
     
-    # Check guest access
-    if project.allow_guest:
-        return project
-    
-    raise HTTPException(status_code=403, detail="Access denied")
+    # Allow guest access to all projects (shared access)
+    return project
 
 @router.post("/", response_model=RunResponse)
 async def create_run(
@@ -150,7 +196,7 @@ async def get_run(
     current_user: Optional[AppUser] = Depends(get_current_user_optional)
 ):
     """Get run details."""
-    result = await db.execute(select(Run).where(Run.id == uuid.UUID(run_id)))
+    result = await db.execute(select(Run).where(Run.id == uuid.UUID(run_id), Run.deleted_at.is_(None)))
     run = result.scalar_one_or_none()
     
     if not run:
@@ -178,7 +224,7 @@ async def get_run_artifacts(
     current_user: Optional[AppUser] = Depends(get_current_user_optional)
 ):
     """Get artifacts for a run."""
-    result = await db.execute(select(Run).where(Run.id == uuid.UUID(run_id)))
+    result = await db.execute(select(Run).where(Run.id == uuid.UUID(run_id), Run.deleted_at.is_(None)))
     run = result.scalar_one_or_none()
     
     if not run:
@@ -228,7 +274,7 @@ async def get_run_zip_download_url(
     current_user: Optional[AppUser] = Depends(get_current_user_optional)
 ):
     """Get ZIP download URL for a run."""
-    result = await db.execute(select(Run).where(Run.id == uuid.UUID(run_id)))
+    result = await db.execute(select(Run).where(Run.id == uuid.UUID(run_id), Run.deleted_at.is_(None)))
     run = result.scalar_one_or_none()
     
     if not run:
@@ -255,7 +301,7 @@ async def get_project_runs(
     await check_project_access(db, project_uuid, current_user)
     
     result = await db.execute(
-        select(Run).where(Run.project_id == project_uuid).order_by(Run.created_at.desc())
+        select(Run).where(Run.project_id == project_uuid, Run.deleted_at.is_(None)).order_by(Run.created_at.desc())
     )
     runs = result.scalars().all()
     
@@ -273,3 +319,28 @@ async def get_project_runs(
         )
         for run in runs
     ]
+
+@router.delete("/{run_id}")
+async def delete_run(
+    run_id: str,
+    current_user: Optional[AppUser] = Depends(get_current_user_optional),
+    db: AsyncSession = Depends(get_db)
+):
+    """Soft delete a run."""
+    run_uuid = uuid.UUID(run_id)
+    
+    # Get the run and check access
+    result = await db.execute(select(Run).where(Run.id == run_uuid, Run.deleted_at.is_(None)))
+    run = result.scalar_one_or_none()
+    
+    if not run:
+        raise HTTPException(status_code=404, detail="Run not found")
+    
+    # Check if user has access to the project
+    await check_project_access(db, run.project_id, current_user)
+    
+    # Soft delete the run by setting deleted_at timestamp
+    run.deleted_at = datetime.now(timezone.utc)
+    await db.commit()
+    
+    return {"message": "Run deleted successfully"}

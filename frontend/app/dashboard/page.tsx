@@ -20,7 +20,9 @@ import {
   Clock,
   CheckCircle,
   XCircle,
-  AlertCircle
+  AlertCircle,
+  Trash2,
+  Loader2
 } from 'lucide-react'
 import { useAuth } from '@/lib/auth'
 import { useQuery, useMutation } from '@tanstack/react-query'
@@ -32,6 +34,7 @@ interface Project {
   description?: string
   owner_id?: string
   allow_guest: boolean
+  is_public: boolean
   created_at: string
   member_count: number
   run_count: number
@@ -55,6 +58,7 @@ export default function DashboardPage() {
   const [showCreateProject, setShowCreateProject] = useState(false)
   const [newProjectName, setNewProjectName] = useState('')
   const [newProjectDescription, setNewProjectDescription] = useState('')
+  const [newProjectIsPublic, setNewProjectIsPublic] = useState(false)
 
   // Redirect if not authenticated
   useEffect(() => {
@@ -91,11 +95,38 @@ export default function DashboardPage() {
       return response.json()
     },
     enabled: !!token,
+    refetchInterval: 5000, // Simple 5-second refresh
+    refetchIntervalInBackground: true,
+  })
+
+  // Delete project mutation
+  const deleteProjectMutation = useMutation({
+    mutationFn: async (projectId: string) => {
+      const response = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/v1/projects/${projectId}`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
+      })
+      
+      if (!response.ok) {
+        throw new Error('Failed to delete project')
+      }
+      
+      return response.json()
+    },
+    onSuccess: () => {
+      toast.success('Project deleted successfully!')
+      refetchProjects()
+    },
+    onError: (error: Error) => {
+      toast.error(error.message)
+    },
   })
 
   // Create project mutation
   const createProjectMutation = useMutation({
-    mutationFn: async (projectData: { name: string; description?: string }) => {
+    mutationFn: async (projectData: { name: string; description?: string; is_public?: boolean }) => {
       const response = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/v1/projects`, {
         method: 'POST',
         headers: {
@@ -115,6 +146,7 @@ export default function DashboardPage() {
       setShowCreateProject(false)
       setNewProjectName('')
       setNewProjectDescription('')
+      setNewProjectIsPublic(false)
       refetchProjects()
     },
     onError: (error: Error) => {
@@ -129,6 +161,7 @@ export default function DashboardPage() {
     createProjectMutation.mutate({
       name: newProjectName.trim(),
       description: newProjectDescription.trim() || undefined,
+      is_public: newProjectIsPublic,
     })
   }
 
@@ -199,10 +232,7 @@ export default function DashboardPage() {
             Welcome back{user.is_guest ? ' (Guest)' : ''}!
           </h2>
           <p className="text-gray-600">
-            {user.is_guest 
-              ? 'You are using guest access. Create an account for full features.'
-              : 'Manage your projects and view your analysis results.'
-            }
+            Manage your projects and view your analysis results.
           </p>
         </div>
 
@@ -247,12 +277,10 @@ export default function DashboardPage() {
         <div className="mb-8">
           <div className="flex justify-between items-center mb-6">
             <h3 className="text-lg font-semibold text-gray-900">Your Projects</h3>
-            {!user.is_guest && (
-              <Button onClick={() => setShowCreateProject(true)}>
-                <Plus className="h-4 w-4 mr-2" />
-                New Project
-              </Button>
-            )}
+            <Button onClick={() => setShowCreateProject(true)}>
+              <Plus className="h-4 w-4 mr-2" />
+              New Project
+            </Button>
           </div>
 
           {showCreateProject && (
@@ -284,6 +312,18 @@ export default function DashboardPage() {
                       placeholder="Enter project description"
                     />
                   </div>
+                  <div className="flex items-center space-x-2">
+                    <input
+                      type="checkbox"
+                      id="project-public"
+                      checked={newProjectIsPublic}
+                      onChange={(e) => setNewProjectIsPublic(e.target.checked)}
+                      className="rounded border-gray-300"
+                    />
+                    <Label htmlFor="project-public" className="text-sm">
+                      Make this project public (accessible via URL)
+                    </Label>
+                  </div>
                   <div className="flex space-x-2">
                     <Button 
                       type="submit" 
@@ -310,17 +350,12 @@ export default function DashboardPage() {
                 <FileText className="h-12 w-12 text-gray-400 mb-4" />
                 <h3 className="text-lg font-medium text-gray-900 mb-2">No projects yet</h3>
                 <p className="text-gray-500 text-center mb-4">
-                  {user.is_guest 
-                    ? 'Guest users cannot create projects. Sign up for a full account to create projects.'
-                    : 'Create your first project to start analyzing data with JMP.'
-                  }
+                  Create your first project to start analyzing data with JMP.
                 </p>
-                {!user.is_guest && (
-                  <Button onClick={() => setShowCreateProject(true)}>
-                    <Plus className="h-4 w-4 mr-2" />
-                    Create Your First Project
-                  </Button>
-                )}
+                <Button onClick={() => setShowCreateProject(true)}>
+                  <Plus className="h-4 w-4 mr-2" />
+                  Create Your First Project
+                </Button>
               </CardContent>
             </Card>
           ) : (
@@ -333,12 +368,32 @@ export default function DashboardPage() {
                 >
                   <CardHeader>
                     <CardTitle className="flex items-center justify-between">
-                      {project.name}
-                      {project.allow_guest && (
-                        <span className="text-xs bg-green-100 text-green-800 px-2 py-1 rounded">
-                          Public
-                        </span>
-                      )}
+                      <span>{project.name}</span>
+                      <div className="flex items-center space-x-2">
+                        {project.is_public && (
+                          <span className="text-xs bg-green-100 text-green-800 px-2 py-1 rounded">
+                            Public
+                          </span>
+                        )}
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            if (confirm('Are you sure you want to delete this project? This action cannot be undone.')) {
+                              deleteProjectMutation.mutate(project.id)
+                            }
+                          }}
+                          disabled={deleteProjectMutation.isPending}
+                          className="text-red-600 hover:text-red-700 hover:bg-red-50 h-6 w-6 p-0"
+                        >
+                          {deleteProjectMutation.isPending ? (
+                            <Loader2 className="h-3 w-3 animate-spin" />
+                          ) : (
+                            <Trash2 className="h-3 w-3" />
+                          )}
+                        </Button>
+                      </div>
                     </CardTitle>
                     <CardDescription>
                       {project.description || 'No description'}
