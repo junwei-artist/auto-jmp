@@ -25,6 +25,7 @@ import {
   Loader2
 } from 'lucide-react'
 import { useAuth } from '@/lib/auth'
+import { projectApi, runApi } from '@/lib/api'
 import { useQuery, useMutation } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
 
@@ -54,7 +55,7 @@ interface Run {
 
 export default function DashboardPage() {
   const router = useRouter()
-  const { user, logout, token } = useAuth()
+  const { user, logout } = useAuth()
   const [showCreateProject, setShowCreateProject] = useState(false)
   const [newProjectName, setNewProjectName] = useState('')
   const [newProjectDescription, setNewProjectDescription] = useState('')
@@ -68,53 +69,24 @@ export default function DashboardPage() {
   }, [user, router])
 
   // Fetch projects
-  const { data: projects = [], refetch: refetchProjects } = useQuery({
+  const { data: projects = [], refetch: refetchProjects } = useQuery<Project[]>({
     queryKey: ['projects'],
-    queryFn: async () => {
-      const response = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/v1/projects`, {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-        },
-      })
-      if (!response.ok) throw new Error('Failed to fetch projects')
-      return response.json()
-    },
-    enabled: !!token,
+    queryFn: () => projectApi.getProjects(),
+    enabled: !!user,
   })
 
   // Fetch recent runs
-  const { data: recentRuns = [] } = useQuery({
+  const { data: recentRuns = [] } = useQuery<Run[]>({
     queryKey: ['recent-runs'],
-    queryFn: async () => {
-      const response = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/v1/runs`, {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-        },
-      })
-      if (!response.ok) throw new Error('Failed to fetch runs')
-      return response.json()
-    },
-    enabled: !!token,
+    queryFn: () => runApi.getRuns(),
+    enabled: !!user,
     refetchInterval: 5000, // Simple 5-second refresh
     refetchIntervalInBackground: true,
   })
 
   // Delete project mutation
   const deleteProjectMutation = useMutation({
-    mutationFn: async (projectId: string) => {
-      const response = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/v1/projects/${projectId}`, {
-        method: 'DELETE',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-        },
-      })
-      
-      if (!response.ok) {
-        throw new Error('Failed to delete project')
-      }
-      
-      return response.json()
-    },
+    mutationFn: (projectId: string) => projectApi.deleteProject(projectId),
     onSuccess: () => {
       toast.success('Project deleted successfully!')
       refetchProjects()
@@ -126,21 +98,8 @@ export default function DashboardPage() {
 
   // Create project mutation
   const createProjectMutation = useMutation({
-    mutationFn: async (projectData: { name: string; description?: string; is_public?: boolean }) => {
-      const response = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/v1/projects`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(projectData),
-      })
-      if (!response.ok) {
-        const error = await response.json()
-        throw new Error(error.detail || 'Failed to create project')
-      }
-      return response.json()
-    },
+    mutationFn: (projectData: { name: string; description?: string; is_public?: boolean }) => 
+      projectApi.createProject(projectData),
     onSuccess: () => {
       toast.success('Project created successfully!')
       setShowCreateProject(false)
@@ -216,6 +175,16 @@ export default function DashboardPage() {
                   {user.is_guest ? 'Guest User' : user.email}
                 </span>
               </div>
+              {!user.is_guest && (
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  onClick={() => router.push('/profile')}
+                >
+                  <Settings className="h-4 w-4 mr-2" />
+                  Profile
+                </Button>
+              )}
               <Button variant="outline" size="sm" onClick={logout}>
                 <LogOut className="h-4 w-4 mr-2" />
                 Logout

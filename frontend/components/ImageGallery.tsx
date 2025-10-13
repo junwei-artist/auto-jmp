@@ -39,7 +39,15 @@ interface ImageGalleryProps {
 }
 
 export function ImageGallery({ runId, projectId, run, onClose }: ImageGalleryProps) {
-  const { token } = useAuth()
+  const { user } = useAuth()
+  
+  // Helper function to get auth token
+  const getAuthToken = () => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('access_token')
+    }
+    return null
+  }
   const [selectedImageIndex, setSelectedImageIndex] = useState(0)
   const [isLightboxOpen, setIsLightboxOpen] = useState(false)
   const [zoomLevel, setZoomLevel] = useState(1)
@@ -51,7 +59,7 @@ export function ImageGallery({ runId, projectId, run, onClose }: ImageGalleryPro
     queryFn: async () => {
       const response = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/v1/runs/${runId}/artifacts`, {
         headers: {
-          'Authorization': `Bearer ${token}`,
+          'Authorization': `Bearer ${getAuthToken()}`,
           'Content-Type': 'application/json',
         },
       })
@@ -70,7 +78,7 @@ export function ImageGallery({ runId, projectId, run, onClose }: ImageGalleryPro
     queryFn: async () => {
       const response = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/v1/runs/${runId}/download-zip`, {
         headers: {
-          'Authorization': `Bearer ${token}`,
+          'Authorization': `Bearer ${getAuthToken()}`,
           'Content-Type': 'application/json',
         },
       })
@@ -99,7 +107,7 @@ export function ImageGallery({ runId, projectId, run, onClose }: ImageGalleryPro
     try {
       const response = await fetch(artifact.download_url, {
         headers: {
-          'Authorization': `Bearer ${token}`,
+          'Authorization': `Bearer ${getAuthToken()}`,
         },
       })
       
@@ -117,7 +125,7 @@ export function ImageGallery({ runId, projectId, run, onClose }: ImageGalleryPro
     } catch (error) {
       console.error('Download error:', error)
     }
-  }, [token])
+  }, [user])
 
   // Handle ZIP download
   const handleZipDownload = useCallback(async () => {
@@ -130,7 +138,7 @@ export function ImageGallery({ runId, projectId, run, onClose }: ImageGalleryPro
         : zipData.zip_download_url
       const response = await fetch(zipUrl, {
         headers: {
-          'Authorization': `Bearer ${token}`,
+          'Authorization': `Bearer ${getAuthToken()}`,
         },
       })
       
@@ -150,7 +158,7 @@ export function ImageGallery({ runId, projectId, run, onClose }: ImageGalleryPro
     } finally {
       setIsDownloading(false)
     }
-  }, [zipData, token])
+  }, [zipData, user])
 
   // Handle lightbox navigation
   const handlePreviousImage = () => {

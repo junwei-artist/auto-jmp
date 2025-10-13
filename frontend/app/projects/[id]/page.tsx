@@ -6,8 +6,9 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Alert, AlertDescription } from '@/components/ui/alert-simple'
-import { Loader2, Upload, FileText, BarChart3, Users, Share2, ArrowLeft, Download, Eye, Copy, Globe, Lock, Trash2 } from 'lucide-react'
+import { Loader2, Upload, FileText, BarChart3, Users, Share2, ArrowLeft, Download, Eye, Copy, Globe, Lock, Trash2, Settings } from 'lucide-react'
 import { useAuth } from '@/lib/auth'
+import { projectApi, runApi } from '@/lib/api'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { ImageGallery } from '@/components/ImageGallery'
 import toast from 'react-hot-toast'
@@ -52,8 +53,16 @@ interface Artifact {
 export default function ProjectPage() {
   const params = useParams()
   const router = useRouter()
-  const { user, token } = useAuth()
+  const { user } = useAuth()
   const projectId = params.id as string
+
+  // Helper function to get auth token
+  const getAuthToken = () => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('access_token')
+    }
+    return null
+  }
 
   const [isUploading, setIsUploading] = useState(false)
   const [csvFile, setCsvFile] = useState<File | null>(null)
@@ -90,86 +99,37 @@ export default function ProjectPage() {
 
   // Get public project URL
   const getPublicProjectUrl = () => {
-    // Use the frontend URL for public project access
-    const frontendUrl = typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3001'
+    // Use the frontend URL from environment variable
+    const frontendUrl = process.env.NEXT_PUBLIC_FRONTEND_URL || 'http://localhost:4800'
     return `${frontendUrl}/public/projects/${projectId}`
   }
 
   // Fetch project details
-  const { data: project, isLoading: projectLoading, error: projectError } = useQuery({
+  const { data: project, isLoading: projectLoading, error: projectError } = useQuery<Project>({
     queryKey: ['project', projectId],
-    queryFn: async () => {
-      const response = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/v1/projects/${projectId}`, {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-        },
-      })
-      
-      if (!response.ok) {
-        throw new Error('Failed to fetch project')
-      }
-      
-      return response.json() as Promise<Project>
-    },
-    enabled: !!token && !!projectId,
+    queryFn: () => projectApi.getProject(projectId),
+    enabled: !!user && !!projectId,
   })
 
   // Fetch project runs with auto-refresh
-  const { data: runs, isLoading: runsLoading, refetch: refetchRuns } = useQuery({
+  const { data: runs, isLoading: runsLoading, refetch: refetchRuns } = useQuery<Run[]>({
     queryKey: ['project-runs', projectId],
-    queryFn: async () => {
-      const response = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/v1/projects/${projectId}/runs`, {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-        },
-      })
-      
-      if (!response.ok) {
-        throw new Error('Failed to fetch runs')
-      }
-      
-      return response.json() as Promise<Run[]>
-    },
-    enabled: !!token && !!projectId,
+    queryFn: () => projectApi.getProjectRuns(projectId),
+    enabled: !!user && !!projectId,
     refetchInterval: 5000, // Simple 5-second refresh
     refetchIntervalInBackground: true,
   })
 
   // Fetch project artifacts
-  const { data: artifacts, isLoading: artifactsLoading } = useQuery({
+  const { data: artifacts, isLoading: artifactsLoading } = useQuery<Artifact[]>({
     queryKey: ['project-artifacts', projectId],
-    queryFn: async () => {
-      const response = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/v1/projects/${projectId}/artifacts`, {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-        },
-      })
-      
-      if (!response.ok) {
-        throw new Error('Failed to fetch artifacts')
-      }
-      
-      return response.json() as Promise<Artifact[]>
-    },
-    enabled: !!token && !!projectId,
+    queryFn: () => projectApi.getProjectArtifacts(projectId),
+    enabled: !!user && !!projectId,
   })
 
   // Delete run mutation
   const deleteRunMutation = useMutation({
-    mutationFn: async (runId: string) => {
-      const response = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/v1/runs/${runId}`, {
-        method: 'DELETE',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-        },
-      })
-      
-      if (!response.ok) {
-        throw new Error('Failed to delete run')
-      }
-      
-      return response.json()
-    },
+    mutationFn: (runId: string) => runApi.deleteRun(runId),
     onSuccess: () => {
       toast.success('Run deleted successfully!')
       // Refresh runs data
@@ -182,20 +142,7 @@ export default function ProjectPage() {
 
   // Delete project mutation
   const deleteProjectMutation = useMutation({
-    mutationFn: async () => {
-      const response = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/v1/projects/${projectId}`, {
-        method: 'DELETE',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-        },
-      })
-      
-      if (!response.ok) {
-        throw new Error('Failed to delete project')
-      }
-      
-      return response.json()
-    },
+    mutationFn: () => projectApi.deleteProject(projectId),
     onSuccess: () => {
       toast.success('Project deleted successfully!')
       router.push('/dashboard')
@@ -220,7 +167,7 @@ export default function ProjectPage() {
       const csvUploadResponse = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/v1/uploads/presign`, {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${token}`,
+          'Authorization': `Bearer ${getAuthToken()}`,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
@@ -232,7 +179,7 @@ export default function ProjectPage() {
       const jslUploadResponse = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/v1/uploads/presign`, {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${token}`,
+          'Authorization': `Bearer ${getAuthToken()}`,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
@@ -259,7 +206,7 @@ export default function ProjectPage() {
         method: 'POST',
         body: csvFormData,
         headers: {
-          'Authorization': `Bearer ${token}`,
+          'Authorization': `Bearer ${getAuthToken()}`,
         },
       })
 
@@ -267,7 +214,7 @@ export default function ProjectPage() {
         method: 'POST',
         body: jslFormData,
         headers: {
-          'Authorization': `Bearer ${token}`,
+          'Authorization': `Bearer ${getAuthToken()}`,
         },
       })
 
@@ -279,7 +226,7 @@ export default function ProjectPage() {
       const runResponse = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/v1/runs`, {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${token}`,
+          'Authorization': `Bearer ${getAuthToken()}`,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
@@ -364,14 +311,24 @@ export default function ProjectPage() {
       <div className="container mx-auto px-4 py-8">
         {/* Header */}
         <div className="mb-8">
-          <Button 
-            onClick={() => router.push('/dashboard')}
-            variant="outline"
-            className="mb-4"
-          >
-            <ArrowLeft className="mr-2 h-4 w-4" />
-            Back to Dashboard
-          </Button>
+          <div className="flex items-center justify-between mb-4">
+            <Button 
+              onClick={() => router.push('/dashboard')}
+              variant="outline"
+            >
+              <ArrowLeft className="mr-2 h-4 w-4" />
+              Back to Dashboard
+            </Button>
+            {user && !user.is_guest && (
+              <Button 
+                onClick={() => router.push('/profile')}
+                variant="outline"
+              >
+                <Settings className="mr-2 h-4 w-4" />
+                Profile Settings
+              </Button>
+            )}
+          </div>
           
           <div className="flex items-center justify-between">
             <div>
@@ -527,7 +484,7 @@ export default function ProjectPage() {
                                 // Download the ZIP file directly
                                 const downloadResponse = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/v1/uploads/download-zip/${run.id}`, {
                                   headers: {
-                                    'Authorization': `Bearer ${token}`,
+                                    'Authorization': `Bearer ${getAuthToken()}`,
                                   },
                                 })
                                 

@@ -10,6 +10,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Alert, AlertDescription } from '@/components/ui/alert-simple'
 import { Loader2, Upload, FileText, BarChart3, Users, Share2 } from 'lucide-react'
 import { useAuth } from '@/lib/auth'
+import { authApi } from '@/lib/api'
 import { useMutation } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
 
@@ -28,7 +29,7 @@ export default function HomePage() {
 
   const checkSetupStatus = async () => {
     try {
-      const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000'
+      const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:4700'
       console.log('Backend URL:', backendUrl)
       const response = await fetch(`${backendUrl}/api/v1/setup/setup/status`)
       console.log('Setup status response:', response.status)
@@ -51,21 +52,10 @@ export default function HomePage() {
 
   const loginMutation = useMutation({
     mutationFn: async ({ email, password }: { email: string; password: string }) => {
-      const response = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/v1/auth/login`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password }),
-      })
-      
-      if (!response.ok) {
-        const error = await response.json()
-        throw new Error(error.detail || 'Login failed')
-      }
-      
-      return response.json()
+      return authApi.login(email, password)
     },
     onSuccess: (data) => {
-      login(data.access_token, data.user_id, data.is_guest)
+      login(data.access_token, data.refresh_token, data.user_id, data.is_guest, data.is_admin)
       toast.success('Welcome back!')
       router.push('/dashboard')
     },
@@ -76,21 +66,10 @@ export default function HomePage() {
 
   const registerMutation = useMutation({
     mutationFn: async ({ email, password }: { email: string; password: string }) => {
-      const response = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/v1/auth/register`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password }),
-      })
-      
-      if (!response.ok) {
-        const error = await response.json()
-        throw new Error(error.detail || 'Registration failed')
-      }
-      
-      return response.json()
+      return authApi.register(email, password)
     },
     onSuccess: (data) => {
-      login(data.access_token, data.user_id, data.is_guest)
+      login(data.access_token, data.refresh_token, data.user_id, data.is_guest, data.is_admin)
       toast.success('Account created successfully!')
       router.push('/dashboard')
     },
@@ -101,20 +80,10 @@ export default function HomePage() {
 
   const guestMutation = useMutation({
     mutationFn: async () => {
-      const response = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/v1/auth/guest`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-      })
-      
-      if (!response.ok) {
-        const error = await response.json()
-        throw new Error(error.detail || 'Guest access failed')
-      }
-      
-      return response.json()
+      return authApi.createGuestSession()
     },
     onSuccess: (data) => {
-      login(data.access_token, data.user_id, data.is_guest)
+      login(data.access_token, '', data.user_id, data.is_guest, false)
       toast.success('Welcome! You are now using guest access.')
       router.push('/dashboard')
     },

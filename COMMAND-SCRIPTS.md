@@ -50,7 +50,7 @@ This directory contains macOS command scripts for easy installation and running 
 - **Database Migrations**: Automatically runs pending migrations
 - **Error Handling**: Comprehensive error checking and user guidance
 
-**Default Port**: 8000
+**Default Port**: 4700
 
 ---
 
@@ -120,8 +120,8 @@ This directory contains macOS command scripts for easy installation and running 
 2. **Production**: Optimized build, better performance
 
 **Default Ports**:
-- Development: 3000
-- Production: 3001
+- Development: 4800
+- Production: 4801
 
 ---
 
@@ -144,15 +144,20 @@ This directory contains macOS command scripts for easy installation and running 
 ./run-backend.command
 ```
 
-**Terminal 2 - Frontend**:
+**Terminal 2 - Frontend (Development)**:
 ```bash
 ./run-frontend.command
 ```
 
+**Terminal 2 - Frontend (Production)**:
+```bash
+./run-production-frontend.command
+```
+
 ### 4. Access the Application
-- Frontend: http://localhost:3000 (dev) or http://localhost:3001 (prod)
-- Backend API: http://localhost:8000
-- API Documentation: http://localhost:8000/docs
+- Frontend: http://localhost:4800 (dev) or http://localhost:4801 (prod)
+- Backend API: http://localhost:4700
+- API Documentation: http://localhost:4700/docs
 
 ---
 
@@ -163,7 +168,7 @@ This directory contains macOS command scripts for easy installation and running 
 - **Purpose**: Stores backend port and host settings
 - **Format**:
   ```
-  BACKEND_PORT=8000
+  BACKEND_PORT=4700
   BACKEND_HOST=0.0.0.0
   BACKEND_RELOAD=true
   ```
@@ -173,7 +178,7 @@ This directory contains macOS command scripts for easy installation and running 
 - **Purpose**: Stores frontend port settings for different modes
 - **Format**:
   ```
-  DEV_PORT=3000
+  DEV_PORT=4800
   PROD_PORT=3001
   ```
 
@@ -242,6 +247,7 @@ When a port is in use, you'll be presented with options:
 data-analysis/
 ├── install-backend.command      # Backend installation
 ├── run-backend.command         # Backend service runner
+├── run-production-frontend.command  # Production frontend runner
 ├── install-frontend.command    # Frontend installation
 ├── build-frontend.command      # Frontend build
 ├── run-frontend.command        # Frontend service runner
@@ -275,7 +281,7 @@ data-analysis/
 - Use default ports when possible
 - Document custom port choices
 - Avoid port conflicts with other services
-- Use port ranges: 3000-3999 for frontend, 8000-8999 for backend
+- Use port ranges: 4800-4899 for frontend, 4700-4799 for backend
 
 ---
 

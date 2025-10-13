@@ -122,16 +122,16 @@ Follow the prompts to create an admin user.
 
 ```bash
 # Development server with auto-reload
-python -m uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+python -m uvicorn main:app --host 0.0.0.0 --port 4700 --reload
 
 # Production server
-python -m uvicorn main:app --host 0.0.0.0 --port 8000
+python -m uvicorn main:app --host 0.0.0.0 --port 4700
 ```
 
 The API will be available at:
-- **API**: http://localhost:8000
-- **Interactive API Docs**: http://localhost:8000/docs
-- **ReDoc Documentation**: http://localhost:8000/redoc
+- **API**: http://localhost:4700
+- **Interactive API Docs**: http://localhost:4700/docs
+- **ReDoc Documentation**: http://localhost:4700/redoc
 
 ### 7. Start Celery Worker
 
@@ -362,10 +362,10 @@ COPY . .
 RUN mkdir -p uploads
 
 # Expose port
-EXPOSE 8000
+EXPOSE 4700
 
 # Start server
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "4700"]
 ```
 
 ### Nginx Configuration
@@ -376,7 +376,7 @@ server {
     server_name your-domain.com;
 
     location / {
-        proxy_pass http://localhost:8000;
+        proxy_pass http://localhost:4700;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
@@ -384,7 +384,7 @@ server {
     }
 
     location /ws {
-        proxy_pass http://localhost:8000;
+        proxy_pass http://localhost:4700;
         proxy_http_version 1.1;
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection "upgrade";
@@ -434,7 +434,7 @@ logging.basicConfig(level=logging.DEBUG)
 The API provides a health check endpoint:
 
 ```bash
-curl http://localhost:8000/health
+curl http://localhost:4700/health
 ```
 
 ## Security Considerations

@@ -2,8 +2,8 @@ import './globals.css'
 import { Inter } from 'next/font/google'
 import { Toaster } from 'react-hot-toast'
 import { AuthProvider } from '@/lib/auth'
-import { SocketProvider } from '@/lib/socket'
 import { QueryProvider } from '@/lib/query-provider'
+import { SocketProvider } from '@/lib/socket'
 
 const inter = Inter({ subsets: ['latin'] })
 

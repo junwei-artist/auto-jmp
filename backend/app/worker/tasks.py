@@ -104,9 +104,16 @@ def run_jmp_boxplot(self, run_id: str) -> Dict[str, Any]:
                 # Run JMP analysis
                 jmp_runner = JMPRunner()
                 
-                # Get file paths from storage
-                csv_path = f"uploads/{csv_artifact.storage_key}"
-                jsl_path = f"uploads/{jsl_artifact.storage_key}"
+                # Get file paths from storage - use absolute paths
+                csv_path = os.path.join(backend_dir, "uploads", csv_artifact.storage_key)
+                jsl_path = os.path.join(backend_dir, "uploads", jsl_artifact.storage_key)
+                
+                # Debug logging
+                print(f"Celery worker - CSV path: {csv_path}")
+                print(f"Celery worker - JSL path: {jsl_path}")
+                print(f"Celery worker - CSV exists: {os.path.exists(csv_path)}")
+                print(f"Celery worker - JSL exists: {os.path.exists(jsl_path)}")
+                print(f"Celery worker - Current working directory: {os.getcwd()}")
                 
                 # Run the analysis
                 result = jmp_runner.run_csv_jsl(

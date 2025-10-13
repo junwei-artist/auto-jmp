@@ -1,7 +1,7 @@
 #!/bin/bash
 
-# run-frontend.command
-# Runs the frontend, select production or dev, create and check config file for port, check if port is in use, free it if needed
+# run-production-frontend.command
+# Runs the frontend in production mode with optimized settings
 
 set -e
 
@@ -28,8 +28,8 @@ print_error() {
     echo -e "${RED}[ERROR]${NC} $1"
 }
 
-echo "🌐 Frontend Service Runner"
-echo "========================="
+echo "🚀 Production Frontend Service Runner"
+echo "====================================="
 
 # Get the directory where this script is located
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -52,8 +52,7 @@ fi
 # Configuration file path
 CONFIG_FILE="frontend/.frontend-config"
 
-# Default ports
-DEFAULT_DEV_PORT=4800
+# Default production port
 DEFAULT_PROD_PORT=4801
 
 # Function to check if port is in use
@@ -94,14 +93,11 @@ kill_port() {
 
 # Function to get port from config or user input
 get_port() {
-    local mode=$1
-    local default_port=$2
-    local port=$default_port
+    local port=$DEFAULT_PROD_PORT
     
     # Check if config file exists
     if [ -f "$CONFIG_FILE" ]; then
-        local config_key="${mode}_PORT"
-        local config_port=$(grep "^$config_key=" "$CONFIG_FILE" | cut -d'=' -f2)
+        local config_port=$(grep "^PROD_PORT=" "$CONFIG_FILE" | cut -d'=' -f2)
         if [ ! -z "$config_port" ]; then
             port=$config_port
             print_status "Using port from config: $port" >&2
@@ -131,32 +127,25 @@ get_port() {
     fi
     
     # Save port to config file
-    local config_key="${mode}_PORT"
     if [ -f "$CONFIG_FILE" ]; then
         # Update existing config
-        if grep -q "^$config_key=" "$CONFIG_FILE"; then
-            sed -i '' "s/^$config_key=.*/$config_key=$port/" "$CONFIG_FILE"
+        if grep -q "^PROD_PORT=" "$CONFIG_FILE"; then
+            sed -i '' "s/^PROD_PORT=.*/PROD_PORT=$port/" "$CONFIG_FILE"
         else
-            echo "$config_key=$port" >> "$CONFIG_FILE"
+            echo "PROD_PORT=$port" >> "$CONFIG_FILE"
         fi
     else
         # Create new config file
-        echo "$config_key=$port" > "$CONFIG_FILE"
+        echo "PROD_PORT=$port" > "$CONFIG_FILE"
     fi
     
     echo $port
 }
 
-# Select mode (default to development)
-MODE="dev"
-DEFAULT_PORT=$DEFAULT_DEV_PORT
-
-print_status "Using development mode (default)"
-
 # Get the port to use
-PORT=$(get_port $MODE $DEFAULT_PORT)
+PORT=$(get_port)
 
-print_status "Starting frontend service in $MODE mode on port $PORT..."
+print_status "Starting frontend service in production mode on port $PORT..."
 
 # Navigate to frontend directory
 cd frontend
@@ -222,34 +211,51 @@ print_status "Using Node.js: $NODE_VERSION"
 NPM_VERSION=$(npm --version)
 print_status "Using npm: $NPM_VERSION"
 
-# Start the frontend service
-if [ "$MODE" = "dev" ]; then
-    print_success "Starting Next.js development server..."
-    print_status "Service will be available at: http://localhost:$PORT (and from network)"
-    print_status "Hot reload enabled"
-    print_status "Press Ctrl+C to stop the service"
-    echo ""
+# Production build check and creation
+print_status "Checking for production build..."
+
+if [ ! -d ".next" ]; then
+    print_warning ".next directory not found. Building application for production..."
+    print_status "This may take a few minutes..."
     
-    # Start development server
-    npm run dev -- --hostname 0.0.0.0 --port $PORT
+    # Set production environment
+    export NODE_ENV=production
+    
+    # Run production build
+    npm run build
+    if [ $? -ne 0 ]; then
+        print_error "Production build failed"
+        exit 1
+    fi
+    print_success "Production build completed successfully"
 else
-    # Check if build exists
-    if [ ! -d ".next" ]; then
-        print_warning ".next directory not found. Building application..."
+    print_status "Production build found. Checking if rebuild is needed..."
+    
+    # Check if package.json is newer than .next
+    if [ "package.json" -nt ".next" ] || [ "package-lock.json" -nt ".next" ]; then
+        print_warning "Dependencies may have changed. Rebuilding..."
+        export NODE_ENV=production
         npm run build
         if [ $? -ne 0 ]; then
-            print_error "Build failed"
+            print_error "Production build failed"
             exit 1
         fi
-        print_success "Build completed"
+        print_success "Production build completed successfully"
+    else
+        print_success "Using existing production build"
     fi
-    
-    print_success "Starting Next.js production server..."
-    print_status "Service will be available at: http://localhost:$PORT (and from network)"
-    print_status "Production mode (optimized)"
-    print_status "Press Ctrl+C to stop the service"
-    echo ""
-    
-    # Start production server
-    npm run start -- --hostname 0.0.0.0 --port $PORT
 fi
+
+# Start production server
+print_success "Starting Next.js production server..."
+print_status "Service will be available at: http://localhost:$PORT (and from network)"
+print_status "Production mode (optimized for performance)"
+print_status "Press Ctrl+C to stop the service"
+echo ""
+
+# Set production environment variables
+export NODE_ENV=production
+export NEXT_TELEMETRY_DISABLED=1
+
+# Start production server with optimized settings
+npm run start -- --hostname 0.0.0.0 --port $PORT

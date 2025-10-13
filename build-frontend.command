@@ -68,8 +68,8 @@ fi
 if [ ! -f ".env.local" ]; then
     print_warning ".env.local not found. Creating default configuration..."
     cat > .env.local << EOF
-NEXT_PUBLIC_API_URL=http://localhost:8000
-NEXT_PUBLIC_WS_URL=ws://localhost:8000
+NEXT_PUBLIC_API_URL=http://localhost:4700
+NEXT_PUBLIC_WS_URL=ws://localhost:4700
 EOF
     print_warning "Using default configuration. Please edit .env.local if needed."
 fi

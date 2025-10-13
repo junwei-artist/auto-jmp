@@ -183,10 +183,10 @@ setup_frontend() {
         print_status "Creating .env.local file..."
         cat > .env.local << EOF
 # Backend API URL
-NEXT_PUBLIC_BACKEND_URL=http://localhost:8000
+NEXT_PUBLIC_BACKEND_URL=http://localhost:4700
 
 # WebSocket URL for real-time updates
-NEXT_PUBLIC_WS_URL=ws://localhost:8000
+NEXT_PUBLIC_WS_URL=ws://localhost:4700
 EOF
     fi
     
@@ -238,7 +238,7 @@ create_startup_scripts() {
 #!/bin/bash
 cd backend
 source venv/bin/activate
-python -m uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+python -m uvicorn main:app --host 0.0.0.0 --port 4700 --reload
 EOF
     chmod +x start_backend.sh
     
@@ -289,9 +289,9 @@ main() {
     echo "   ./start_celery.sh     # Terminal 3"
     echo ""
     echo "4. Access the application:"
-    echo "   Frontend: http://localhost:3000"
-    echo "   Backend API: http://localhost:8000"
-    echo "   API Docs: http://localhost:8000/docs"
+    echo "   Frontend: http://localhost:4800"
+    echo "   Backend API: http://localhost:4700"
+    echo "   API Docs: http://localhost:4700/docs"
     echo ""
     print_status "Happy coding! 🎉"
 }

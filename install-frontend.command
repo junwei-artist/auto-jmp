@@ -105,8 +105,8 @@ fi
 if [ ! -f ".env.local" ]; then
     print_status "Creating .env.local configuration file..."
     cat > .env.local << EOF
-NEXT_PUBLIC_API_URL=http://localhost:8000
-NEXT_PUBLIC_WS_URL=ws://localhost:8000
+NEXT_PUBLIC_API_URL=http://localhost:4700
+NEXT_PUBLIC_WS_URL=ws://localhost:4700
 EOF
     print_success "Created .env.local file"
     print_warning "Please edit frontend/.env.local with your configuration"

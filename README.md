@@ -30,6 +30,35 @@ A web-based platform for data analysis using JMP (Statistical Discovery Software
 - Redis (for Celery task queue)
 - JMP Software (for analysis execution)
 
+## Testing the JMP Runner
+
+To test the JMP runner functionality with demo files:
+
+```bash
+./test-runner.command
+```
+
+This script will:
+- ✅ Test command line interface
+- ✅ Test Python module integration  
+- ✅ Verify image generation
+- ✅ Run performance tests
+- ✅ Check generated files and ZIP archives
+
+**Requirements:**
+- JMP installed on macOS
+- Python 3.11 with virtual environment
+- `applescript` package for automation
+
+**Demo Files:**
+- `demo/jmp_data_20251011_173619.csv` - Sample data file
+- `demo/jsl_script_20251011_173619.jsl` - JMP script for visualization
+
+**Expected Output:**
+- 4 PNG images (FAI10.png, FAI38.png, FAI39.png, FAI40.png)
+- ZIP archive with all results
+- ~15-20 second execution time
+
 ## Quick Start
 
 ### Option 1: Automated Setup (Recommended)
@@ -104,10 +133,10 @@ python create_admin.py
 
 ```bash
 source venv/bin/activate
-python -m uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+python -m uvicorn main:app --host 0.0.0.0 --port 4700 --reload
 ```
 
-The backend API will be available at `http://localhost:8000`
+The backend API will be available at `http://localhost:4700`
 
 ### 3. Frontend Setup
 
@@ -122,8 +151,8 @@ npm install
 
 Create a `.env.local` file in the `frontend` directory:
 ```env
-NEXT_PUBLIC_BACKEND_URL=http://localhost:8000
-NEXT_PUBLIC_WS_URL=ws://localhost:8000
+NEXT_PUBLIC_BACKEND_URL=http://localhost:4700
+NEXT_PUBLIC_WS_URL=ws://localhost:4700
 ```
 
 #### Start Frontend Development Server
@@ -132,7 +161,21 @@ NEXT_PUBLIC_WS_URL=ws://localhost:8000
 npm run dev
 ```
 
-The frontend will be available at `http://localhost:3000` (or `http://localhost:3001` if port 3000 is in use)
+#### Start Frontend Production Server
+
+For production deployment, use the production script:
+
+```bash
+./run-production-frontend.command
+```
+
+This will:
+- Build the application for production (if needed)
+- Start the optimized production server
+- Use port 4801 by default
+- Enable performance optimizations
+
+The frontend will be available at `http://localhost:4800` (development) or `http://localhost:4801` (production)
 
 ### 4. Celery Worker Setup
 
@@ -269,9 +312,9 @@ docker-compose down
 ```
 
 The application will be available at:
-- **Frontend**: http://localhost:3000
-- **Backend API**: http://localhost:8000
-- **API Docs**: http://localhost:8000/docs
+- **Frontend**: http://localhost:4800
+- **Backend API**: http://localhost:4700
+- **API Docs**: http://localhost:4700/docs
 
 ### Docker Services
 
@@ -304,9 +347,9 @@ COPY requirements.txt .
 RUN pip install -r requirements.txt
 
 COPY . .
-EXPOSE 8000
+EXPOSE 4700
 
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "4700"]
 ```
 
 ### Frontend Deployment
@@ -328,6 +371,80 @@ NEXT_PUBLIC_WS_URL=wss://your-api-domain.com
 ## Troubleshooting
 
 ### Common Issues
+
+#### Network Access Issues
+
+**Problem**: Frontend loads from server IP but can't connect to backend (login/API calls fail)
+
+**Solution**: Configure both frontend and backend for network access:
+
+1. **Update Frontend Configuration** (`frontend/.env.local`):
+   ```env
+   # Replace localhost with your server IP
+   NEXT_PUBLIC_API_URL=http://YOUR_SERVER_IP:4700
+   NEXT_PUBLIC_WS_URL=ws://YOUR_SERVER_IP:4700
+   ```
+
+2. **Update Backend CORS** (`backend/.env`):
+   ```env
+   # Allow all origins for network access (recommended for development)
+   BACKEND_CORS_ORIGINS=["*"]
+   
+   # Or specify individual origins for production:
+   # BACKEND_CORS_ORIGINS=["http://localhost:4800", "http://localhost:4801", "http://YOUR_SERVER_IP:4800", "http://YOUR_SERVER_IP:4801", "http://CLIENT_IP:4800", "http://CLIENT_IP:4801"]
+   ```
+
+3. **Restart Both Services**:
+   ```bash
+   # Stop services
+   pkill -f "uvicorn" && pkill -f "next dev"
+   
+   # Restart backend
+   ./run-backend.command &
+   
+   # Restart frontend
+   ./run-frontend.command &
+   ```
+
+**Note**: The frontend is configured to bind to `0.0.0.0` by default using the `--hostname` flag, making it accessible from the network. You should see `TCP *:iims (LISTEN)` in the port listing, indicating it's bound to all interfaces.
+
+**Test CORS**: To verify CORS is working, test with:
+```bash
+curl -X OPTIONS http://YOUR_SERVER_IP:4700/api/v1/auth/login \
+  -H "Origin: http://ANY_CLIENT_IP:4800" \
+  -H "Access-Control-Request-Method: POST" \
+  -H "Access-Control-Request-Headers: Content-Type"
+```
+You should get a `200 OK` response with `access-control-allow-origin` header. With wildcard CORS (`["*"]`), any client IP will be accepted.
+
+**Test Frontend Assets**: To verify frontend static assets are accessible:
+```bash
+curl -I http://YOUR_SERVER_IP:4800/_next/static/css/app/layout.css
+```
+You should get a `200 OK` response. The `allowedDevOrigins` configuration in `next.config.js` allows cross-origin requests to `/_next/*` resources.
+
+#### File Upload Issues
+
+**Problem**: JSL files rejected with "File type 'text/x-jmp-script' not allowed"
+
+**Solution**: Update backend file type configuration (`backend/.env`):
+```env
+ALLOWED_FILE_TYPES=["text/csv", "application/octet-stream", "text/x-jmp-script", "text/plain"]
+```
+
+#### Authentication Issues
+
+**Problem**: Can't log in or authentication fails
+
+**Solutions**:
+1. **Clear Browser Storage**: Clear localStorage and cookies
+2. **Check Token Expiration**: Tokens expire after 30 minutes by default
+3. **Verify Admin User**: Create admin user if needed:
+   ```bash
+   cd backend
+   python create_admin.py
+   ```
+4. **Check Guest Access**: Ensure guest access is enabled in backend config
 
 #### Backend Issues
 
@@ -353,15 +470,37 @@ NEXT_PUBLIC_WS_URL=wss://your-api-domain.com
    - Check CORS settings
    - Ensure backend is running
 
-2. **Authentication Issues**
-   - Clear browser localStorage
-   - Check token expiration
-   - Verify guest access settings
+2. **Cross-Origin Resource Errors**
+   - **Problem**: "Cross origin request detected from X.X.X.X to /_next/* resource"
+   - **Solution**: Add `allowedDevOrigins` to `frontend/next.config.js`:
+     ```javascript
+     const nextConfig = {
+       allowedDevOrigins: [
+         'YOUR_SERVER_IP',
+         'localhost',
+         '127.0.0.1',
+         '0.0.0.0'
+       ],
+       // ... rest of config
+     }
+     ```
 
-3. **Build Errors**
+3. **Hardcoded URL Issues**
+   - **Problem**: Frontend uses hardcoded URLs instead of server IP
+   - **Solution**: The frontend runner scripts now automatically detect and configure the server IP:
+     - `run-frontend.command` and `run-production-frontend.command` automatically detect server IP
+     - Updates `.env.local` with correct `NEXT_PUBLIC_FRONTEND_URL`
+     - Frontend code uses environment variables instead of hardcoded URLs
+
+4. **Build Errors**
    - Clear node_modules and reinstall
    - Check TypeScript errors
    - Verify environment variables
+
+5. **Module Resolution Errors**
+   - Ensure all dependencies are installed
+   - Check import paths
+   - Verify file extensions (.tsx vs .ts)
 
 ### Logs and Debugging
 
@@ -370,7 +509,7 @@ NEXT_PUBLIC_WS_URL=wss://your-api-domain.com
 ```bash
 # Enable debug logging
 export LOG_LEVEL=DEBUG
-python -m uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+python -m uvicorn main:app --host 0.0.0.0 --port 4700 --reload
 ```
 
 #### Frontend Debugging

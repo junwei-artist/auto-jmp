@@ -1,10 +1,9 @@
 #!/bin/bash
 
-# run-backend.command
-# Creates and checks config file for port, activates venv, checks if port is in use, frees it if needed, and runs the backend service
+# create-admin.command
+# Creates an admin user in the database using the create_admin.py script
 
 set -e
-# set -x  # Enable debug mode
 
 # Colors for output
 RED='\033[0;31m'
@@ -29,115 +28,26 @@ print_error() {
     echo -e "${RED}[ERROR]${NC} $1"
 }
 
-echo "🚀 Backend Service Runner"
-echo "========================"
+echo "🔐 Admin User Creation Script"
+echo "============================="
 
 # Get the directory where this script is located
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # Check if we're in the right directory or if the script is in the project root
-if [ ! -f "backend/main.py" ] && [ ! -f "$SCRIPT_DIR/backend/main.py" ]; then
+if [ ! -f "backend/create_admin.py" ] && [ ! -f "$SCRIPT_DIR/backend/create_admin.py" ]; then
     print_error "Please run this script from the project root directory"
-    print_error "Expected to find: backend/main.py"
+    print_error "Expected to find: backend/create_admin.py"
     print_error "Current directory: $(pwd)"
     print_error "Script location: $SCRIPT_DIR"
     exit 1
 fi
 
 # If we're not in the project root, change to the script directory
-if [ ! -f "backend/main.py" ]; then
+if [ ! -f "backend/create_admin.py" ]; then
     print_status "Changing to project root directory: $SCRIPT_DIR"
     cd "$SCRIPT_DIR"
 fi
-
-# Configuration file path
-CONFIG_FILE="backend/.backend-config"
-
-# Default port
-DEFAULT_PORT=4700
-
-# Function to check if port is in use
-check_port() {
-    local port=$1
-    if lsof -Pi :$port -sTCP:LISTEN -t >/dev/null 2>&1; then
-        return 0  # Port is in use
-    else
-        return 1  # Port is free
-    fi
-}
-
-# Function to kill process on port
-kill_port() {
-    local port=$1
-    print_warning "Port $port is in use. Attempting to free it..."
-    
-    # Find and kill the process
-    local pid=$(lsof -Pi :$port -sTCP:LISTEN -t 2>/dev/null)
-    if [ ! -z "$pid" ]; then
-        print_status "Killing process $pid on port $port..."
-        kill -9 $pid 2>/dev/null || true
-        sleep 2
-        
-        # Check if port is now free
-        if ! check_port $port; then
-            print_success "Port $port is now free"
-            return 0
-        else
-            print_error "Failed to free port $port"
-            return 1
-        fi
-    else
-        print_error "Could not find process using port $port"
-        return 1
-    fi
-}
-
-# Function to get port from config or user input
-get_port() {
-    local port=$DEFAULT_PORT
-    
-    # Check if config file exists
-    if [ -f "$CONFIG_FILE" ]; then
-        local config_port=$(grep "^BACKEND_PORT=" "$CONFIG_FILE" | cut -d'=' -f2)
-        if [ ! -z "$config_port" ]; then
-            port=$config_port
-        fi
-    fi
-    
-    # Check if port is in use
-    if check_port $port; then
-        print_warning "Port $port is currently in use" >&2
-        print_status "Attempting to free port $port automatically..." >&2
-        
-        if kill_port $port; then
-            print_success "Port $port is now free" >&2
-        else
-            print_error "Could not free port $port" >&2
-            print_status "Trying alternative port 4701..." >&2
-            port=4701
-            
-            if check_port $port; then
-                print_error "Port 4701 is also in use" >&2
-                print_status "Please manually stop the processes using these ports" >&2
-                exit 1
-            else
-                print_success "Using alternative port $port" >&2
-            fi
-        fi
-    fi
-    
-    # Save port to config file
-    echo "BACKEND_PORT=$port" > "$CONFIG_FILE"
-    echo "BACKEND_HOST=0.0.0.0" >> "$CONFIG_FILE"
-    echo "BACKEND_RELOAD=true" >> "$CONFIG_FILE"
-    
-    echo $port
-}
-
-# Get the port to use
-PORT=$(get_port)
-
-print_status "Starting backend service on port $PORT..."
 
 # Navigate to backend directory
 print_status "Navigating to backend directory..."
@@ -200,7 +110,7 @@ if [ ! -f ".env" ]; then
     print_warning ".env file not found. Creating from template..."
     if [ -f "env.example" ]; then
         cp env.example .env
-        print_warning "Please edit backend/.env with your configuration before running the service"
+        print_warning "Please edit backend/.env with your configuration before running the script"
     else
         print_error "No .env file or template found"
         exit 1
@@ -236,31 +146,42 @@ fi
 # Set Python path
 export PYTHONPATH="${PYTHONPATH}:$(pwd)"
 
-# Check if main.py exists
-if [ ! -f "main.py" ]; then
-    print_error "main.py not found in backend directory"
+# Check if create_admin.py exists
+if [ ! -f "create_admin.py" ]; then
+    print_error "create_admin.py not found in backend directory"
     exit 1
 fi
 
-# Skip database migrations for now - tables will be created automatically
-print_status "Skipping database migrations - tables will be created automatically when the app starts"
+# Check if PostgreSQL is running
+print_status "Checking if PostgreSQL is running..."
+if ! pg_isready -q; then
+    print_error "PostgreSQL is not running. Please start PostgreSQL first."
+    print_status "On macOS with Homebrew: brew services start postgresql@16"
+    exit 1
+else
+    print_success "PostgreSQL is running"
+fi
 
-# Start the backend service
-print_success "Starting FastAPI backend service..."
-print_status "Service will be available at: http://localhost:$PORT"
-print_status "API documentation: http://localhost:$PORT/docs"
-print_status "Press Ctrl+C to stop the service"
+# Run the admin creation script
+print_success "Creating admin user..."
+print_status "Executing: python create_admin.py"
 echo ""
 
-# Start uvicorn using Python 3.11
-print_status "Executing: python -m uvicorn main:app --host 0.0.0.0 --port $PORT --reload"
-echo ""
+# Execute the admin creation script
+python create_admin.py
 
-# Ensure we're in the right directory and environment
-pwd
-echo "Python version: $(python --version)"
-echo "Virtual environment: $VIRTUAL_ENV"
-echo ""
-
-# Start the service (this should keep running)
-exec python -m uvicorn main:app --host 0.0.0.0 --port $PORT --reload
+# Check if the script ran successfully
+if [ $? -eq 0 ]; then
+    print_success "Admin user creation completed successfully!"
+    echo ""
+    print_status "You can now:"
+    print_status "1. Start the backend: ./run-backend.command"
+    print_status "2. Start the frontend: ./run-frontend.command"
+    print_status "3. Login at: http://localhost:4800"
+    print_status "4. Use admin credentials:"
+    print_status "   Email: admin@admin.com"
+    print_status "   Password: admin"
+else
+    print_error "Admin user creation failed!"
+    exit 1
+fi

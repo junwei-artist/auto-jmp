@@ -45,12 +45,12 @@ fi
 print_success "Python $PYTHON_VERSION found: $(python$PYTHON_VERSION --version)"
 
 # Activate virtual environment
-if [ ! -d "$VENV_DIR" ]; then
-    print_error "Virtual environment not found at $VENV_DIR. Please run install-backend.command first."
+if [ ! -d "venv" ]; then
+    print_error "Virtual environment not found at ./venv. Please run install-backend.command first."
     exit 1
 fi
 
-source "$VENV_DIR/bin/activate"
+source "venv/bin/activate"
 if [ $? -ne 0 ]; then
     print_error "Failed to activate virtual environment."
     exit 1
@@ -264,9 +264,9 @@ if [ $? -eq 0 ]; then
     echo "  Email: admin@admin.com"
     echo "  Password: admin"
     echo ""
-    echo "Frontend: http://localhost:3000"
-    echo "Backend:  http://localhost:8000"
-    echo "Admin Dashboard: http://localhost:3000/admin/dashboard"
+    echo "Frontend: http://localhost:4800"
+    echo "Backend:  http://localhost:4700"
+    echo "Admin Dashboard: http://localhost:4800/admin/dashboard"
 else
     print_error "Failed to verify admin user."
     deactivate

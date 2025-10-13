@@ -25,13 +25,13 @@ Create a `.env.local` file in the frontend directory:
 
 ```env
 # Backend API URL
-NEXT_PUBLIC_BACKEND_URL=http://localhost:8000
+NEXT_PUBLIC_BACKEND_URL=http://localhost:4700
 
 # WebSocket URL for real-time updates
-NEXT_PUBLIC_WS_URL=ws://localhost:8000
+NEXT_PUBLIC_WS_URL=ws://localhost:4700
 
-# Optional: Custom port (defaults to 3000)
-PORT=3000
+# Optional: Custom port (defaults to 4800)
+PORT=4800
 ```
 
 ### 4. Development Server
@@ -44,7 +44,7 @@ npm run dev
 yarn dev
 ```
 
-The application will be available at `http://localhost:3000` (or the next available port).
+The application will be available at `http://localhost:4800` (or the next available port).
 
 ### 5. Production Build
 
@@ -653,7 +653,7 @@ COPY . .
 RUN npm run build
 
 # Expose port
-EXPOSE 3000
+EXPOSE 4800
 
 # Start application
 CMD ["npm", "start"]

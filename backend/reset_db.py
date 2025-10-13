@@ -121,9 +121,9 @@ async def reset_database():
         print("You can now login with:")
         print("  Email: admin@admin.com")
         print("  Password: admin")
-        print("\nFrontend: http://localhost:3000")
-        print("Backend:  http://localhost:8000")
-        print("Admin Dashboard: http://localhost:3000/admin/dashboard")
+        print("\nFrontend: http://localhost:4800")
+        print("Backend:  http://localhost:4700")
+        print("Admin Dashboard: http://localhost:4800/admin/dashboard")
         
         return True
         
