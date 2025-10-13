@@ -10,6 +10,8 @@ import { Loader2, Upload, FileText, BarChart3, Users, Share2, ArrowLeft, Downloa
 import { useAuth } from '@/lib/auth'
 import { projectApi, runApi } from '@/lib/api'
 import { useMutation, useQuery } from '@tanstack/react-query'
+import { useLanguage } from '@/lib/language'
+import { LanguageSelector } from '@/components/LanguageSelector'
 import { ImageGallery } from '@/components/ImageGallery'
 import toast from 'react-hot-toast'
 
@@ -54,6 +56,7 @@ export default function ProjectPage() {
   const params = useParams()
   const router = useRouter()
   const { user } = useAuth()
+  const { t } = useLanguage()
   const projectId = params.id as string
 
   // Helper function to get auth token
@@ -317,17 +320,20 @@ export default function ProjectPage() {
               variant="outline"
             >
               <ArrowLeft className="mr-2 h-4 w-4" />
-              Back to Dashboard
+              {t('projects.backToDashboard')}
             </Button>
-            {user && !user.is_guest && (
-              <Button 
-                onClick={() => router.push('/profile')}
-                variant="outline"
-              >
-                <Settings className="mr-2 h-4 w-4" />
-                Profile Settings
-              </Button>
-            )}
+            <div className="flex items-center space-x-2">
+              <LanguageSelector />
+              {user && !user.is_guest && (
+                <Button 
+                  onClick={() => router.push('/profile')}
+                  variant="outline"
+                >
+                  <Settings className="mr-2 h-4 w-4" />
+                  {t('nav.profileSettings')}
+                </Button>
+              )}
+            </div>
           </div>
           
           <div className="flex items-center justify-between">
@@ -358,7 +364,7 @@ export default function ProjectPage() {
                   onClick={() => copyToClipboard(getPublicProjectUrl()!)}
                 >
                   <Copy className="mr-2 h-4 w-4" />
-                  Copy Public Link
+                  {t('projects.copyPublicLink')}
                 </Button>
               )}
               <Button 
@@ -391,16 +397,16 @@ export default function ProjectPage() {
               <CardHeader>
                 <CardTitle className="flex items-center">
                   <Upload className="mr-2 h-5 w-5" />
-                  Start New Analysis
+                  {t('projects.startAnalysis')}
                 </CardTitle>
                 <CardDescription>
-                  Upload your CSV data file and JSL script to generate boxplot visualizations
+                  {t('projects.startAnalysisSubtitle')}
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="grid md:grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-sm font-medium mb-2">CSV Data File</label>
+                    <label className="block text-sm font-medium mb-2">{t('projects.csvFile')}</label>
                     <input
                       type="file"
                       accept=".csv"
@@ -412,7 +418,7 @@ export default function ProjectPage() {
                     )}
                   </div>
                   <div>
-                    <label className="block text-sm font-medium mb-2">JSL Script</label>
+                    <label className="block text-sm font-medium mb-2">{t('projects.jslFile')}</label>
                     <input
                       type="file"
                       accept=".jsl"
@@ -431,7 +437,7 @@ export default function ProjectPage() {
                   className="w-full"
                 >
                   {startRunMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                  Start Analysis
+                  {startRunMutation.isPending ? t('projects.starting') : t('projects.startRun')}
                 </Button>
               </CardContent>
             </Card>
@@ -441,14 +447,14 @@ export default function ProjectPage() {
               <CardHeader>
                 <CardTitle className="flex items-center">
                   <BarChart3 className="mr-2 h-5 w-5" />
-                  Analysis History
+                  {t('projects.analysisHistory')}
                 </CardTitle>
               </CardHeader>
               <CardContent>
                 {runsLoading ? (
                   <div className="text-center py-4">
                     <Loader2 className="h-6 w-6 animate-spin mx-auto mb-2" />
-                    <p className="text-gray-600">Loading runs...</p>
+                    <p className="text-gray-600">{t('projects.loadingRuns')}</p>
                   </div>
                 ) : runs && runs.length > 0 ? (
                   <div className="space-y-3">
@@ -542,16 +548,16 @@ export default function ProjectPage() {
             {/* Project Info */}
             <Card>
               <CardHeader>
-                <CardTitle>Project Details</CardTitle>
+                <CardTitle>{t('projects.projectDetails')}</CardTitle>
               </CardHeader>
               <CardContent className="space-y-3">
                 <div>
-                  <p className="text-sm font-medium text-gray-600">Owner</p>
-                  <p className="text-sm">{project?.owner?.email || 'Unknown'}</p>
+                  <p className="text-sm font-medium text-gray-600">{t('projects.owner')}</p>
+                  <p className="text-sm">{project?.owner?.email || t('projects.unknown')}</p>
                 </div>
                 <div>
-                  <p className="text-sm font-medium text-gray-600">Created</p>
-                  <p className="text-sm">{project?.created_at ? new Date(project.created_at).toLocaleDateString() : 'Unknown'}</p>
+                  <p className="text-sm font-medium text-gray-600">{t('projects.created')}</p>
+                  <p className="text-sm">{project?.created_at ? new Date(project.created_at).toLocaleDateString() : t('projects.unknown')}</p>
                 </div>
                 <div>
                   <p className="text-sm font-medium text-gray-600">Visibility</p>
@@ -575,7 +581,7 @@ export default function ProjectPage() {
             {/* Quick Stats */}
             <Card>
               <CardHeader>
-                <CardTitle>Quick Stats</CardTitle>
+                <CardTitle>{t('projects.quickStats')}</CardTitle>
               </CardHeader>
               <CardContent className="space-y-3">
                 <div className="flex justify-between">
@@ -601,7 +607,7 @@ export default function ProjectPage() {
                 <CardHeader>
                   <CardTitle className="flex items-center">
                     <Globe className="mr-2 h-4 w-4 text-green-600" />
-                    Public Sharing
+                    {t('projects.publicSharing')}
                   </CardTitle>
                   <CardDescription>
                     This project is publicly accessible via URL

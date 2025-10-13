@@ -27,6 +27,8 @@ import {
 import { useAuth } from '@/lib/auth'
 import { projectApi, runApi } from '@/lib/api'
 import { useQuery, useMutation } from '@tanstack/react-query'
+import { useLanguage } from '@/lib/language'
+import { LanguageSelector } from '@/components/LanguageSelector'
 import toast from 'react-hot-toast'
 
 interface Project {
@@ -56,6 +58,7 @@ interface Run {
 export default function DashboardPage() {
   const router = useRouter()
   const { user, logout } = useAuth()
+  const { t } = useLanguage()
   const [showCreateProject, setShowCreateProject] = useState(false)
   const [newProjectName, setNewProjectName] = useState('')
   const [newProjectDescription, setNewProjectDescription] = useState('')
@@ -166,15 +169,16 @@ export default function DashboardPage() {
           <div className="flex justify-between items-center h-16">
             <div className="flex items-center">
               <BarChart3 className="h-8 w-8 text-blue-600 mr-3" />
-              <h1 className="text-xl font-semibold text-gray-900">Data Analysis Platform</h1>
+              <h1 className="text-xl font-semibold text-gray-900">{t('dashboard.title')}</h1>
             </div>
             <div className="flex items-center space-x-4">
               <div className="flex items-center space-x-2">
                 <User className="h-4 w-4 text-gray-500" />
                 <span className="text-sm text-gray-700">
-                  {user.is_guest ? 'Guest User' : user.email}
+                  {user.is_guest ? t('auth.guest') : user.email}
                 </span>
               </div>
+              <LanguageSelector />
               {!user.is_guest && (
                 <Button 
                   variant="outline" 
@@ -182,12 +186,12 @@ export default function DashboardPage() {
                   onClick={() => router.push('/profile')}
                 >
                   <Settings className="h-4 w-4 mr-2" />
-                  Profile
+                  {t('nav.profile')}
                 </Button>
               )}
               <Button variant="outline" size="sm" onClick={logout}>
                 <LogOut className="h-4 w-4 mr-2" />
-                Logout
+                {t('nav.logout')}
               </Button>
             </div>
           </div>
@@ -198,10 +202,10 @@ export default function DashboardPage() {
         {/* Welcome Section */}
         <div className="mb-8">
           <h2 className="text-2xl font-bold text-gray-900 mb-2">
-            Welcome back{user.is_guest ? ' (Guest)' : ''}!
+            {user.is_guest ? t('auth.guestWelcome') : t('auth.welcome')}!
           </h2>
           <p className="text-gray-600">
-            Manage your projects and view your analysis results.
+            {t('dashboard.welcomeMessage')}
           </p>
         </div>
 
@@ -209,7 +213,7 @@ export default function DashboardPage() {
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Total Projects</CardTitle>
+              <CardTitle className="text-sm font-medium">{t('dashboard.stats.totalProjects')}</CardTitle>
               <FileText className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
@@ -219,7 +223,7 @@ export default function DashboardPage() {
           
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Total Runs</CardTitle>
+              <CardTitle className="text-sm font-medium">{t('dashboard.stats.totalRuns')}</CardTitle>
               <BarChart3 className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
@@ -231,7 +235,7 @@ export default function DashboardPage() {
           
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Active Runs</CardTitle>
+              <CardTitle className="text-sm font-medium">{t('dashboard.stats.activeRuns')}</CardTitle>
               <Clock className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
@@ -245,10 +249,10 @@ export default function DashboardPage() {
         {/* Projects Section */}
         <div className="mb-8">
           <div className="flex justify-between items-center mb-6">
-            <h3 className="text-lg font-semibold text-gray-900">Your Projects</h3>
+            <h3 className="text-lg font-semibold text-gray-900">{t('dashboard.projects.title')}</h3>
             <Button onClick={() => setShowCreateProject(true)}>
               <Plus className="h-4 w-4 mr-2" />
-              New Project
+              {t('dashboard.projects.newProject')}
             </Button>
           </div>
 
@@ -268,7 +272,7 @@ export default function DashboardPage() {
                       id="project-name"
                       value={newProjectName}
                       onChange={(e) => setNewProjectName(e.target.value)}
-                      placeholder="Enter project name"
+                      placeholder={t('dashboard.enterProjectName')}
                       required
                     />
                   </div>
@@ -278,7 +282,7 @@ export default function DashboardPage() {
                       id="project-description"
                       value={newProjectDescription}
                       onChange={(e) => setNewProjectDescription(e.target.value)}
-                      placeholder="Enter project description"
+                      placeholder={t('dashboard.enterProjectDescription')}
                     />
                   </div>
                   <div className="flex items-center space-x-2">

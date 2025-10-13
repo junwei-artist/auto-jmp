@@ -25,6 +25,7 @@ import {
 import { useAuth } from '@/lib/auth'
 import { profileApi } from '@/lib/api'
 import { useMutation, useQuery } from '@tanstack/react-query'
+import { useLanguage } from '@/lib/language'
 import toast from 'react-hot-toast'
 
 interface ProfileData {
@@ -39,6 +40,7 @@ interface ProfileData {
 export default function ProfilePage() {
   const router = useRouter()
   const { user, logout } = useAuth()
+  const { t } = useLanguage()
   const [showCurrentPassword, setShowCurrentPassword] = useState(false)
   const [showNewPassword, setShowNewPassword] = useState(false)
   const [showConfirmPassword, setShowConfirmPassword] = useState(false)
@@ -58,12 +60,12 @@ export default function ProfilePage() {
   const updateEmailMutation = useMutation({
     mutationFn: profileApi.updateProfile,
     onSuccess: (data) => {
-      toast.success(data.message)
+      toast.success(t('messages.profileUpdated'))
       setEmail(data.user.email)
       refetch()
     },
     onError: (error: any) => {
-      toast.error(error.message || 'Failed to update email')
+      toast.error(error.message || t('common.error'))
     }
   })
 
@@ -71,13 +73,13 @@ export default function ProfilePage() {
   const changePasswordMutation = useMutation({
     mutationFn: profileApi.changePassword,
     onSuccess: (data) => {
-      toast.success(data.message)
+      toast.success(t('messages.passwordChanged'))
       setCurrentPassword('')
       setNewPassword('')
       setConfirmPassword('')
     },
     onError: (error: any) => {
-      toast.error(error.message || 'Failed to change password')
+      toast.error(error.message || t('common.error'))
     }
   })
 
@@ -85,12 +87,12 @@ export default function ProfilePage() {
   const deleteAccountMutation = useMutation({
     mutationFn: profileApi.deleteAccount,
     onSuccess: () => {
-      toast.success('Account deleted successfully')
+      toast.success(t('messages.accountDeleted'))
       logout()
       router.push('/')
     },
     onError: (error: any) => {
-      toast.error(error.message || 'Failed to delete account')
+      toast.error(error.message || t('common.error'))
     }
   })
 
@@ -103,12 +105,12 @@ export default function ProfilePage() {
 
   const handleUpdateEmail = () => {
     if (!email.trim()) {
-      toast.error('Email is required')
+      toast.error(t('messages.emailRequired'))
       return
     }
     
     if (email === profileData?.email) {
-      toast.error('Email is the same as current email')
+      toast.error(t('messages.emailSame'))
       return
     }
 
@@ -117,17 +119,17 @@ export default function ProfilePage() {
 
   const handleChangePassword = () => {
     if (!currentPassword || !newPassword || !confirmPassword) {
-      toast.error('All password fields are required')
+      toast.error(t('messages.passwordRequired'))
       return
     }
 
     if (newPassword !== confirmPassword) {
-      toast.error('New passwords do not match')
+      toast.error(t('messages.passwordMismatch'))
       return
     }
 
     if (newPassword.length < 8) {
-      toast.error('New password must be at least 8 characters long')
+      toast.error(t('messages.passwordTooShort'))
       return
     }
 
@@ -138,7 +140,7 @@ export default function ProfilePage() {
   }
 
   const handleDeleteAccount = () => {
-    if (window.confirm('Are you sure you want to delete your account? This action cannot be undone.')) {
+    if (window.confirm(t('profile.danger.deleteWarning'))) {
       deleteAccountMutation.mutate()
     }
   }
@@ -150,9 +152,9 @@ export default function ProfilePage() {
         <Card className="w-full max-w-md">
           <CardHeader className="text-center">
             <AlertTriangle className="h-12 w-12 text-yellow-500 mx-auto mb-4" />
-            <CardTitle>Profile Settings Not Available</CardTitle>
+            <CardTitle>{t('profile.notAvailable')}</CardTitle>
             <CardDescription>
-              Guest users cannot access profile settings. Please create an account to manage your profile.
+              {t('profile.guestMessage')}
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -160,7 +162,7 @@ export default function ProfilePage() {
               onClick={() => router.push('/')} 
               className="w-full"
             >
-              Go to Home
+              {t('profile.goHome')}
             </Button>
           </CardContent>
         </Card>
@@ -180,23 +182,23 @@ export default function ProfilePage() {
     <div className="min-h-screen bg-gray-50 p-4">
       <div className="max-w-4xl mx-auto">
         <div className="mb-8">
-          <h1 className="text-3xl font-bold text-gray-900">Profile Settings</h1>
-          <p className="text-gray-600 mt-2">Manage your account settings and preferences</p>
+          <h1 className="text-3xl font-bold text-gray-900">{t('profile.title')}</h1>
+          <p className="text-gray-600 mt-2">{t('profile.subtitle')}</p>
         </div>
 
         <Tabs defaultValue="profile" className="space-y-6">
           <TabsList className="grid w-full grid-cols-3">
             <TabsTrigger value="profile" className="flex items-center gap-2">
               <User className="h-4 w-4" />
-              Profile
+              {t('profile.tabs.profile')}
             </TabsTrigger>
             <TabsTrigger value="security" className="flex items-center gap-2">
               <Lock className="h-4 w-4" />
-              Security
+              {t('profile.tabs.security')}
             </TabsTrigger>
             <TabsTrigger value="danger" className="flex items-center gap-2">
               <Trash2 className="h-4 w-4" />
-              Danger Zone
+              {t('profile.tabs.danger')}
             </TabsTrigger>
           </TabsList>
 
@@ -206,39 +208,39 @@ export default function ProfilePage() {
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                   <User className="h-5 w-5" />
-                  Profile Information
+                  {t('profile.info.title')}
                 </CardTitle>
                 <CardDescription>
-                  Update your profile information and account details
+                  {t('profile.info.subtitle')}
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-6">
                 {/* Account Info Display */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div className="space-y-2">
-                    <Label className="text-sm font-medium text-gray-500">Account ID</Label>
+                    <Label className="text-sm font-medium text-gray-500">{t('profile.info.accountId')}</Label>
                     <div className="p-3 bg-gray-50 rounded-md font-mono text-sm">
                       {profileData?.id}
                     </div>
                   </div>
                   <div className="space-y-2">
-                    <Label className="text-sm font-medium text-gray-500">Account Type</Label>
+                    <Label className="text-sm font-medium text-gray-500">{t('profile.info.accountType')}</Label>
                     <div className="flex items-center gap-2 p-3 bg-gray-50 rounded-md">
                       {profileData?.is_admin ? (
                         <>
                           <Shield className="h-4 w-4 text-red-500" />
-                          <span className="text-sm font-medium">Administrator</span>
+                          <span className="text-sm font-medium">{t('profile.info.administrator')}</span>
                         </>
                       ) : (
                         <>
                           <User className="h-4 w-4 text-blue-500" />
-                          <span className="text-sm font-medium">Regular User</span>
+                          <span className="text-sm font-medium">{t('profile.info.regularUser')}</span>
                         </>
                       )}
                     </div>
                   </div>
                   <div className="space-y-2">
-                    <Label className="text-sm font-medium text-gray-500">Member Since</Label>
+                    <Label className="text-sm font-medium text-gray-500">{t('profile.info.memberSince')}</Label>
                     <div className="flex items-center gap-2 p-3 bg-gray-50 rounded-md">
                       <Calendar className="h-4 w-4 text-gray-400" />
                       <span className="text-sm">
@@ -247,7 +249,7 @@ export default function ProfilePage() {
                     </div>
                   </div>
                   <div className="space-y-2">
-                    <Label className="text-sm font-medium text-gray-500">Last Login</Label>
+                    <Label className="text-sm font-medium text-gray-500">{t('profile.info.lastLogin')}</Label>
                     <div className="flex items-center gap-2 p-3 bg-gray-50 rounded-md">
                       <Calendar className="h-4 w-4 text-gray-400" />
                       <span className="text-sm">
@@ -262,7 +264,7 @@ export default function ProfilePage() {
                   <div className="space-y-2">
                     <Label htmlFor="email" className="flex items-center gap-2">
                       <Mail className="h-4 w-4" />
-                      Email Address
+                      {t('profile.info.emailAddress')}
                     </Label>
                     <Input
                       id="email"
@@ -280,12 +282,12 @@ export default function ProfilePage() {
                     {updateEmailMutation.isPending ? (
                       <>
                         <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                        Updating...
+                        {t('profile.info.updating')}
                       </>
                     ) : (
                       <>
                         <Save className="h-4 w-4 mr-2" />
-                        Update Email
+                        {t('profile.info.updateEmail')}
                       </>
                     )}
                   </Button>
@@ -300,16 +302,16 @@ export default function ProfilePage() {
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                   <Lock className="h-5 w-5" />
-                  Change Password
+                  {t('profile.security.title')}
                 </CardTitle>
                 <CardDescription>
-                  Update your password to keep your account secure
+                  {t('profile.security.subtitle')}
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-6">
                 <div className="space-y-4">
                   <div className="space-y-2">
-                    <Label htmlFor="current-password">Current Password</Label>
+                    <Label htmlFor="current-password">{t('profile.security.currentPassword')}</Label>
                     <div className="relative">
                       <Input
                         id="current-password"
@@ -335,7 +337,7 @@ export default function ProfilePage() {
                   </div>
 
                   <div className="space-y-2">
-                    <Label htmlFor="new-password">New Password</Label>
+                    <Label htmlFor="new-password">{t('profile.security.newPassword')}</Label>
                     <div className="relative">
                       <Input
                         id="new-password"
@@ -361,7 +363,7 @@ export default function ProfilePage() {
                   </div>
 
                   <div className="space-y-2">
-                    <Label htmlFor="confirm-password">Confirm New Password</Label>
+                    <Label htmlFor="confirm-password">{t('profile.security.confirmPassword')}</Label>
                     <div className="relative">
                       <Input
                         id="confirm-password"
@@ -394,12 +396,12 @@ export default function ProfilePage() {
                     {changePasswordMutation.isPending ? (
                       <>
                         <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                        Changing Password...
+                        {t('profile.security.changingPassword')}
                       </>
                     ) : (
                       <>
                         <Lock className="h-4 w-4 mr-2" />
-                        Change Password
+                        {t('profile.security.changePassword')}
                       </>
                     )}
                   </Button>
@@ -409,10 +411,10 @@ export default function ProfilePage() {
                 <Alert>
                   <AlertTriangle className="h-4 w-4" />
                   <AlertDescription>
-                    <strong>Password Requirements:</strong>
+                    <strong>{t('profile.security.requirements')}</strong>
                     <ul className="mt-2 list-disc list-inside space-y-1">
-                      <li>At least 8 characters long</li>
-                      <li>Must be different from your current password</li>
+                      <li>{t('profile.security.requirements.minLength')}</li>
+                      <li>{t('profile.security.requirements.different')}</li>
                     </ul>
                   </AlertDescription>
                 </Alert>
@@ -426,17 +428,17 @@ export default function ProfilePage() {
               <CardHeader>
                 <CardTitle className="flex items-center gap-2 text-red-600">
                   <Trash2 className="h-5 w-5" />
-                  Danger Zone
+                  {t('profile.danger.title')}
                 </CardTitle>
                 <CardDescription>
-                  Irreversible and destructive actions
+                  {t('profile.danger.subtitle')}
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-6">
                 <div className="p-4 bg-red-50 border border-red-200 rounded-md">
-                  <h3 className="font-medium text-red-800 mb-2">Delete Account</h3>
+                  <h3 className="font-medium text-red-800 mb-2">{t('profile.danger.deleteAccount')}</h3>
                   <p className="text-sm text-red-700 mb-4">
-                    Once you delete your account, there is no going back. This will permanently delete your account and remove all your data from our servers.
+                    {t('profile.danger.deleteWarning')}
                   </p>
                   <Button 
                     variant="destructive"
@@ -447,12 +449,12 @@ export default function ProfilePage() {
                     {deleteAccountMutation.isPending ? (
                       <>
                         <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                        Deleting Account...
+                        {t('profile.danger.deletingAccount')}
                       </>
                     ) : (
                       <>
                         <Trash2 className="h-4 w-4 mr-2" />
-                        Delete Account
+                        {t('profile.danger.deleteAccount')}
                       </>
                     )}
                   </Button>

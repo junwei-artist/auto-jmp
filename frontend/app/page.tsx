@@ -12,11 +12,14 @@ import { Loader2, Upload, FileText, BarChart3, Users, Share2 } from 'lucide-reac
 import { useAuth } from '@/lib/auth'
 import { authApi } from '@/lib/api'
 import { useMutation } from '@tanstack/react-query'
+import { useLanguage } from '@/lib/language'
+import { LanguageSelector } from '@/components/LanguageSelector'
 import toast from 'react-hot-toast'
 
 export default function HomePage() {
   const router = useRouter()
   const { user, login, register, createGuestSession } = useAuth()
+  const { t } = useLanguage()
   const [isLoading, setIsLoading] = useState(false)
   const [setupStatus, setSetupStatus] = useState<{is_setup: boolean} | null>(null)
 
@@ -135,14 +138,16 @@ export default function HomePage() {
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100">
       <div className="container mx-auto px-4 py-8">
         {/* Header */}
+        <div className="flex justify-end mb-4">
+          <LanguageSelector />
+        </div>
         <div className="text-center mb-12">
           <div className="flex items-center justify-center mb-6">
             <BarChart3 className="h-12 w-12 text-blue-600 mr-4" />
-            <h1 className="text-4xl font-bold text-gray-900">Data Analysis Platform</h1>
+            <h1 className="text-4xl font-bold text-gray-900">{t('landing.title')}</h1>
           </div>
           <p className="text-xl text-gray-600 max-w-2xl mx-auto">
-            Upload your CSV and JSL files to generate beautiful boxplot visualizations with JMP.
-            Real-time processing, interactive galleries, and seamless sharing.
+            {t('landing.subtitle')}
           </p>
         </div>
 
@@ -151,9 +156,9 @@ export default function HomePage() {
           <Card>
             <CardHeader>
               <Upload className="h-8 w-8 text-blue-600 mb-2" />
-              <CardTitle>Easy Upload</CardTitle>
+              <CardTitle>{t('landing.features.easyUpload.title')}</CardTitle>
               <CardDescription>
-                Drag and drop your CSV and JSL files for instant analysis
+                {t('landing.features.easyUpload.description')}
               </CardDescription>
             </CardHeader>
           </Card>
@@ -161,9 +166,9 @@ export default function HomePage() {
           <Card>
             <CardHeader>
               <BarChart3 className="h-8 w-8 text-green-600 mb-2" />
-              <CardTitle>Real-time Processing</CardTitle>
+              <CardTitle>{t('landing.features.realTime.title')}</CardTitle>
               <CardDescription>
-                Watch your analysis progress in real-time with live updates
+                {t('landing.features.realTime.description')}
               </CardDescription>
             </CardHeader>
           </Card>
@@ -171,9 +176,9 @@ export default function HomePage() {
           <Card>
             <CardHeader>
               <Share2 className="h-8 w-8 text-purple-600 mb-2" />
-              <CardTitle>Share & Collaborate</CardTitle>
+              <CardTitle>{t('landing.features.share.title')}</CardTitle>
               <CardDescription>
-                Share your results with team members or create public links
+                {t('landing.features.share.description')}
               </CardDescription>
             </CardHeader>
           </Card>
@@ -183,23 +188,23 @@ export default function HomePage() {
         <div className="max-w-md mx-auto">
           <Tabs defaultValue="login" className="w-full">
             <TabsList className="grid w-full grid-cols-3">
-              <TabsTrigger value="login">Login</TabsTrigger>
-              <TabsTrigger value="register">Register</TabsTrigger>
-              <TabsTrigger value="guest">Guest</TabsTrigger>
+              <TabsTrigger value="login">{t('auth.login')}</TabsTrigger>
+              <TabsTrigger value="register">{t('auth.register')}</TabsTrigger>
+              <TabsTrigger value="guest">{t('auth.guest')}</TabsTrigger>
             </TabsList>
             
             <TabsContent value="login">
               <Card>
                 <CardHeader>
-                  <CardTitle>Welcome Back</CardTitle>
+                  <CardTitle>{t('auth.loginTitle')}</CardTitle>
                   <CardDescription>
-                    Sign in to your account to continue
+                    {t('auth.loginSubtitle')}
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
                   <form onSubmit={handleLogin} className="space-y-4">
                     <div className="space-y-2">
-                      <Label htmlFor="email">Email</Label>
+                      <Label htmlFor="email">{t('auth.email')}</Label>
                       <Input
                         id="email"
                         name="email"
@@ -209,7 +214,7 @@ export default function HomePage() {
                       />
                     </div>
                     <div className="space-y-2">
-                      <Label htmlFor="password">Password</Label>
+                      <Label htmlFor="password">{t('auth.password')}</Label>
                       <Input
                         id="password"
                         name="password"
@@ -223,7 +228,7 @@ export default function HomePage() {
                       disabled={loginMutation.isPending}
                     >
                       {loginMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                      Sign In
+                      {loginMutation.isPending ? t('auth.signingIn') : t('auth.login')}
                     </Button>
                   </form>
                 </CardContent>
@@ -233,15 +238,15 @@ export default function HomePage() {
             <TabsContent value="register">
               <Card>
                 <CardHeader>
-                  <CardTitle>Create Account</CardTitle>
+                  <CardTitle>{t('auth.registerTitle')}</CardTitle>
                   <CardDescription>
-                    Sign up for a new account to get started
+                    {t('auth.registerSubtitle')}
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
                   <form onSubmit={handleRegister} className="space-y-4">
                     <div className="space-y-2">
-                      <Label htmlFor="email">Email</Label>
+                      <Label htmlFor="email">{t('auth.email')}</Label>
                       <Input
                         id="email"
                         name="email"
@@ -251,7 +256,7 @@ export default function HomePage() {
                       />
                     </div>
                     <div className="space-y-2">
-                      <Label htmlFor="password">Password</Label>
+                      <Label htmlFor="password">{t('auth.password')}</Label>
                       <Input
                         id="password"
                         name="password"
@@ -265,7 +270,7 @@ export default function HomePage() {
                       disabled={registerMutation.isPending}
                     >
                       {registerMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                      Create Account
+                      {registerMutation.isPending ? t('auth.creatingAccount') : t('auth.register')}
                     </Button>
                   </form>
                 </CardContent>
@@ -275,16 +280,15 @@ export default function HomePage() {
             <TabsContent value="guest">
               <Card>
                 <CardHeader>
-                  <CardTitle>Try as Guest</CardTitle>
+                  <CardTitle>{t('auth.tryAsGuest')}</CardTitle>
                   <CardDescription>
-                    Experience the platform without creating an account
+                    {t('auth.guestDescription')}
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
                   <Alert className="mb-4">
                     <AlertDescription>
-                      Guest access has limited features and file size restrictions.
-                      Create an account for full access.
+                      {t('auth.guestWarning')}
                     </AlertDescription>
                   </Alert>
                   <Button 
@@ -294,7 +298,7 @@ export default function HomePage() {
                     disabled={guestMutation.isPending}
                   >
                     {guestMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                    Continue as Guest
+                    {guestMutation.isPending ? t('auth.creatingGuest') : t('auth.guest')}
                   </Button>
                 </CardContent>
               </Card>
