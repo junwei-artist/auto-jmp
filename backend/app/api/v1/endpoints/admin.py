@@ -7,7 +7,7 @@ import uuid
 
 from app.core.database import get_db
 from app.core.auth import get_current_user
-from app.models import AppUser, Project, Run, Artifact, AuditLog, ProjectMember
+from app.models import AppUser, Project, Run, Artifact, AuditLog, ProjectMember, AppSetting
 
 router = APIRouter()
 
@@ -285,3 +285,79 @@ async def get_audit_logs(
         }
         for log in logs
     ]
+
+# Queue Mode Settings
+class QueueModeSetting(BaseModel):
+    queue_mode: bool  # True = single task queue, False = parallel tasks
+
+class QueueModeResponse(BaseModel):
+    queue_mode: bool
+    message: str
+
+@router.get("/queue-mode", response_model=QueueModeResponse)
+async def get_queue_mode(
+    db: AsyncSession = Depends(get_db),
+    admin_user: AppUser = Depends(require_admin)
+):
+    """Get current queue mode setting."""
+    result = await db.execute(
+        select(AppSetting).where(AppSetting.k == "queue_mode")
+    )
+    setting = result.scalar_one_or_none()
+    
+    # Default to parallel mode (False) if not set
+    queue_mode = False
+    if setting:
+        try:
+            import json
+            queue_mode = json.loads(setting.v)
+        except:
+            queue_mode = False
+    
+    return QueueModeResponse(
+        queue_mode=queue_mode,
+        message="Queue mode retrieved successfully"
+    )
+
+@router.post("/queue-mode", response_model=QueueModeResponse)
+async def update_queue_mode(
+    setting: QueueModeSetting,
+    db: AsyncSession = Depends(get_db),
+    admin_user: AppUser = Depends(require_admin)
+):
+    """Update queue mode setting."""
+    import json
+    
+    # Check if setting exists
+    result = await db.execute(
+        select(AppSetting).where(AppSetting.k == "queue_mode")
+    )
+    existing_setting = result.scalar_one_or_none()
+    
+    if existing_setting:
+        # Update existing setting
+        existing_setting.v = json.dumps(setting.queue_mode)
+    else:
+        # Create new setting
+        new_setting = AppSetting(
+            k="queue_mode",
+            v=json.dumps(setting.queue_mode)
+        )
+        db.add(new_setting)
+    
+    await db.commit()
+    
+    # Log the action
+    audit_log = AuditLog(
+        user_id=admin_user.id,
+        action="update_queue_mode",
+        target="system_settings",
+        meta=f'{{"queue_mode": {setting.queue_mode}}}'
+    )
+    db.add(audit_log)
+    await db.commit()
+    
+    return QueueModeResponse(
+        queue_mode=setting.queue_mode,
+        message=f"Queue mode {'enabled' if setting.queue_mode else 'disabled'} successfully"
+    )

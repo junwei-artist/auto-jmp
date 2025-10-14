@@ -17,6 +17,8 @@ export default function AdminSettingsPage() {
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [isAuthenticated, setIsAuthenticated] = useState(false)
+  const [queueMode, setQueueMode] = useState(false)
+  const [isUpdatingQueueMode, setIsUpdatingQueueMode] = useState(false)
 
   useEffect(() => {
     const checkAuth = async () => {
@@ -37,7 +39,7 @@ export default function AdminSettingsPage() {
           const userData = await response.json()
           if (userData.is_admin) {
             setIsAuthenticated(true)
-            await fetchAuditLogs()
+            await Promise.all([fetchAuditLogs(), fetchQueueMode()])
           } else {
             router.push('/admin')
           }
@@ -69,6 +71,52 @@ export default function AdminSettingsPage() {
       }
     } catch (error) {
       console.error('Failed to fetch audit logs:', error)
+    }
+  }
+
+  const fetchQueueMode = async () => {
+    try {
+      const token = localStorage.getItem('auth_token')
+      const response = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/v1/admin/queue-mode`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
+      })
+
+      if (response.ok) {
+        const data = await response.json()
+        setQueueMode(data.queue_mode)
+      }
+    } catch (error) {
+      console.error('Failed to fetch queue mode:', error)
+    }
+  }
+
+  const updateQueueMode = async (newQueueMode: boolean) => {
+    setIsUpdatingQueueMode(true)
+    try {
+      const token = localStorage.getItem('auth_token')
+      const response = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/v1/admin/queue-mode`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ queue_mode: newQueueMode }),
+      })
+
+      if (response.ok) {
+        const data = await response.json()
+        setQueueMode(data.queue_mode)
+        // Refresh audit logs to show the setting change
+        await fetchAuditLogs()
+      } else {
+        console.error('Failed to update queue mode')
+      }
+    } catch (error) {
+      console.error('Failed to update queue mode:', error)
+    } finally {
+      setIsUpdatingQueueMode(false)
     }
   }
 
@@ -156,6 +204,63 @@ export default function AdminSettingsPage() {
                   <div>Environment: Development</div>
                   <div>Version: 1.0.0</div>
                   <div>Last Updated: {new Date().toLocaleDateString()}</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Queue Mode Settings */}
+        <div className="bg-white shadow rounded-lg mb-8">
+          <div className="px-6 py-4 border-b border-gray-200">
+            <h3 className="text-lg font-medium text-gray-900">Task Processing Mode</h3>
+            <p className="text-sm text-gray-600 mt-1">Configure how tasks are processed in the system</p>
+          </div>
+          <div className="px-6 py-4">
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <div className="flex-1">
+                  <h4 className="text-sm font-medium text-gray-900">Queue Mode</h4>
+                  <p className="text-sm text-gray-600 mt-1">
+                    {queueMode 
+                      ? "Tasks are processed one at a time in a queue. New tasks will wait for the current task to complete."
+                      : "Tasks are processed in parallel. Multiple tasks can run simultaneously."
+                    }
+                  </p>
+                </div>
+                <div className="ml-6">
+                  <button
+                    onClick={() => updateQueueMode(!queueMode)}
+                    disabled={isUpdatingQueueMode}
+                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${
+                      queueMode ? 'bg-blue-600' : 'bg-gray-200'
+                    } ${isUpdatingQueueMode ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
+                  >
+                    <span
+                      className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                        queueMode ? 'translate-x-6' : 'translate-x-1'
+                      }`}
+                    />
+                  </button>
+                </div>
+              </div>
+              
+              <div className="bg-gray-50 rounded-lg p-4">
+                <div className="flex items-start">
+                  <div className="flex-shrink-0">
+                    <div className={`w-3 h-3 rounded-full mt-1 ${queueMode ? 'bg-blue-500' : 'bg-green-500'}`}></div>
+                  </div>
+                  <div className="ml-3">
+                    <p className="text-sm font-medium text-gray-900">
+                      {queueMode ? 'Queue Mode Enabled' : 'Parallel Mode Enabled'}
+                    </p>
+                    <p className="text-sm text-gray-600 mt-1">
+                      {queueMode 
+                        ? 'Only one task can run at a time. Other tasks will be queued and processed sequentially.'
+                        : 'Multiple tasks can run simultaneously for faster processing.'
+                      }
+                    </p>
+                  </div>
                 </div>
               </div>
             </div>

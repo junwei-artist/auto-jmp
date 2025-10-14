@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, func
 from pydantic import BaseModel
 from typing import List, Optional
 import uuid
@@ -10,7 +10,7 @@ from app.core.database import get_db
 from app.core.auth import get_current_user, get_current_user_optional
 from app.core.celery import celery_app
 from app.core.websocket import publish_run_update
-from app.models import Project, Run, RunStatus, AppUser, Artifact, ProjectMember
+from app.models import Project, Run, RunStatus, AppUser, Artifact, ProjectMember, AppSetting
 
 router = APIRouter()
 
@@ -166,8 +166,45 @@ async def create_run(
     db.add(jsl_artifact)
     await db.commit()
     
-    # Enqueue Celery task
-    task = celery_app.send_task("run_jmp_boxplot", args=[str(run.id)])
+    # Check queue mode setting
+    queue_mode_result = await db.execute(
+        select(AppSetting).where(AppSetting.k == "queue_mode")
+    )
+    queue_mode_setting = queue_mode_result.scalar_one_or_none()
+    
+    # Default to parallel mode (False) if not set
+    queue_mode = False
+    if queue_mode_setting:
+        try:
+            import json
+            queue_mode = json.loads(queue_mode_setting.v)
+        except:
+            queue_mode = False
+    
+    # Check if there are any running tasks when queue mode is enabled
+    if queue_mode:
+        running_tasks_count = await db.scalar(
+            select(func.count(Run.id)).where(Run.status == RunStatus.RUNNING)
+        )
+        
+        if running_tasks_count > 0:
+            # There's already a running task, keep this one queued
+            run.message = "Run queued - waiting for other tasks to complete"
+            await db.commit()
+            
+            # Publish queued status
+            await publish_run_update(str(run.id), {
+                "type": "run_queued",
+                "run_id": str(run.id),
+                "status": "queued",
+                "message": "Run queued - waiting for other tasks to complete"
+            })
+        else:
+            # No running tasks, start this one immediately
+            task = celery_app.send_task("run_jmp_boxplot", args=[str(run.id)])
+    else:
+        # Parallel mode - start immediately
+        task = celery_app.send_task("run_jmp_boxplot", args=[str(run.id)])
     
     # Publish initial status
     await publish_run_update(str(run.id), {

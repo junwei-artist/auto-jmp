@@ -29,6 +29,7 @@ class ProjectResponse(BaseModel):
     name: str
     description: Optional[str]
     owner_id: Optional[str]
+    owner: Optional[dict] = None  # Include owner info
     allow_guest: bool
     is_public: bool
     created_at: datetime
@@ -44,6 +45,22 @@ class ProjectMemberResponse(BaseModel):
     email: Optional[str]
     role: Role
     is_owner: bool
+
+async def get_owner_info(db: AsyncSession, owner_id: Optional[uuid.UUID]) -> Optional[dict]:
+    """Get owner information for a project."""
+    if not owner_id:
+        return None
+    
+    result = await db.execute(select(AppUser).where(AppUser.id == owner_id))
+    owner = result.scalar_one_or_none()
+    
+    if not owner:
+        return None
+    
+    return {
+        "email": owner.email,
+        "id": str(owner.id)
+    }
 
 async def check_project_access(
     db: AsyncSession, 
@@ -109,11 +126,15 @@ async def create_project(
     db.add(member)
     await db.commit()
     
+    # Get owner information
+    owner_info = await get_owner_info(db, project.owner_id)
+    
     return ProjectResponse(
         id=str(project.id),
         name=project.name,
         description=project.description,
         owner_id=str(project.owner_id),
+        owner=owner_info,
         allow_guest=project.allow_guest,
         is_public=project.is_public,
         created_at=project.created_at,
@@ -160,11 +181,15 @@ async def list_projects(
         if hasattr(project, 'is_public') and project.is_public is not None:
             is_public_value = project.is_public
         
+        # Get owner information
+        owner_info = await get_owner_info(db, project.owner_id)
+        
         project_responses.append(ProjectResponse(
             id=str(project.id),
             name=project.name,
             description=project.description,
             owner_id=str(project.owner_id),
+            owner=owner_info,
             allow_guest=project.allow_guest,
             is_public=is_public_value,
             created_at=project.created_at,
@@ -200,11 +225,15 @@ async def get_project(
     if hasattr(project, 'is_public') and project.is_public is not None:
         is_public_value = project.is_public
     
+    # Get owner information
+    owner_info = await get_owner_info(db, project.owner_id)
+    
     return ProjectResponse(
         id=str(project.id),
         name=project.name,
         description=project.description,
         owner_id=str(project.owner_id),
+        owner=owner_info,
         allow_guest=project.allow_guest,
         is_public=is_public_value,
         created_at=project.created_at,
@@ -251,11 +280,15 @@ async def update_project(
     if hasattr(project, 'is_public') and project.is_public is not None:
         is_public_value = project.is_public
     
+    # Get owner information
+    owner_info = await get_owner_info(db, project.owner_id)
+    
     return ProjectResponse(
         id=str(project.id),
         name=project.name,
         description=project.description,
         owner_id=str(project.owner_id),
+        owner=owner_info,
         allow_guest=project.allow_guest,
         is_public=is_public_value,
         created_at=project.created_at,
@@ -421,11 +454,15 @@ async def get_public_project(
     if hasattr(project, 'is_public') and project.is_public is not None:
         is_public_value = project.is_public
     
+    # Get owner information
+    owner_info = await get_owner_info(db, project.owner_id)
+    
     return ProjectResponse(
         id=str(project.id),
         name=project.name,
         description=project.description,
         owner_id=str(project.owner_id),
+        owner=owner_info,
         allow_guest=project.allow_guest,
         is_public=is_public_value,
         created_at=project.created_at,

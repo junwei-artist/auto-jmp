@@ -32,6 +32,7 @@ from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Union
 import logging
 from datetime import datetime
+from PIL import Image, ImageDraw, ImageFont
 
 # Optional imports for advanced features
 try:
@@ -432,14 +433,19 @@ class JMPRunner:
         """
         start_time = time.time()
         
-        # Wait a bit for JMP to start processing
-        time.sleep(5)
+        # Wait a bit for JMP to start processing (reduced for faster timeout)
+        initial_delay = min(2, self.max_wait_time // 10)  # 2 seconds or 10% of max wait time
+        time.sleep(initial_delay)
         
         last_file_count = 0
         stable_count = 0
-        required_stable_count = 3  # Number of consecutive stable counts needed
+        # Reduce stable count requirement for faster timeout
+        required_stable_count = 2 if self.max_wait_time <= 30 else 3
         
-        logger.info("Monitoring JMP completion...")
+        logger.info(f"Monitoring JMP completion with {self.max_wait_time}s timeout...")
+        
+        # Use shorter sleep intervals for faster timeout
+        sleep_interval = 1 if self.max_wait_time <= 30 else 2
         
         while time.time() - start_time < self.max_wait_time:
             # Check CPU usage of JMP processes
@@ -463,16 +469,92 @@ class JMPRunner:
                 logger.info(f"JMP completed successfully. Generated {current_count} images.")
                 return True, f"Completed successfully. Generated {current_count} images."
             
-            time.sleep(2)
+            # Early failure detection: if no images after reasonable time and no JMP processes
+            elapsed = time.time() - start_time
+            if elapsed > 10 and current_count == 0 and len(jmp_processes) == 0:
+                logger.warning("No JMP processes found and no images generated after 10 seconds")
+                return False, "JMP process not running and no images generated"
+            
+            time.sleep(sleep_interval)
         
         # Timeout
         final_png_files = list(task_dir.glob("*.png"))
         final_count = len(final_png_files)
-        timeout_msg = f"Timeout waiting for JMP completion. Found {final_count} images."
+        timeout_msg = f"Timeout waiting for JMP completion after {self.max_wait_time}s. Found {final_count} images."
         logger.warning(timeout_msg)
         return False, timeout_msg
     
-    
+    def generate_failure_image(self, task_dir: Path, error_message: str = None) -> str:
+        """
+        Generate a 800x600 PNG image with Chinese error message when task fails.
+        
+        Args:
+            task_dir: Task directory to save the failure image
+            error_message: Optional custom error message
+            
+        Returns:
+            Path to the generated failure image
+        """
+        # Default Chinese error message
+        if not error_message:
+            error_message = "运行失败，请检查脚本和数据问题，请尝试本地运行，查看错误代码。"
+        
+        # Create 800x600 image with white background
+        width, height = 800, 600
+        image = Image.new('RGB', (width, height), color='white')
+        draw = ImageDraw.Draw(image)
+        
+        # Try to use a Chinese font, fallback to default if not available
+        try:
+            # Try common Chinese fonts on macOS
+            font_paths = [
+                '/System/Library/Fonts/PingFang.ttc',
+                '/System/Library/Fonts/STHeiti Light.ttc',
+                '/System/Library/Fonts/Helvetica.ttc',
+                '/Library/Fonts/Arial Unicode MS.ttf'
+            ]
+            
+            font = None
+            for font_path in font_paths:
+                if os.path.exists(font_path):
+                    try:
+                        font = ImageFont.truetype(font_path, 24)
+                        break
+                    except:
+                        continue
+            
+            if not font:
+                font = ImageFont.load_default()
+                
+        except:
+            font = ImageFont.load_default()
+        
+        # Calculate text position (center)
+        text_lines = error_message.split('，')
+        line_height = 40
+        total_height = len(text_lines) * line_height
+        start_y = (height - total_height) // 2
+        
+        # Draw each line of text
+        for i, line in enumerate(text_lines):
+            # Get text bounding box
+            bbox = draw.textbbox((0, 0), line, font=font)
+            text_width = bbox[2] - bbox[0]
+            text_x = (width - text_width) // 2
+            text_y = start_y + i * line_height
+            
+            # Draw text in red color
+            draw.text((text_x, text_y), line, fill='red', font=font)
+        
+        # Add a border
+        draw.rectangle([10, 10, width-10, height-10], outline='red', width=3)
+        
+        # Save the image
+        failure_image_path = task_dir / "failure_error.png"
+        image.save(failure_image_path, 'PNG')
+        
+        logger.info(f"Generated failure image: {failure_image_path}")
+        return str(failure_image_path)
     
     def run_csv_jsl(self, 
                    csv_path: Union[str, Path], 
@@ -549,26 +631,41 @@ class JMPRunner:
             # Always close JMP processes
             self.close_jmp_processes()
             
-            # Collect generated images
-            png_files = sorted([p.name for p in task_dir.glob("*.png")])
+            # Process images with OCR workflow
+            processed_images, ocr_results = self._process_images_with_ocr(task_dir)
             
             # Create results dictionary
             result = {
-                "status": "completed" if "✅" in run_status else "failed",
+                "status": "completed" if "✅" in run_status and len(processed_images) > 0 else "failed",
                 "task_id": task_id,
                 "task_dir": str(task_dir),
                 "csv_file": csv_path.name,
                 "jsl_file": jsl_path.name,
                 "run_status": run_status,
-                "images": png_files,
-                "image_count": len(png_files),
+                "images": processed_images,
+                "image_count": len(processed_images),
+                "ocr_results": ocr_results,
                 "created_at": datetime.now().isoformat()
             }
             
-            if "❌" in run_status:
-                result["error"] = run_status
+            # Check for various failure conditions
+            if "❌" in run_status or "Timeout" in run_status or len(processed_images) == 0:
+                result["status"] = "failed"
+                
+                # Generate failure image
+                failure_image_path = self.generate_failure_image(task_dir)
+                processed_images.append(failure_image_path)
+                result["images"] = processed_images
+                result["image_count"] = len(processed_images)
+                
+                if "Timeout" in run_status:
+                    result["error"] = f"JMP processing timed out after {self.max_wait_time} seconds"
+                elif len(processed_images) == 1:  # Only the failure image
+                    result["error"] = "No images were generated by JMP"
+                else:
+                    result["error"] = run_status
             
-            logger.info(f"Task {task_id} completed. Generated {len(png_files)} images.")
+            logger.info(f"Task {task_id} completed. Generated {len(processed_images)} images.")
             return result
             
         except Exception as e:
@@ -578,14 +675,119 @@ class JMPRunner:
             # Always try to close JMP processes
             self.close_jmp_processes()
             
+            # Generate failure image for exception cases
+            try:
+                failure_image_path = self.generate_failure_image(task_dir, error_msg)
+                images = [failure_image_path]
+            except Exception as img_error:
+                logger.error(f"Failed to generate failure image: {img_error}")
+                images = []
+            
             return {
                 "status": "failed",
                 "error": error_msg,
                 "task_id": task_id,
                 "task_dir": str(task_dir),
                 "csv_file": csv_path.name,
-                "jsl_file": jsl_path.name
+                "jsl_file": jsl_path.name,
+                "images": images,
+                "image_count": len(images)
             }
+    
+    def _process_images_with_ocr(self, task_dir: Path) -> Tuple[List[str], Dict]:
+        """
+        Process images with OCR workflow.
+        
+        This method handles the special case where initial.png and final.png
+        are processed through OCR before being saved to the task directory.
+        Other PNG files are handled normally.
+        
+        Args:
+            task_dir: Task directory containing generated images
+            
+        Returns:
+            Tuple of (processed_image_list, ocr_results_dict)
+        """
+        try:
+            # Import OCR processor
+            from app.core.ocr_processor import OCRProcessor
+            
+            ocr_processor = OCRProcessor()
+            ocr_results = {}
+            processed_images = []
+            
+            # Find all PNG files in the task directory
+            all_png_files = list(task_dir.glob("*.png"))
+            logger.info(f"Found {len(all_png_files)} PNG files in task directory")
+            
+            # Separate initial.png and final.png from other images
+            initial_png = None
+            final_png = None
+            other_images = []
+            
+            for png_file in all_png_files:
+                if png_file.name == "initial.png":
+                    initial_png = png_file
+                elif png_file.name == "final.png":
+                    final_png = png_file
+                else:
+                    other_images.append(png_file)
+            
+            # Process initial.png and final.png with OCR
+            if initial_png or final_png:
+                logger.info("Processing initial.png and final.png with OCR workflow")
+                
+                # Move initial.png and final.png to temporary names
+                if initial_png:
+                    temp_initial = task_dir / "initial_temp.png"
+                    initial_png.rename(temp_initial)
+                    logger.info("Moved initial.png to temporary location for OCR processing")
+                
+                if final_png:
+                    temp_final = task_dir / "final_temp.png"
+                    final_png.rename(temp_final)
+                    logger.info("Moved final.png to temporary location for OCR processing")
+                
+                # Process OCR on the temporary files
+                ocr_results = ocr_processor.process_initial_final_images(task_dir)
+                
+                # Save OCR results to task directory
+                ocr_results_path = task_dir / "ocr_results.json"
+                ocr_processor.save_ocr_results(ocr_results, ocr_results_path)
+                
+                # Move images back to task directory only if OCR was successful
+                ocr_processor.move_images_after_ocr(task_dir, ocr_results)
+                
+                # Add processed images to the list
+                if ocr_results.get("initial", {}).get("success", False):
+                    processed_images.append("initial.png")
+                
+                if ocr_results.get("final", {}).get("success", False):
+                    processed_images.append("final.png")
+                
+                logger.info(f"OCR processing completed. Initial: {ocr_results.get('initial', {}).get('success', False)}, Final: {ocr_results.get('final', {}).get('success', False)}")
+            
+            # Add other images to the processed list (these don't need OCR)
+            for img_file in other_images:
+                processed_images.append(img_file.name)
+            
+            # Sort the final list
+            processed_images.sort()
+            
+            logger.info(f"Total processed images: {len(processed_images)}")
+            return processed_images, ocr_results
+            
+        except ImportError:
+            logger.warning("OCR processor not available - processing images normally")
+            # Fallback to normal processing if OCR is not available
+            png_files = sorted([p.name for p in task_dir.glob("*.png")])
+            return png_files, {}
+            
+        except Exception as e:
+            logger.error(f"Error in OCR image processing: {e}")
+            # Fallback to normal processing on error
+            png_files = sorted([p.name for p in task_dir.glob("*.png")])
+            return png_files, {"error": str(e)}
     
     def create_results_zip(self, task_dir: Path, task_id: str) -> Optional[Path]:
         """

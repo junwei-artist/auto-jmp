@@ -36,6 +36,9 @@ interface Project {
   name: string
   description?: string
   owner_id?: string
+  owner?: {
+    email: string
+  }
   allow_guest: boolean
   is_public: boolean
   created_at: string

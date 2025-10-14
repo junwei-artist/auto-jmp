@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Alert, AlertDescription } from '@/components/ui/alert-simple'
+import { Switch } from '@/components/ui/switch'
 import { Loader2, Upload, FileText, BarChart3, Users, Share2, ArrowLeft, Download, Eye, Copy, Globe, Lock, Trash2, Settings } from 'lucide-react'
 import { useAuth } from '@/lib/auth'
 import { projectApi, runApi } from '@/lib/api'
@@ -100,6 +101,11 @@ export default function ProjectPage() {
     }
   }
 
+  // Handle visibility toggle
+  const handleVisibilityToggle = (isPublic: boolean) => {
+    updateProjectMutation.mutate({ is_public: isPublic })
+  }
+
   // Get public project URL
   const getPublicProjectUrl = () => {
     // Use the frontend URL from environment variable
@@ -149,6 +155,19 @@ export default function ProjectPage() {
     onSuccess: () => {
       toast.success('Project deleted successfully!')
       router.push('/dashboard')
+    },
+    onError: (error: Error) => {
+      toast.error(error.message)
+    },
+  })
+
+  // Update project mutation
+  const updateProjectMutation = useMutation({
+    mutationFn: (data: { is_public?: boolean }) => projectApi.updateProject(projectId, data),
+    onSuccess: () => {
+      toast.success('Project updated successfully!')
+      // Refresh project data
+      window.location.reload() // Simple refresh to get updated data
     },
     onError: (error: Error) => {
       toast.error(error.message)
@@ -357,16 +376,6 @@ export default function ProjectPage() {
                   </>
                 )}
               </Badge>
-              {project?.is_public && getPublicProjectUrl() && (
-                <Button 
-                  variant="outline" 
-                  size="sm"
-                  onClick={() => copyToClipboard(getPublicProjectUrl()!)}
-                >
-                  <Copy className="mr-2 h-4 w-4" />
-                  {t('projects.copyPublicLink')}
-                </Button>
-              )}
               <Button 
                 variant="outline" 
                 size="sm"
@@ -561,19 +570,32 @@ export default function ProjectPage() {
                 </div>
                 <div>
                   <p className="text-sm font-medium text-gray-600">Visibility</p>
-                  <div className="flex items-center space-x-2">
-                    {project?.is_public ? (
-                      <>
-                        <Globe className="h-3 w-3 text-green-600" />
-                        <span className="text-sm text-green-600">Public</span>
-                      </>
-                    ) : (
-                      <>
-                        <Lock className="h-3 w-3 text-gray-600" />
-                        <span className="text-sm text-gray-600">Private</span>
-                      </>
-                    )}
+                  <div className="flex items-center justify-between mt-2">
+                    <div className="flex items-center space-x-2">
+                      {project?.is_public ? (
+                        <>
+                          <Globe className="h-3 w-3 text-green-600" />
+                          <span className="text-sm text-green-600">Public</span>
+                        </>
+                      ) : (
+                        <>
+                          <Lock className="h-3 w-3 text-gray-600" />
+                          <span className="text-sm text-gray-600">Private</span>
+                        </>
+                      )}
+                    </div>
+                    <Switch
+                      checked={project?.is_public || false}
+                      onCheckedChange={handleVisibilityToggle}
+                      disabled={updateProjectMutation.isPending}
+                    />
                   </div>
+                  <p className="text-xs text-gray-500 mt-1">
+                    {project?.is_public 
+                      ? 'Anyone with the link can view this project' 
+                      : 'Only you and project members can view this project'
+                    }
+                  </p>
                 </div>
               </CardContent>
             </Card>
