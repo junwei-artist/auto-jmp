@@ -23,7 +23,7 @@ export default function AdminRunsPage() {
 
   useEffect(() => {
     const checkAuth = async () => {
-      const token = localStorage.getItem('auth_token')
+      const token = localStorage.getItem('access_token')
       if (!token) {
         router.push('/admin')
         return
@@ -59,7 +59,7 @@ export default function AdminRunsPage() {
 
   const fetchRuns = async () => {
     try {
-      const token = localStorage.getItem('auth_token')
+      const token = localStorage.getItem('access_token')
       const response = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/v1/admin/runs`, {
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -93,7 +93,7 @@ export default function AdminRunsPage() {
     }
 
     try {
-      const token = localStorage.getItem('auth_token')
+      const token = localStorage.getItem('access_token')
       const response = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/v1/admin/runs/${runId}/cancel`, {
         method: 'POST',
         headers: {

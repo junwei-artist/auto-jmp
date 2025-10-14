@@ -24,6 +24,7 @@ interface Project {
   allow_guest: boolean
   is_public: boolean
   created_at: string
+  plugin_name?: string
   owner?: {
     email: string
   }
@@ -401,55 +402,77 @@ export default function ProjectPage() {
         <div className="grid lg:grid-cols-3 gap-8">
           {/* Main Content */}
           <div className="lg:col-span-2 space-y-6">
-            {/* Upload Section */}
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center">
-                  <Upload className="mr-2 h-5 w-5" />
-                  {t('projects.startAnalysis')}
-                </CardTitle>
-                <CardDescription>
-                  {t('projects.startAnalysisSubtitle')}
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="grid md:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium mb-2">{t('projects.csvFile')}</label>
-                    <input
-                      type="file"
-                      accept=".csv"
-                      onChange={(e) => handleFileChange('csv', e.target.files?.[0] || null)}
-                      className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
-                    />
-                    {csvFile && (
-                      <p className="text-sm text-green-600 mt-1">✓ {csvFile.name}</p>
-                    )}
+            {/* Upload / Plugin Section */}
+            {project?.plugin_name ? (
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center">
+                    <Upload className="mr-2 h-5 w-5" />
+                    Use Plugin Wizard
+                  </CardTitle>
+                  <CardDescription>
+                    This project was created with plugin "{project.plugin_name}". Open the wizard to upload another Excel and run analysis.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <Button 
+                    className="w-full"
+                    onClick={() => router.push(`/plugins/${project.plugin_name}/wizard?projectId=${projectId}&plugin=${project.plugin_name}`)}
+                  >
+                    Open {project.plugin_name} Wizard
+                  </Button>
+                </CardContent>
+              </Card>
+            ) : (
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center">
+                    <Upload className="mr-2 h-5 w-5" />
+                    {t('projects.startAnalysis')}
+                  </CardTitle>
+                  <CardDescription>
+                    {t('projects.startAnalysisSubtitle')}
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="grid md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium mb-2">{t('projects.csvFile')}</label>
+                      <input
+                        type="file"
+                        accept=".csv"
+                        onChange={(e) => handleFileChange('csv', e.target.files?.[0] || null)}
+                        className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
+                      />
+                      {csvFile && (
+                        <p className="text-sm text-green-600 mt-1">✓ {csvFile.name}</p>
+                      )}
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium mb-2">{t('projects.jslFile')}</label>
+                      <input
+                        type="file"
+                        accept=".jsl"
+                        onChange={(e) => handleFileChange('jsl', e.target.files?.[0] || null)}
+                        className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
+                      />
+                      {jslFile && (
+                        <p className="text-sm text-green-600 mt-1">✓ {jslFile.name}</p>
+                      )}
+                    </div>
                   </div>
-                  <div>
-                    <label className="block text-sm font-medium mb-2">{t('projects.jslFile')}</label>
-                    <input
-                      type="file"
-                      accept=".jsl"
-                      onChange={(e) => handleFileChange('jsl', e.target.files?.[0] || null)}
-                      className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
-                    />
-                    {jslFile && (
-                      <p className="text-sm text-green-600 mt-1">✓ {jslFile.name}</p>
-                    )}
-                  </div>
-                </div>
-                
-                <Button 
-                  onClick={() => startRunMutation.mutate()}
-                  disabled={!csvFile || !jslFile || startRunMutation.isPending}
-                  className="w-full"
-                >
-                  {startRunMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                  {startRunMutation.isPending ? t('projects.starting') : t('projects.startRun')}
-                </Button>
-              </CardContent>
-            </Card>
+                  
+                  <Button 
+                    onClick={() => startRunMutation.mutate()}
+                    disabled={!csvFile || !jslFile || startRunMutation.isPending}
+                    className="w-full"
+                  >
+                    {startRunMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                    {startRunMutation.isPending ? t('projects.starting') : t('projects.startRun')}
+                  </Button>
+                </CardContent>
+              </Card>
+            )}
 
             {/* Runs History */}
             <Card>

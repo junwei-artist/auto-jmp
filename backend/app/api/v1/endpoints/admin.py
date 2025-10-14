@@ -8,6 +8,7 @@ import uuid
 from app.core.database import get_db
 from app.core.auth import get_current_user
 from app.models import AppUser, Project, Run, Artifact, AuditLog, ProjectMember, AppSetting
+from app.core.extensions import ExtensionManager
 
 router = APIRouter()
 
@@ -44,6 +45,17 @@ class RunAdminResponse(BaseModel):
     created_at: str
     started_at: Optional[str]
     finished_at: Optional[str]
+
+class ExtensionInfo(BaseModel):
+    name: str
+    version: str
+    description: str
+    supported_formats: List[str]
+    dependencies: List[str]
+    status: str
+
+# Initialize extension manager
+extension_manager = ExtensionManager()
 
 async def require_admin(current_user: AppUser = Depends(get_current_user)):
     """Require admin access."""
@@ -361,3 +373,56 @@ async def update_queue_mode(
         queue_mode=setting.queue_mode,
         message=f"Queue mode {'enabled' if setting.queue_mode else 'disabled'} successfully"
     )
+
+# Extension Management Endpoints
+
+@router.get("/extensions", response_model=List[ExtensionInfo])
+async def get_extensions(
+    current_user: AppUser = Depends(require_admin)
+):
+    """Get all loaded extensions."""
+    extension_info = extension_manager.get_extension_info()
+    return [ExtensionInfo(**info) for info in extension_info]
+
+@router.post("/extensions/{extension_name}/reload")
+async def reload_extension(
+    extension_name: str,
+    current_user: AppUser = Depends(require_admin)
+):
+    """Reload a specific extension."""
+    try:
+        success = extension_manager.load_extension(extension_name)
+        if success:
+            return {"message": f"Extension {extension_name} reloaded successfully"}
+        else:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Failed to reload extension {extension_name}"
+            )
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error reloading extension: {str(e)}"
+        )
+
+@router.get("/extensions/{extension_name}/status")
+async def get_extension_status(
+    extension_name: str,
+    current_user: AppUser = Depends(require_admin)
+):
+    """Get status of a specific extension."""
+    extension = extension_manager.get_extension(extension_name)
+    if extension:
+        return {
+            "name": extension_name,
+            "status": "loaded",
+            "version": extension.version,
+            "description": extension.description
+        }
+    else:
+        return {
+            "name": extension_name,
+            "status": "not_loaded",
+            "version": None,
+            "description": None
+        }

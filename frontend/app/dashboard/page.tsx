@@ -39,6 +39,7 @@ interface Project {
   owner?: {
     email: string
   }
+  plugin_name?: string
   allow_guest: boolean
   is_public: boolean
   created_at: string
@@ -396,6 +397,76 @@ export default function DashboardPage() {
               ))}
             </div>
           )}
+        </div>
+
+        {/* Analysis Plugins */}
+        <div>
+          <h3 className="text-lg font-semibold text-gray-900 mb-6">Analysis Plugins</h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <Card 
+              className="cursor-pointer hover:shadow-md transition-shadow"
+              onClick={() => router.push('/plugins')}
+            >
+              <CardHeader>
+                <CardTitle className="flex items-center space-x-2">
+                  <BarChart3 className="h-5 w-5 text-blue-600" />
+                  <span>Excel Analysis Plugins</span>
+                </CardTitle>
+                <CardDescription>
+                  Convert Excel files to statistical analysis and visualizations
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-2">
+                  <div className="flex items-center space-x-2">
+                    <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+                    <span className="text-sm text-gray-600">Excel2Boxplot V1</span>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+                    <span className="text-sm text-gray-600">Excel2ProcessCapability</span>
+                  </div>
+                </div>
+                <div className="mt-4">
+                  <Button variant="outline" className="w-full">
+                    View All Plugins
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card 
+              className="cursor-pointer hover:shadow-md transition-shadow"
+              onClick={() => router.push('/plugins/excel2boxplotv1')}
+            >
+              <CardHeader>
+                <CardTitle className="flex items-center space-x-2">
+                  <BarChart3 className="h-5 w-5 text-purple-600" />
+                  <span>Quick Boxplot Analysis</span>
+                </CardTitle>
+                <CardDescription>
+                  Upload Excel file and generate boxplot analysis instantly
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-2">
+                  <div className="flex items-center space-x-2">
+                    <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
+                    <span className="text-sm text-gray-600">Single & Grouped Boxplots</span>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
+                    <span className="text-sm text-gray-600">Statistical Insights</span>
+                  </div>
+                </div>
+                <div className="mt-4">
+                  <Button className="w-full">
+                    Start Boxplot Analysis
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
         </div>
 
         {/* Recent Runs */}

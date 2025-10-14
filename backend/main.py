@@ -12,6 +12,10 @@ from app.core.database import engine, Base
 from app.api.v1.api import api_router
 from app.core.websocket import router as websocket_router
 from app.core.exceptions import setup_exception_handlers
+from app.core.extensions import ExtensionManager
+from extensions.excel2boxplotv1.api import router as excel2boxplotv1_router
+from extensions.excel2boxplotv2.api import router as excel2boxplotv2_router
+from extensions.excel2processcapability.api import router as excel2processcapability_router
 
 # Load environment variables
 load_dotenv()
@@ -21,10 +25,18 @@ async def create_tables():
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 
+# Initialize extension manager
+extension_manager = ExtensionManager()
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup
     await create_tables()
+    
+    # Load all extensions
+    loaded_extensions = extension_manager.load_all_extensions()
+    print(f"Loaded {len(loaded_extensions)} extensions: {loaded_extensions}")
+    
     yield
     # Shutdown
     pass
@@ -62,6 +74,11 @@ setup_exception_handlers(app)
 
 # Include API router
 app.include_router(api_router, prefix=settings.API_V1_STR)
+
+# Include extension API routers
+app.include_router(excel2boxplotv1_router, prefix=f"{settings.API_V1_STR}/extensions")
+app.include_router(excel2boxplotv2_router, prefix=f"{settings.API_V1_STR}/extensions")
+app.include_router(excel2processcapability_router, prefix=f"{settings.API_V1_STR}/extensions")
 
 # Include WebSocket router
 app.include_router(websocket_router)

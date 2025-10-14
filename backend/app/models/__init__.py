@@ -42,6 +42,7 @@ class Project(Base):
     name = Column(String, nullable=False)
     description = Column(Text)
     owner_id = Column(UUID(as_uuid=True), ForeignKey("app_user.id"), nullable=True)
+    plugin_name = Column(String, nullable=True)  # Plugin used to create this project
     allow_guest = Column(Boolean, default=True)
     is_public = Column(Boolean, default=False)  # Public projects can be accessed via URL
     created_at = Column(DateTime(timezone=True), server_default=func.now())

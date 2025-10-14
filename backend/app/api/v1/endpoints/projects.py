@@ -17,24 +17,26 @@ class ProjectCreate(BaseModel):
     description: Optional[str] = None
     allow_guest: bool = True
     is_public: bool = False
+    plugin_name: Optional[str] = None
 
 class ProjectUpdate(BaseModel):
     name: Optional[str] = None
     description: Optional[str] = None
     allow_guest: Optional[bool] = None
     is_public: Optional[bool] = None
+    plugin_name: Optional[str] = None
 
 class ProjectResponse(BaseModel):
     id: str
     name: str
     description: Optional[str]
     owner_id: Optional[str]
-    owner: Optional[dict] = None  # Include owner info
     allow_guest: bool
     is_public: bool
     created_at: datetime
     member_count: int
     run_count: int
+    plugin_name: Optional[str] = None
 
 class ProjectMemberAdd(BaseModel):
     email: str
@@ -45,22 +47,6 @@ class ProjectMemberResponse(BaseModel):
     email: Optional[str]
     role: Role
     is_owner: bool
-
-async def get_owner_info(db: AsyncSession, owner_id: Optional[uuid.UUID]) -> Optional[dict]:
-    """Get owner information for a project."""
-    if not owner_id:
-        return None
-    
-    result = await db.execute(select(AppUser).where(AppUser.id == owner_id))
-    owner = result.scalar_one_or_none()
-    
-    if not owner:
-        return None
-    
-    return {
-        "email": owner.email,
-        "id": str(owner.id)
-    }
 
 async def check_project_access(
     db: AsyncSession, 
@@ -110,7 +96,8 @@ async def create_project(
         description=project_data.description,
         owner_id=current_user.id,
         allow_guest=project_data.allow_guest,
-        is_public=getattr(project_data, 'is_public', False)
+        is_public=getattr(project_data, 'is_public', False),
+        plugin_name=getattr(project_data, 'plugin_name', None)
     )
     
     db.add(project)
@@ -126,20 +113,17 @@ async def create_project(
     db.add(member)
     await db.commit()
     
-    # Get owner information
-    owner_info = await get_owner_info(db, project.owner_id)
-    
     return ProjectResponse(
         id=str(project.id),
         name=project.name,
         description=project.description,
         owner_id=str(project.owner_id),
-        owner=owner_info,
         allow_guest=project.allow_guest,
         is_public=project.is_public,
         created_at=project.created_at,
         member_count=1,
-        run_count=0
+        run_count=0,
+        plugin_name=getattr(project, 'plugin_name', None)
     )
 
 @router.get("/", response_model=List[ProjectResponse])
@@ -181,20 +165,17 @@ async def list_projects(
         if hasattr(project, 'is_public') and project.is_public is not None:
             is_public_value = project.is_public
         
-        # Get owner information
-        owner_info = await get_owner_info(db, project.owner_id)
-        
         project_responses.append(ProjectResponse(
             id=str(project.id),
             name=project.name,
             description=project.description,
             owner_id=str(project.owner_id),
-            owner=owner_info,
             allow_guest=project.allow_guest,
             is_public=is_public_value,
             created_at=project.created_at,
             member_count=member_count,
-            run_count=run_count
+            run_count=run_count,
+            plugin_name=getattr(project, 'plugin_name', None)
         ))
     
     return project_responses
@@ -225,20 +206,17 @@ async def get_project(
     if hasattr(project, 'is_public') and project.is_public is not None:
         is_public_value = project.is_public
     
-    # Get owner information
-    owner_info = await get_owner_info(db, project.owner_id)
-    
     return ProjectResponse(
         id=str(project.id),
         name=project.name,
         description=project.description,
         owner_id=str(project.owner_id),
-        owner=owner_info,
         allow_guest=project.allow_guest,
         is_public=is_public_value,
         created_at=project.created_at,
         member_count=member_count,
-        run_count=run_count
+        run_count=run_count,
+        plugin_name=getattr(project, 'plugin_name', None)
     )
 
 @router.patch("/{project_id}", response_model=ProjectResponse)
@@ -280,15 +258,11 @@ async def update_project(
     if hasattr(project, 'is_public') and project.is_public is not None:
         is_public_value = project.is_public
     
-    # Get owner information
-    owner_info = await get_owner_info(db, project.owner_id)
-    
     return ProjectResponse(
         id=str(project.id),
         name=project.name,
         description=project.description,
         owner_id=str(project.owner_id),
-        owner=owner_info,
         allow_guest=project.allow_guest,
         is_public=is_public_value,
         created_at=project.created_at,
@@ -454,15 +428,11 @@ async def get_public_project(
     if hasattr(project, 'is_public') and project.is_public is not None:
         is_public_value = project.is_public
     
-    # Get owner information
-    owner_info = await get_owner_info(db, project.owner_id)
-    
     return ProjectResponse(
         id=str(project.id),
         name=project.name,
         description=project.description,
         owner_id=str(project.owner_id),
-        owner=owner_info,
         allow_guest=project.allow_guest,
         is_public=is_public_value,
         created_at=project.created_at,

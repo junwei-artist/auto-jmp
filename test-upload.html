@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Test Excel Upload</title>
+</head>
+<body>
+    <h1>Test Excel Upload</h1>
+    <input type="file" id="fileInput" accept=".xlsx,.xls,.xlsm">
+    <button onclick="testUpload()">Test Upload</button>
+    <div id="result"></div>
+
+    <script>
+        async function testUpload() {
+            const fileInput = document.getElementById('fileInput');
+            const resultDiv = document.getElementById('result');
+            
+            if (!fileInput.files[0]) {
+                resultDiv.innerHTML = 'Please select a file';
+                return;
+            }
+            
+            const formData = new FormData();
+            formData.append('file', fileInput.files[0]);
+            
+            try {
+                const response = await fetch('http://localhost:4700/api/v1/extensions/excel2boxplotv1/validate', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                const data = await response.json();
+                resultDiv.innerHTML = '<pre>' + JSON.stringify(data, null, 2) + '</pre>';
+            } catch (error) {
+                resultDiv.innerHTML = 'Error: ' + error.message;
+            }
+        }
+    </script>
+</body>
+</html>

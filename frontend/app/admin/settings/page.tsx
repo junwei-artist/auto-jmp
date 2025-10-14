@@ -12,6 +12,15 @@ interface AuditLog {
   created_at: string
 }
 
+interface Extension {
+  name: string
+  version: string
+  description: string
+  supported_formats: string[]
+  dependencies: string[]
+  status: string
+}
+
 export default function AdminSettingsPage() {
   const router = useRouter()
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>([])
@@ -19,10 +28,12 @@ export default function AdminSettingsPage() {
   const [isAuthenticated, setIsAuthenticated] = useState(false)
   const [queueMode, setQueueMode] = useState(false)
   const [isUpdatingQueueMode, setIsUpdatingQueueMode] = useState(false)
+  const [extensions, setExtensions] = useState<Extension[]>([])
+  const [isLoadingExtensions, setIsLoadingExtensions] = useState(false)
 
   useEffect(() => {
     const checkAuth = async () => {
-      const token = localStorage.getItem('auth_token')
+      const token = localStorage.getItem('access_token')
       if (!token) {
         router.push('/admin')
         return
@@ -39,7 +50,7 @@ export default function AdminSettingsPage() {
           const userData = await response.json()
           if (userData.is_admin) {
             setIsAuthenticated(true)
-            await Promise.all([fetchAuditLogs(), fetchQueueMode()])
+            await Promise.all([fetchAuditLogs(), fetchQueueMode(), fetchExtensions()])
           } else {
             router.push('/admin')
           }
@@ -58,7 +69,7 @@ export default function AdminSettingsPage() {
 
   const fetchAuditLogs = async () => {
     try {
-      const token = localStorage.getItem('auth_token')
+      const token = localStorage.getItem('access_token')
       const response = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/v1/admin/audit-logs?limit=50`, {
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -76,7 +87,7 @@ export default function AdminSettingsPage() {
 
   const fetchQueueMode = async () => {
     try {
-      const token = localStorage.getItem('auth_token')
+      const token = localStorage.getItem('access_token')
       const response = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/v1/admin/queue-mode`, {
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -92,10 +103,56 @@ export default function AdminSettingsPage() {
     }
   }
 
+  const fetchExtensions = async () => {
+    setIsLoadingExtensions(true)
+    try {
+      const token = localStorage.getItem('access_token')
+      const response = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/v1/admin/extensions`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
+      })
+
+      if (response.ok) {
+        const data = await response.json()
+        setExtensions(data)
+      } else {
+        console.error('Failed to fetch extensions')
+      }
+    } catch (error) {
+      console.error('Failed to fetch extensions:', error)
+    } finally {
+      setIsLoadingExtensions(false)
+    }
+  }
+
+  const reloadExtension = async (extensionName: string) => {
+    try {
+      const token = localStorage.getItem('access_token')
+      const response = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/v1/admin/extensions/${extensionName}/reload`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
+      })
+
+      if (response.ok) {
+        // Refresh extensions list
+        await fetchExtensions()
+        alert(`Extension ${extensionName} reloaded successfully`)
+      } else {
+        alert(`Failed to reload extension ${extensionName}`)
+      }
+    } catch (error) {
+      console.error('Failed to reload extension:', error)
+      alert(`Failed to reload extension ${extensionName}`)
+    }
+  }
+
   const updateQueueMode = async (newQueueMode: boolean) => {
     setIsUpdatingQueueMode(true)
     try {
-      const token = localStorage.getItem('auth_token')
+      const token = localStorage.getItem('access_token')
       const response = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/v1/admin/queue-mode`, {
         method: 'POST',
         headers: {
@@ -264,6 +321,94 @@ export default function AdminSettingsPage() {
                 </div>
               </div>
             </div>
+          </div>
+        </div>
+
+        {/* Extensions Management */}
+        <div className="bg-white shadow rounded-lg mb-8">
+          <div className="px-6 py-4 border-b border-gray-200">
+            <div className="flex items-center justify-between">
+              <h3 className="text-lg font-medium text-gray-900">Extensions Management</h3>
+              <button
+                onClick={fetchExtensions}
+                disabled={isLoadingExtensions}
+                className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 disabled:opacity-50"
+              >
+                {isLoadingExtensions ? 'Loading...' : 'Refresh'}
+              </button>
+            </div>
+          </div>
+          <div className="px-6 py-4">
+            {isLoadingExtensions ? (
+              <div className="text-center py-8">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto"></div>
+                <p className="text-gray-600 mt-2">Loading extensions...</p>
+              </div>
+            ) : extensions.length === 0 ? (
+              <div className="text-center py-8">
+                <p className="text-gray-500">No extensions found</p>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {extensions.map((extension) => (
+                  <div key={extension.name} className="border border-gray-200 rounded-lg p-4">
+                    <div className="flex items-center justify-between">
+                      <div className="flex-1">
+                        <div className="flex items-center gap-3">
+                          <h4 className="text-lg font-medium text-gray-900">{extension.name}</h4>
+                          <span className="bg-blue-100 text-blue-800 text-xs font-medium px-2.5 py-0.5 rounded">
+                            v{extension.version}
+                          </span>
+                          <span className={`text-xs font-medium px-2.5 py-0.5 rounded ${
+                            extension.status === 'loaded' 
+                              ? 'bg-green-100 text-green-800' 
+                              : 'bg-red-100 text-red-800'
+                          }`}>
+                            {extension.status}
+                          </span>
+                        </div>
+                        <p className="text-sm text-gray-600 mt-1">{extension.description}</p>
+                        
+                        <div className="mt-3 space-y-2">
+                          <div>
+                            <span className="text-xs font-medium text-gray-700">Supported Formats:</span>
+                            <div className="flex flex-wrap gap-1 mt-1">
+                              {extension.supported_formats.map((format) => (
+                                <span key={format} className="bg-gray-100 text-gray-700 text-xs px-2 py-1 rounded">
+                                  {format}
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                          
+                          {extension.dependencies.length > 0 && (
+                            <div>
+                              <span className="text-xs font-medium text-gray-700">Dependencies:</span>
+                              <div className="flex flex-wrap gap-1 mt-1">
+                                {extension.dependencies.map((dep) => (
+                                  <span key={dep} className="bg-yellow-100 text-yellow-700 text-xs px-2 py-1 rounded">
+                                    {dep}
+                                  </span>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                      
+                      <div className="ml-4">
+                        <button
+                          onClick={() => reloadExtension(extension.name)}
+                          className="bg-green-600 text-white px-3 py-1 rounded text-sm hover:bg-green-700"
+                        >
+                          Reload
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
 

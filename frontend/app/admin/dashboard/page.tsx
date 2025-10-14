@@ -17,7 +17,7 @@ export default function AdminDashboard() {
 
   useEffect(() => {
     const checkAuth = async () => {
-      const token = localStorage.getItem('auth_token')
+      const token = localStorage.getItem('access_token')
       if (!token) {
         router.push('/admin')
         return
@@ -54,7 +54,7 @@ export default function AdminDashboard() {
 
   const fetchStats = async () => {
     try {
-      const token = localStorage.getItem('auth_token')
+      const token = localStorage.getItem('access_token')
       const response = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/v1/admin/stats`, {
         headers: {
           'Authorization': `Bearer ${token}`,
