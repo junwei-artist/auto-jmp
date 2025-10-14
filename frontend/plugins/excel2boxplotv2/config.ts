@@ -19,7 +19,7 @@ const plugin: Plugin = {
         path: '/plugins/excel2boxplotv2',
         component: 'AnalysisForm',
         title: 'Excel to CSV/JSL Converter (V2)',
-        description: 'Upload Excel file, validate, and generate CSV + JSL (V2)'
+        description: 'Upload Excel file, validate, and generate CSV + JSL (V2), Excel to CSV/JSL with alternate column naming (Y Variable, DETAIL, Target, USL, LSL, Label; Stage as category)'
       },
       {
         path: '/plugins/excel2boxplotv2/results/[id]',
