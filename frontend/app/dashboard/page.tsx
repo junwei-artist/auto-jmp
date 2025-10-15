@@ -22,7 +22,9 @@ import {
   XCircle,
   AlertCircle,
   Trash2,
-  Loader2
+  Loader2,
+  Crown,
+  UserCheck
 } from 'lucide-react'
 import { 
   ProjectStatsSVG, 
@@ -40,6 +42,7 @@ import { useQuery, useMutation } from '@tanstack/react-query'
 import { useLanguage } from '@/lib/language'
 import { LanguageSelector } from '@/components/LanguageSelector'
 import { NotificationBell } from '@/components/NotificationCenter'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import toast from 'react-hot-toast'
 
 interface Project {
@@ -47,6 +50,8 @@ interface Project {
   name: string
   description?: string
   owner_id?: string
+  owner_email?: string
+  owner_display_name?: string
   owner?: {
     email: string
   }
@@ -92,6 +97,93 @@ export default function DashboardPage() {
     queryFn: () => projectApi.getProjects(),
     enabled: !!user,
   })
+
+  // Helper function to render project cards
+  const renderProjectCards = (projectList: Project[]) => (
+    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+      {projectList.map((project: Project) => (
+        <Card 
+          key={project.id} 
+          className="cursor-pointer hover:shadow-md transition-shadow"
+          onClick={() => router.push(`/projects/${project.id}`)}
+        >
+          <CardHeader>
+            <CardTitle className="flex items-center justify-between">
+              <span>{project.name}</span>
+              <div className="flex items-center space-x-2">
+                {project.is_public && (
+                  <span className="text-xs bg-green-100 text-green-800 px-2 py-1 rounded">
+                    Public
+                  </span>
+                )}
+                {project.owner_id === user?.id && (
+                  <span className="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded flex items-center">
+                    <Crown className="h-3 w-3 mr-1" />
+                    Owner
+                  </span>
+                )}
+                {project.owner_id !== user?.id && (
+                  <span className="text-xs bg-gray-100 text-gray-800 px-2 py-1 rounded flex items-center">
+                    <UserCheck className="h-3 w-3 mr-1" />
+                    Member
+                  </span>
+                )}
+                {project.owner_id === user?.id && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      if (confirm('Are you sure you want to delete this project? This action cannot be undone.')) {
+                        deleteProjectMutation.mutate(project.id)
+                      }
+                    }}
+                    disabled={deleteProjectMutation.isPending}
+                    className="text-red-600 hover:text-red-700 hover:bg-red-50 h-6 w-6 p-0"
+                  >
+                    {deleteProjectMutation.isPending ? (
+                      <Loader2 className="h-3 w-3 animate-spin" />
+                    ) : (
+                      <Trash2 className="h-3 w-3" />
+                    )}
+                  </Button>
+                )}
+              </div>
+            </CardTitle>
+            <CardDescription>
+              {project.description || 'No description'}
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="flex items-center justify-between text-sm text-gray-500">
+              <div className="flex items-center space-x-4">
+                <div className="flex items-center">
+                  <Users className="h-4 w-4 mr-1" />
+                  {project.member_count}
+                </div>
+                <div className="flex items-center">
+                  <BarChart3 className="h-4 w-4 mr-1" />
+                  {project.run_count}
+                </div>
+              </div>
+              <span className="text-xs">
+                {new Date(project.created_at).toLocaleDateString()}
+              </span>
+            </div>
+            {project.owner_id !== user?.id && (
+              <div className="mt-2 text-xs text-gray-500">
+                Owner: {project.owner_display_name || project.owner_email || 'Unknown'}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      ))}
+    </div>
+  )
+
+  // Separate owned projects from member projects
+  const ownedProjects = projects.filter(project => project.owner_id === user?.id)
+  const memberProjects = projects.filter(project => project.owner_id !== user?.id)
 
   // Fetch recent runs
   const { data: recentRuns = [] } = useQuery<Run[]>({
@@ -356,66 +448,54 @@ export default function DashboardPage() {
               </CardContent>
             </Card>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {projects.map((project: Project) => (
-                <Card 
-                  key={project.id} 
-                  className="cursor-pointer hover:shadow-md transition-shadow"
-                  onClick={() => router.push(`/projects/${project.id}`)}
-                >
-                  <CardHeader>
-                    <CardTitle className="flex items-center justify-between">
-                      <span>{project.name}</span>
-                      <div className="flex items-center space-x-2">
-                        {project.is_public && (
-                          <span className="text-xs bg-green-100 text-green-800 px-2 py-1 rounded">
-                            Public
-                          </span>
-                        )}
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            if (confirm('Are you sure you want to delete this project? This action cannot be undone.')) {
-                              deleteProjectMutation.mutate(project.id)
-                            }
-                          }}
-                          disabled={deleteProjectMutation.isPending}
-                          className="text-red-600 hover:text-red-700 hover:bg-red-50 h-6 w-6 p-0"
-                        >
-                          {deleteProjectMutation.isPending ? (
-                            <Loader2 className="h-3 w-3 animate-spin" />
-                          ) : (
-                            <Trash2 className="h-3 w-3" />
-                          )}
-                        </Button>
-                      </div>
-                    </CardTitle>
-                    <CardDescription>
-                      {project.description || 'No description'}
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="flex items-center justify-between text-sm text-gray-500">
-                      <div className="flex items-center space-x-4">
-                        <div className="flex items-center">
-                          <Users className="h-4 w-4 mr-1" />
-                          {project.member_count}
-                        </div>
-                        <div className="flex items-center">
-                          <BarChart3 className="h-4 w-4 mr-1" />
-                          {project.run_count}
-                        </div>
-                      </div>
-                      <span className="text-xs">
-                        {new Date(project.created_at).toLocaleDateString()}
-                      </span>
-                    </div>
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
+            <Tabs defaultValue="owned" className="w-full">
+              <TabsList className="grid w-full grid-cols-2">
+                <TabsTrigger value="owned" className="flex items-center space-x-2">
+                  <Crown className="h-4 w-4" />
+                  <span>My Projects ({ownedProjects.length})</span>
+                </TabsTrigger>
+                <TabsTrigger value="member" className="flex items-center space-x-2">
+                  <UserCheck className="h-4 w-4" />
+                  <span>Member Projects ({memberProjects.length})</span>
+                </TabsTrigger>
+              </TabsList>
+              
+              <TabsContent value="owned" className="mt-6">
+                {ownedProjects.length === 0 ? (
+                  <Card className="bg-gradient-to-br from-blue-50 to-indigo-50 border-blue-200">
+                    <CardContent className="flex flex-col items-center justify-center py-16">
+                      <EmptyProjectsSVG className="w-24 h-24 mb-6" />
+                      <h3 className="text-xl font-semibold text-gray-900 mb-3">No projects owned</h3>
+                      <p className="text-gray-600 text-center mb-6 max-w-md">
+                        Create your first project to start analyzing data with JMP.
+                      </p>
+                      <Button onClick={() => setShowCreateProject(true)} size="lg" className="bg-blue-600 hover:bg-blue-700">
+                        <Plus className="h-5 w-5 mr-2" />
+                        Create Your First Project
+                      </Button>
+                    </CardContent>
+                  </Card>
+                ) : (
+                  renderProjectCards(ownedProjects)
+                )}
+              </TabsContent>
+              
+              <TabsContent value="member" className="mt-6">
+                {memberProjects.length === 0 ? (
+                  <Card className="bg-gradient-to-br from-gray-50 to-slate-50 border-gray-200">
+                    <CardContent className="flex flex-col items-center justify-center py-16">
+                      <UserCheck className="w-24 h-24 mb-6 text-gray-400" />
+                      <h3 className="text-xl font-semibold text-gray-900 mb-3">No member projects</h3>
+                      <p className="text-gray-600 text-center mb-6 max-w-md">
+                        You haven't been added as a member to any projects yet.
+                      </p>
+                    </CardContent>
+                  </Card>
+                ) : (
+                  renderProjectCards(memberProjects)
+                )}
+              </TabsContent>
+            </Tabs>
           )}
         </div>
 
