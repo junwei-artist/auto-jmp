@@ -29,6 +29,9 @@ class RunResponse(BaseModel):
     created_at: datetime
     started_at: Optional[datetime]
     finished_at: Optional[datetime]
+    started_by: Optional[str]
+    started_by_email: Optional[str]
+    started_by_is_guest: Optional[bool]
 
 class ArtifactResponse(BaseModel):
     id: str
@@ -83,7 +86,10 @@ async def list_runs(
             image_count=run.image_count,
             created_at=run.created_at,
             started_at=run.started_at,
-            finished_at=run.finished_at
+            finished_at=run.finished_at,
+            started_by=str(run.started_by) if run.started_by else None,
+            started_by_email=None,
+            started_by_is_guest=None
         )
         for run in runs
     ]
@@ -223,7 +229,10 @@ async def create_run(
         image_count=run.image_count,
         created_at=run.created_at,
         started_at=run.started_at,
-        finished_at=run.finished_at
+        finished_at=run.finished_at,
+        started_by=str(run.started_by) if run.started_by else None,
+        started_by_email=current_user.email if current_user else None,
+        started_by_is_guest=current_user.is_guest if current_user else None
     )
 
 @router.get("/{run_id}", response_model=RunResponse)
@@ -242,6 +251,12 @@ async def get_run(
     # Check project access
     await check_project_access(db, run.project_id, current_user)
     
+    # Get user information if run was started by a user
+    started_by_user = None
+    if run.started_by:
+        result = await db.execute(select(AppUser).where(AppUser.id == run.started_by))
+        started_by_user = result.scalar_one_or_none()
+    
     return RunResponse(
         id=str(run.id),
         project_id=str(run.project_id),
@@ -251,7 +266,10 @@ async def get_run(
         image_count=run.image_count,
         created_at=run.created_at,
         started_at=run.started_at,
-        finished_at=run.finished_at
+        finished_at=run.finished_at,
+        started_by=str(run.started_by) if run.started_by else None,
+        started_by_email=started_by_user.email if started_by_user else None,
+        started_by_is_guest=started_by_user.is_guest if started_by_user else None
     )
 
 @router.get("/{run_id}/artifacts", response_model=List[ArtifactResponse])
@@ -352,7 +370,10 @@ async def get_project_runs(
             image_count=run.image_count,
             created_at=run.created_at,
             started_at=run.started_at,
-            finished_at=run.finished_at
+            finished_at=run.finished_at,
+            started_by=str(run.started_by) if run.started_by else None,
+            started_by_email=None,
+            started_by_is_guest=None
         )
         for run in runs
     ]

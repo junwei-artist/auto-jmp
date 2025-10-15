@@ -2,9 +2,11 @@
 
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
+import { useLanguage } from '@/lib/language'
 
 export default function AdminDashboard() {
   const router = useRouter()
+  const { t } = useLanguage()
   const [isAuthenticated, setIsAuthenticated] = useState(false)
   const [isLoading, setIsLoading] = useState(true)
   const [user, setUser] = useState<any>(null)
@@ -219,6 +221,13 @@ export default function AdminDashboard() {
             >
               <div className="font-medium text-gray-900">View Runs</div>
               <div className="text-sm text-gray-600">Check analysis runs</div>
+            </button>
+            <button 
+              onClick={() => router.push('/admin/plugins')}
+              className="p-4 border border-gray-300 rounded-lg hover:bg-gray-50 text-left transition-colors"
+            >
+              <div className="font-medium text-gray-900">{t('admin.plugins.title')}</div>
+              <div className="text-sm text-gray-600">{t('admin.plugins.subtitle')}</div>
             </button>
             <button 
               onClick={() => router.push('/admin/settings')}

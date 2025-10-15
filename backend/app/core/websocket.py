@@ -30,6 +30,8 @@ class ConnectionManager:
     
     def __init__(self):
         self.active_connections: Dict[str, List[WebSocket]] = {}
+        self.general_connections: List[WebSocket] = []
+        self.subscriptions: Dict[str, List[WebSocket]] = {}  # run_id -> list of websockets
     
     async def connect(self, websocket: WebSocket, run_id: str):
         """Connect a WebSocket to a run room."""
@@ -39,6 +41,12 @@ class ConnectionManager:
         self.active_connections[run_id].append(websocket)
         print(f"Client connected to run room: {run_id}")
     
+    async def connect_general(self, websocket: WebSocket):
+        """Connect a WebSocket to general connection pool."""
+        await websocket.accept()
+        self.general_connections.append(websocket)
+        print("Client connected to general WebSocket")
+    
     def disconnect(self, websocket: WebSocket, run_id: str):
         """Disconnect a WebSocket from a run room."""
         if run_id in self.active_connections:
@@ -46,6 +54,16 @@ class ConnectionManager:
             if not self.active_connections[run_id]:
                 del self.active_connections[run_id]
         print(f"Client disconnected from run room: {run_id}")
+    
+    def disconnect_general(self, websocket: WebSocket):
+        """Disconnect a WebSocket from general connection pool."""
+        if websocket in self.general_connections:
+            self.general_connections.remove(websocket)
+        # Also remove from all subscriptions
+        for run_id, connections in self.subscriptions.items():
+            if websocket in connections:
+                connections.remove(websocket)
+        print("Client disconnected from general WebSocket")
     
     async def send_to_run(self, run_id: str, message: dict):
         """Send message to all connections in a run room."""
@@ -56,12 +74,39 @@ class ConnectionManager:
                 except:
                     # Remove broken connections
                     self.active_connections[run_id].remove(connection)
+    
+    async def send_to_subscribers(self, run_id: str, message: dict):
+        """Send message to all subscribers of a specific run."""
+        if run_id in self.subscriptions:
+            for connection in self.subscriptions[run_id].copy():
+                try:
+                    await connection.send_text(json.dumps(message))
+                except:
+                    # Remove broken connections
+                    self.subscriptions[run_id].remove(connection)
+    
+    async def handle_subscription(self, websocket: WebSocket, message: dict):
+        """Handle subscription/unsubscription messages."""
+        if message.get("type") == "subscribe" and "run_id" in message:
+            run_id = message["run_id"]
+            if run_id not in self.subscriptions:
+                self.subscriptions[run_id] = []
+            if websocket not in self.subscriptions[run_id]:
+                self.subscriptions[run_id].append(websocket)
+            print(f"WebSocket subscribed to run: {run_id}")
+            
+        elif message.get("type") == "unsubscribe" and "run_id" in message:
+            run_id = message["run_id"]
+            if run_id in self.subscriptions and websocket in self.subscriptions[run_id]:
+                self.subscriptions[run_id].remove(websocket)
+            print(f"WebSocket unsubscribed from run: {run_id}")
 
 manager = ConnectionManager()
 
 async def publish_run_update(run_id: str, message: dict):
     """Publish run update to WebSocket room."""
     await manager.send_to_run(run_id, message)
+    await manager.send_to_subscribers(run_id, message)
     print(f"Published update to run:{run_id}: {message}")
 
 async def subscribe_to_run_updates(run_id: str):
@@ -77,6 +122,39 @@ async def subscribe_to_run_updates(run_id: str):
                 await manager.send_to_run(run_id, data)
             except json.JSONDecodeError:
                 continue
+
+@router.websocket("/ws/general")
+async def general_websocket_endpoint(websocket: WebSocket):
+    """General WebSocket endpoint for real-time updates."""
+    await manager.connect_general(websocket)
+    
+    try:
+        # Keep connection alive and listen for messages
+        while True:
+            try:
+                # Wait for any message from client
+                data = await websocket.receive_text()
+                
+                try:
+                    message = json.loads(data)
+                    # Handle subscription messages
+                    await manager.handle_subscription(websocket, message)
+                    
+                    # Echo back ping messages
+                    if message.get("type") == "ping":
+                        await websocket.send_text(json.dumps({"type": "pong", "data": message.get("data", "")}))
+                        
+                except json.JSONDecodeError:
+                    # Handle non-JSON messages (like simple ping)
+                    await websocket.send_text(json.dumps({"type": "pong", "data": data}))
+                    
+            except WebSocketDisconnect:
+                break
+            except Exception as e:
+                print(f"WebSocket error: {e}")
+                break
+    finally:
+        manager.disconnect_general(websocket)
 
 @router.websocket("/ws/runs/{run_id}")
 async def websocket_endpoint(websocket: WebSocket, run_id: str):

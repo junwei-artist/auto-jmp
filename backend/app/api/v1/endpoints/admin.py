@@ -54,6 +54,30 @@ class ExtensionInfo(BaseModel):
     dependencies: List[str]
     status: str
 
+class PluginDescriptionUpdate(BaseModel):
+    plugin_id: str
+    language: str  # 'en' or 'zh'
+    name: str
+    description: str
+    features: List[str]
+
+class PluginInfo(BaseModel):
+    id: str
+    name: str
+    version: str
+    description: str
+    icon: str
+    category: str
+    supported_formats: List[str]
+    status: str
+    installed: bool
+    english_name: str
+    english_description: str
+    chinese_name: str
+    chinese_description: str
+    english_features: List[str]
+    chinese_features: List[str]
+
 # Initialize extension manager
 extension_manager = ExtensionManager()
 
@@ -426,3 +450,272 @@ async def get_extension_status(
             "version": None,
             "description": None
         }
+
+# Plugin Management Endpoints
+
+@router.get("/plugins", response_model=List[PluginInfo])
+async def get_plugins(
+    current_user: AppUser = Depends(require_admin)
+):
+    """Get all plugins with their installation status and descriptions."""
+    import os
+    from pathlib import Path
+    
+    # Get installed extensions
+    installed_extensions = extension_manager.get_all_extensions()
+    
+    # Define available plugins
+    available_plugins = [
+        {
+            "id": "excel2boxplotv1",
+            "name": "Excel to Boxplot V1",
+            "version": "1.0.0",
+            "description": "Convert Excel files to CSV and JSL scripts with three-checkpoint validation system",
+            "icon": "📊",
+            "category": "analysis",
+            "supported_formats": [".xlsx", ".xls", ".xlsm"],
+            "english_name": "Excel to Boxplot V1",
+            "english_description": "Convert Excel files to CSV and JSL scripts with three-checkpoint validation system",
+            "chinese_name": "Excel转箱线图 V1",
+            "chinese_description": "将Excel文件转换为CSV和JSL脚本，具有三点验证系统",
+            "english_features": [
+                "Three-checkpoint validation system",
+                "Automatic file fixing for corrupted Excel files",
+                "Boundary calculation (min, max, inc, tick)",
+                "CSV and JSL generation",
+                "Boxplot visualization"
+            ],
+            "chinese_features": [
+                "三点验证系统",
+                "自动修复损坏的Excel文件",
+                "边界计算（最小值、最大值、步长、刻度）",
+                "CSV和JSL生成",
+                "箱线图可视化"
+            ]
+        },
+        {
+            "id": "excel2boxplotv2",
+            "name": "Excel to Boxplot V2",
+            "version": "1.0.0",
+            "description": "Excel to CSV/JSL with V2 column mapping",
+            "icon": "📊",
+            "category": "analysis",
+            "supported_formats": [".xlsx", ".xls", ".xlsm"],
+            "english_name": "Excel to Boxplot V2",
+            "english_description": "Excel to CSV/JSL with V2 column mapping",
+            "chinese_name": "Excel转箱线图 V2",
+            "chinese_description": "Excel转CSV/JSL，使用V2列映射",
+            "english_features": [
+                "V2 meta column mapping (Y Variable/DETAIL/Target/USL/LSL/Label)",
+                "Prefers Stage as categorical variable",
+                "Three-checkpoint validation (informational)",
+                "Boundary calculation (min, max, inc, tick)",
+                "CSV and JSL generation"
+            ],
+            "chinese_features": [
+                "V2元列映射（Y变量/DETAIL/目标/USL/LSL/标签）",
+                "优先使用Stage作为分类变量",
+                "三点验证（信息性）",
+                "边界计算（最小值、最大值、步长、刻度）",
+                "CSV和JSL生成"
+            ]
+        },
+        {
+            "id": "excel2processcapability",
+            "name": "Excel to Process Capability",
+            "version": "1.0.0",
+            "description": "Convert Excel data to process capability analysis (Cp, Cpk, Pp, Ppk)",
+            "icon": "📈",
+            "category": "statistics",
+            "supported_formats": [".xlsx", ".xls", ".xlsm"],
+            "english_name": "Excel to Process Capability",
+            "english_description": "Convert Excel data to process capability analysis (Cp, Cpk, Pp, Ppk)",
+            "chinese_name": "Excel转过程能力分析",
+            "chinese_description": "将Excel数据转换为过程能力分析（Cp、Cpk、Pp、Ppk）",
+            "english_features": [
+                "Process capability analysis",
+                "Statistical process control",
+                "Capability indices calculation",
+                "Control charts generation"
+            ],
+            "chinese_features": [
+                "过程能力分析",
+                "统计过程控制",
+                "能力指数计算",
+                "控制图生成"
+            ]
+        }
+    ]
+    
+    plugins = []
+    for plugin in available_plugins:
+        installed = plugin["id"] in installed_extensions
+        status = "installed" if installed else "available"
+        
+        plugins.append(PluginInfo(
+            id=plugin["id"],
+            name=plugin["name"],
+            version=plugin["version"],
+            description=plugin["description"],
+            icon=plugin["icon"],
+            category=plugin["category"],
+            supported_formats=plugin["supported_formats"],
+            status=status,
+            installed=installed,
+            english_name=plugin["english_name"],
+            english_description=plugin["english_description"],
+            chinese_name=plugin["chinese_name"],
+            chinese_description=plugin["chinese_description"],
+            english_features=plugin["english_features"],
+            chinese_features=plugin["chinese_features"]
+        ))
+    
+    return plugins
+
+@router.post("/plugins/{plugin_id}/install")
+async def install_plugin(
+    plugin_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: AppUser = Depends(require_admin)
+):
+    """Install a plugin."""
+    try:
+        success = extension_manager.load_extension(plugin_id)
+        if success:
+            # Log the action
+            audit_log = AuditLog(
+                user_id=current_user.id,
+                action="install_plugin",
+                target=f"plugin:{plugin_id}",
+                meta=f'{{"plugin_id": "{plugin_id}"}}'
+            )
+            db.add(audit_log)
+            await db.commit()
+            
+            return {"message": f"Plugin {plugin_id} installed successfully"}
+        else:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Failed to install plugin {plugin_id}"
+            )
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error installing plugin: {str(e)}"
+        )
+
+@router.post("/plugins/{plugin_id}/uninstall")
+async def uninstall_plugin(
+    plugin_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: AppUser = Depends(require_admin)
+):
+    """Uninstall a plugin."""
+    try:
+        if plugin_id in extension_manager.extensions:
+            del extension_manager.extensions[plugin_id]
+            
+            # Log the action
+            audit_log = AuditLog(
+                user_id=current_user.id,
+                action="uninstall_plugin",
+                target=f"plugin:{plugin_id}",
+                meta=f'{{"plugin_id": "{plugin_id}"}}'
+            )
+            db.add(audit_log)
+            await db.commit()
+            
+            return {"message": f"Plugin {plugin_id} uninstalled successfully"}
+        else:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Plugin {plugin_id} is not installed"
+            )
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error uninstalling plugin: {str(e)}"
+        )
+
+@router.get("/plugins/descriptions")
+async def get_plugin_descriptions(
+    db: AsyncSession = Depends(get_db)
+):
+    """Get all plugin descriptions for both languages."""
+    import json
+    
+    # Get all plugin description settings
+    result = await db.execute(
+        select(AppSetting).where(AppSetting.k.like("plugin_%_%"))
+    )
+    settings = result.scalars().all()
+    
+    descriptions = {}
+    
+    for setting in settings:
+        try:
+            # Parse setting key: plugin_{plugin_id}_{language}
+            key_parts = setting.k.split('_')
+            if len(key_parts) >= 3:
+                plugin_id = '_'.join(key_parts[1:-1])  # Handle plugin IDs with underscores
+                language = key_parts[-1]
+                
+                if plugin_id not in descriptions:
+                    descriptions[plugin_id] = {}
+                
+                descriptions[plugin_id][language] = json.loads(setting.v)
+        except (json.JSONDecodeError, IndexError) as e:
+            print(f"Error parsing setting {setting.k}: {e}")
+            continue
+    
+    return descriptions
+
+@router.post("/plugins/descriptions")
+async def update_plugin_descriptions(
+    description_update: PluginDescriptionUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_user: AppUser = Depends(require_admin)
+):
+    """Update plugin descriptions for a specific language."""
+    # For now, we'll store this in the database as settings
+    # In a real implementation, you might want a dedicated table for plugin descriptions
+    
+    setting_key = f"plugin_{description_update.plugin_id}_{description_update.language}"
+    
+    # Check if setting exists
+    result = await db.execute(
+        select(AppSetting).where(AppSetting.k == setting_key)
+    )
+    existing_setting = result.scalar_one_or_none()
+    
+    import json
+    setting_value = json.dumps({
+        "name": description_update.name,
+        "description": description_update.description,
+        "features": description_update.features
+    })
+    
+    if existing_setting:
+        # Update existing setting
+        existing_setting.v = setting_value
+    else:
+        # Create new setting
+        new_setting = AppSetting(
+            k=setting_key,
+            v=setting_value
+        )
+        db.add(new_setting)
+    
+    await db.commit()
+    
+    # Log the action
+    audit_log = AuditLog(
+        user_id=current_user.id,
+        action="update_plugin_descriptions",
+        target=f"plugin:{description_update.plugin_id}",
+        meta=f'{{"plugin_id": "{description_update.plugin_id}", "language": "{description_update.language}"}}'
+    )
+    db.add(audit_log)
+    await db.commit()
+    
+    return {"message": f"Plugin descriptions updated for {description_update.plugin_id} in {description_update.language}"}

@@ -32,9 +32,11 @@ class ExtensionManager:
             
             # Get the extension class name
             class_name = f'{extension_name.title().replace("2", "2")}Extension'
-            # Handle special case for excel2boxplotv1 -> Excel2BoxplotV1Extension
+            # Handle special cases for specific extensions
             if extension_name == 'excel2boxplotv1':
                 class_name = 'Excel2BoxplotV1Extension'
+            elif extension_name == 'excel2boxplotv2':
+                class_name = 'Excel2BoxplotV2Extension'
             elif extension_name == 'excel2processcapability':
                 class_name = 'Excel2ProcessCapabilityExtension'
             

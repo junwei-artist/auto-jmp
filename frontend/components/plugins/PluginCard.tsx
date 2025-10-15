@@ -3,6 +3,7 @@ import { Plugin } from '@/lib/plugins/types'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
+import { useLanguage } from '@/lib/language'
 
 interface PluginCardProps {
   plugin: Plugin
@@ -10,6 +11,14 @@ interface PluginCardProps {
 
 export default function PluginCard({ plugin }: PluginCardProps) {
   const { config } = plugin
+  const { t } = useLanguage()
+
+  // Helper function to get translation with proper fallback
+  const getTranslation = (key: string, fallback: string) => {
+    const translation = t(key)
+    // If the translation returns the same key, it means no translation was found
+    return translation === key ? fallback : translation
+  }
 
   return (
     <Card className="hover:shadow-lg transition-shadow">
@@ -21,23 +30,31 @@ export default function PluginCard({ plugin }: PluginCardProps) {
             </span>
           </div>
           <div>
-            <CardTitle className="text-lg">{config.name}</CardTitle>
-            <p className="text-sm text-gray-500">v{config.version}</p>
+            <CardTitle className="text-lg">
+              {getTranslation(`plugin.${config.id}.name`, config.name)}
+            </CardTitle>
+            <p className="text-sm text-gray-500">
+              {getTranslation('plugin.card.version', 'v')}{config.version}
+            </p>
           </div>
         </div>
       </CardHeader>
       
       <CardContent>
-        <p className="text-gray-600 mb-4">{config.description}</p>
+        <p className="text-gray-600 mb-4">
+          {getTranslation(`plugin.${config.id}.description`, config.description)}
+        </p>
         
         <div className="space-y-3">
           <div>
-            <Badge variant="secondary">{config.category}</Badge>
+            <Badge variant="secondary">
+              {getTranslation(`plugin.category.${config.category}`, config.category)}
+            </Badge>
           </div>
           
           <div>
             <p className="text-sm font-medium text-gray-700 mb-1">
-              Supported Formats:
+              {getTranslation('plugin.card.supportedFormats', 'Supported Formats:')}
             </p>
             <div className="flex flex-wrap gap-1">
               {config.supportedFormats.map((format) => (
@@ -51,7 +68,7 @@ export default function PluginCard({ plugin }: PluginCardProps) {
           <div className="pt-2">
             <Link href={`/plugins/${config.id}`}>
               <Button className="w-full">
-                Use Plugin
+                {getTranslation('plugin.card.usePlugin', 'Use Plugin')}
               </Button>
             </Link>
           </div>

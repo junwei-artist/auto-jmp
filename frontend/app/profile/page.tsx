@@ -20,17 +20,25 @@ import {
   EyeOff,
   Loader2,
   AlertTriangle,
-  CheckCircle
+  CheckCircle,
+  Building,
+  Users
 } from 'lucide-react'
 import { useAuth } from '@/lib/auth'
 import { profileApi } from '@/lib/api'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { useLanguage } from '@/lib/language'
+import { EnhancedProfileSettings } from '@/components/EnhancedProfileSettings'
 import toast from 'react-hot-toast'
 
 interface ProfileData {
   id: string
   email: string
+  display_name?: string
+  department_id?: string
+  department_name?: string
+  business_group_id?: string
+  business_group_name?: string
   is_admin: boolean
   is_guest: boolean
   created_at: string
@@ -204,96 +212,7 @@ export default function ProfilePage() {
 
           {/* Profile Tab */}
           <TabsContent value="profile" className="space-y-6">
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <User className="h-5 w-5" />
-                  {t('profile.info.title')}
-                </CardTitle>
-                <CardDescription>
-                  {t('profile.info.subtitle')}
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-6">
-                {/* Account Info Display */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <div className="space-y-2">
-                    <Label className="text-sm font-medium text-gray-500">{t('profile.info.accountId')}</Label>
-                    <div className="p-3 bg-gray-50 rounded-md font-mono text-sm">
-                      {profileData?.id}
-                    </div>
-                  </div>
-                  <div className="space-y-2">
-                    <Label className="text-sm font-medium text-gray-500">{t('profile.info.accountType')}</Label>
-                    <div className="flex items-center gap-2 p-3 bg-gray-50 rounded-md">
-                      {profileData?.is_admin ? (
-                        <>
-                          <Shield className="h-4 w-4 text-red-500" />
-                          <span className="text-sm font-medium">{t('profile.info.administrator')}</span>
-                        </>
-                      ) : (
-                        <>
-                          <User className="h-4 w-4 text-blue-500" />
-                          <span className="text-sm font-medium">{t('profile.info.regularUser')}</span>
-                        </>
-                      )}
-                    </div>
-                  </div>
-                  <div className="space-y-2">
-                    <Label className="text-sm font-medium text-gray-500">{t('profile.info.memberSince')}</Label>
-                    <div className="flex items-center gap-2 p-3 bg-gray-50 rounded-md">
-                      <Calendar className="h-4 w-4 text-gray-400" />
-                      <span className="text-sm">
-                        {profileData?.created_at ? new Date(profileData.created_at).toLocaleDateString() : 'N/A'}
-                      </span>
-                    </div>
-                  </div>
-                  <div className="space-y-2">
-                    <Label className="text-sm font-medium text-gray-500">{t('profile.info.lastLogin')}</Label>
-                    <div className="flex items-center gap-2 p-3 bg-gray-50 rounded-md">
-                      <Calendar className="h-4 w-4 text-gray-400" />
-                      <span className="text-sm">
-                        {profileData?.last_login ? new Date(profileData.last_login).toLocaleString() : 'Never'}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Email Update */}
-                <div className="space-y-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="email" className="flex items-center gap-2">
-                      <Mail className="h-4 w-4" />
-                      {t('profile.info.emailAddress')}
-                    </Label>
-                    <Input
-                      id="email"
-                      type="email"
-                      value={email}
-                      onChange={(e) => setEmail(e.target.value)}
-                      placeholder="Enter your email address"
-                    />
-                  </div>
-                  <Button 
-                    onClick={handleUpdateEmail}
-                    disabled={updateEmailMutation.isPending || email === profileData?.email}
-                    className="w-full md:w-auto"
-                  >
-                    {updateEmailMutation.isPending ? (
-                      <>
-                        <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                        {t('profile.info.updating')}
-                      </>
-                    ) : (
-                      <>
-                        <Save className="h-4 w-4 mr-2" />
-                        {t('profile.info.updateEmail')}
-                      </>
-                    )}
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
+            <EnhancedProfileSettings />
           </TabsContent>
 
           {/* Security Tab */}

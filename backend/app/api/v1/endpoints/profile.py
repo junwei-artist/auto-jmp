@@ -12,7 +12,7 @@ from app.core.auth import (
     verify_password,
     get_password_hash
 )
-from app.models import AppUser
+from app.models import AppUser, Department, BusinessGroup
 
 router = APIRouter()
 
@@ -22,6 +22,9 @@ class PasswordChangeRequest(BaseModel):
 
 class ProfileUpdateRequest(BaseModel):
     email: Optional[EmailStr] = None
+    display_name: Optional[str] = None
+    department_id: Optional[str] = None
+    business_group_id: Optional[str] = None
 
 class PasswordChangeResponse(BaseModel):
     message: str
@@ -92,6 +95,42 @@ async def update_profile(
         
         current_user.email = profile_data.email
     
+    # Update display name
+    if profile_data.display_name is not None:
+        current_user.display_name = profile_data.display_name
+    
+    # Update department
+    if profile_data.department_id is not None:
+        if profile_data.department_id == "":
+            current_user.department_id = None
+        else:
+            # Verify department exists
+            dept_result = await db.execute(
+                select(Department).where(Department.id == uuid.UUID(profile_data.department_id))
+            )
+            if not dept_result.scalar_one_or_none():
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Department not found"
+                )
+            current_user.department_id = uuid.UUID(profile_data.department_id)
+    
+    # Update business group
+    if profile_data.business_group_id is not None:
+        if profile_data.business_group_id == "":
+            current_user.business_group_id = None
+        else:
+            # Verify business group exists
+            group_result = await db.execute(
+                select(BusinessGroup).where(BusinessGroup.id == uuid.UUID(profile_data.business_group_id))
+            )
+            if not group_result.scalar_one_or_none():
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Business group not found"
+                )
+            current_user.business_group_id = uuid.UUID(profile_data.business_group_id)
+    
     await db.commit()
     await db.refresh(current_user)
     
@@ -100,6 +139,9 @@ async def update_profile(
         user={
             "id": str(current_user.id),
             "email": current_user.email,
+            "display_name": current_user.display_name,
+            "department_id": str(current_user.department_id) if current_user.department_id else None,
+            "business_group_id": str(current_user.business_group_id) if current_user.business_group_id else None,
             "is_admin": current_user.is_admin,
             "is_guest": current_user.is_guest,
             "created_at": current_user.created_at.isoformat() if current_user.created_at else None,
@@ -109,12 +151,36 @@ async def update_profile(
 
 @router.get("/profile")
 async def get_profile(
-    current_user: AppUser = Depends(get_current_user)
+    current_user: AppUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
 ):
     """Get current user profile information."""
+    # Get department and business group names
+    department_name = None
+    business_group_name = None
+    
+    if current_user.department_id:
+        dept_result = await db.execute(
+            select(Department).where(Department.id == current_user.department_id)
+        )
+        dept = dept_result.scalar_one_or_none()
+        department_name = dept.name if dept else None
+    
+    if current_user.business_group_id:
+        group_result = await db.execute(
+            select(BusinessGroup).where(BusinessGroup.id == current_user.business_group_id)
+        )
+        group = group_result.scalar_one_or_none()
+        business_group_name = group.name if group else None
+    
     return {
         "id": str(current_user.id),
         "email": current_user.email,
+        "display_name": current_user.display_name,
+        "department_id": str(current_user.department_id) if current_user.department_id else None,
+        "department_name": department_name,
+        "business_group_id": str(current_user.business_group_id) if current_user.business_group_id else None,
+        "business_group_name": business_group_name,
         "is_admin": current_user.is_admin,
         "is_guest": current_user.is_guest,
         "created_at": current_user.created_at.isoformat() if current_user.created_at else None,

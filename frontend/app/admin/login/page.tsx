@@ -2,9 +2,14 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { Button } from '@/components/ui/button'
+import { BarChart3, HelpCircle } from 'lucide-react'
+import { useLanguage } from '@/lib/language'
+import { LanguageSelector } from '@/components/LanguageSelector'
 
 export default function AdminLoginPage() {
   const router = useRouter()
+  const { t } = useLanguage()
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState('')
 
@@ -51,8 +56,32 @@ export default function AdminLoginPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-      <div className="max-w-md w-full space-y-8">
+    <div className="min-h-screen bg-gray-50">
+      {/* Top Menu Bar */}
+      <div className="bg-white shadow-sm border-b">
+        <div className="container mx-auto px-4 py-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-4">
+              <BarChart3 className="h-8 w-8 text-blue-600" />
+              <h1 className="text-xl font-bold text-gray-900">{t('landing.title')}</h1>
+            </div>
+            <div className="flex items-center space-x-4">
+              <Button 
+                variant="ghost" 
+                onClick={() => window.open('/help', '_blank')}
+                className="flex items-center space-x-2"
+              >
+                <HelpCircle className="h-4 w-4" />
+                <span>{t('help.title')}</span>
+              </Button>
+              <LanguageSelector />
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="flex items-center justify-center min-h-[calc(100vh-80px)]">
+        <div className="max-w-md w-full space-y-8">
         <div className="text-center">
           <h2 className="mt-6 text-3xl font-extrabold text-gray-900">
             Admin Login
@@ -124,6 +153,7 @@ export default function AdminLoginPage() {
               </p>
             </div>
           </form>
+        </div>
         </div>
       </div>
     </div>

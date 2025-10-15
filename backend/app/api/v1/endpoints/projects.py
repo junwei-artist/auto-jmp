@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 
 from app.core.database import get_db
 from app.core.auth import get_current_user, get_current_user_optional
-from app.models import Project, ProjectMember, Role, AppUser, Artifact, Run, RunStatus
+from app.models import Project, ProjectMember, AppUser, Artifact, Run, RunStatus
 
 router = APIRouter()
 
@@ -31,6 +31,8 @@ class ProjectResponse(BaseModel):
     name: str
     description: Optional[str]
     owner_id: Optional[str]
+    owner_email: Optional[str]
+    owner_display_name: Optional[str]
     allow_guest: bool
     is_public: bool
     created_at: datetime
@@ -40,12 +42,12 @@ class ProjectResponse(BaseModel):
 
 class ProjectMemberAdd(BaseModel):
     email: str
-    role: Role
+    role: str
 
 class ProjectMemberResponse(BaseModel):
     user_id: str
     email: Optional[str]
-    role: Role
+    role: str
     is_owner: bool
 
 async def check_project_access(
@@ -104,13 +106,15 @@ async def create_project(
     await db.commit()
     await db.refresh(project)
     
-    # Add owner as member
-    member = ProjectMember(
-        project_id=project.id,
-        user_id=current_user.id,
-        role=Role.OWNER
-    )
-    db.add(member)
+    # Add owner as member using raw SQL to handle enum casting
+    from sqlalchemy import text
+    await db.execute(text("""
+        INSERT INTO project_member (project_id, user_id, role, role_id) 
+        VALUES (:project_id, :user_id, 'OWNER'::role, '00000000-0000-0000-0000-000000000001'::uuid)
+    """), {
+        "project_id": str(project.id),
+        "user_id": str(current_user.id)
+    })
     await db.commit()
     
     return ProjectResponse(
@@ -118,6 +122,8 @@ async def create_project(
         name=project.name,
         description=project.description,
         owner_id=str(project.owner_id),
+        owner_email=current_user.email,
+        owner_display_name=current_user.display_name,
         allow_guest=project.allow_guest,
         is_public=project.is_public,
         created_at=project.created_at,
@@ -165,11 +171,25 @@ async def list_projects(
         if hasattr(project, 'is_public') and project.is_public is not None:
             is_public_value = project.is_public
         
+        # Get owner details
+        owner_email = None
+        owner_display_name = None
+        if project.owner_id:
+            owner_result = await db.execute(
+                select(AppUser).where(AppUser.id == project.owner_id)
+            )
+            owner = owner_result.scalar_one_or_none()
+            if owner:
+                owner_email = owner.email
+                owner_display_name = owner.display_name
+        
         project_responses.append(ProjectResponse(
             id=str(project.id),
             name=project.name,
             description=project.description,
             owner_id=str(project.owner_id),
+            owner_email=owner_email,
+            owner_display_name=owner_display_name,
             allow_guest=project.allow_guest,
             is_public=is_public_value,
             created_at=project.created_at,
@@ -206,11 +226,25 @@ async def get_project(
     if hasattr(project, 'is_public') and project.is_public is not None:
         is_public_value = project.is_public
     
+    # Get owner details
+    owner_email = None
+    owner_display_name = None
+    if project.owner_id:
+        owner_result = await db.execute(
+            select(AppUser).where(AppUser.id == project.owner_id)
+        )
+        owner = owner_result.scalar_one_or_none()
+        if owner:
+            owner_email = owner.email
+            owner_display_name = owner.display_name
+    
     return ProjectResponse(
         id=str(project.id),
         name=project.name,
         description=project.description,
         owner_id=str(project.owner_id),
+        owner_email=owner_email,
+        owner_display_name=owner_display_name,
         allow_guest=project.allow_guest,
         is_public=is_public_value,
         created_at=project.created_at,
@@ -258,11 +292,25 @@ async def update_project(
     if hasattr(project, 'is_public') and project.is_public is not None:
         is_public_value = project.is_public
     
+    # Get owner details
+    owner_email = None
+    owner_display_name = None
+    if project.owner_id:
+        owner_result = await db.execute(
+            select(AppUser).where(AppUser.id == project.owner_id)
+        )
+        owner = owner_result.scalar_one_or_none()
+        if owner:
+            owner_email = owner.email
+            owner_display_name = owner.display_name
+    
     return ProjectResponse(
         id=str(project.id),
         name=project.name,
         description=project.description,
         owner_id=str(project.owner_id),
+        owner_email=owner_email,
+        owner_display_name=owner_display_name,
         allow_guest=project.allow_guest,
         is_public=is_public_value,
         created_at=project.created_at,
@@ -428,11 +476,25 @@ async def get_public_project(
     if hasattr(project, 'is_public') and project.is_public is not None:
         is_public_value = project.is_public
     
+    # Get owner details
+    owner_email = None
+    owner_display_name = None
+    if project.owner_id:
+        owner_result = await db.execute(
+            select(AppUser).where(AppUser.id == project.owner_id)
+        )
+        owner = owner_result.scalar_one_or_none()
+        if owner:
+            owner_email = owner.email
+            owner_display_name = owner.display_name
+    
     return ProjectResponse(
         id=str(project.id),
         name=project.name,
         description=project.description,
         owner_id=str(project.owner_id),
+        owner_email=owner_email,
+        owner_display_name=owner_display_name,
         allow_guest=project.allow_guest,
         is_public=is_public_value,
         created_at=project.created_at,
@@ -562,6 +624,85 @@ async def download_public_artifact(
         filename=artifact.filename,
         media_type=artifact.mime_type or "application/octet-stream"
     )
+
+@router.get("/public/{project_id}/runs/{run_id}/download")
+async def download_public_run_zip(
+    project_id: str,
+    run_id: str,
+    db: AsyncSession = Depends(get_db)
+):
+    """Download a ZIP file containing all files from a public project run."""
+    from fastapi.responses import FileResponse
+    from pathlib import Path
+    import zipfile
+    import tempfile
+    import os
+    
+    # Check if project is public
+    result = await db.execute(select(Project).where(Project.id == uuid.UUID(project_id), Project.deleted_at.is_(None)))
+    project = result.scalar_one_or_none()
+    
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    
+    if not (hasattr(project, "is_public") and project.is_public):
+        raise HTTPException(status_code=403, detail="Project is not public")
+    
+    # Get run details
+    result = await db.execute(select(Run).where(
+        Run.id == uuid.UUID(run_id),
+        Run.project_id == uuid.UUID(project_id),
+        Run.deleted_at.is_(None)
+    ))
+    run = result.scalar_one_or_none()
+    
+    if not run:
+        raise HTTPException(status_code=404, detail="Run not found")
+    
+    # Get artifacts for this run
+    artifacts_result = await db.execute(
+        select(Artifact).where(Artifact.run_id == uuid.UUID(run_id))
+    )
+    artifacts = artifacts_result.scalars().all()
+    
+    if not artifacts:
+        raise HTTPException(status_code=404, detail="No files found for this run")
+    
+    # Find task directory from artifacts
+    task_dir = None
+    for artifact in artifacts:
+        if artifact.storage_key and artifact.storage_key.startswith("tasks/"):
+            # Extract task directory from storage key
+            # e.g., "tasks/task_20251011_231215/FAI10.png" -> "tasks/task_20251011_231215"
+            task_dir = "/".join(artifact.storage_key.split("/")[:2])
+            break
+    
+    if not task_dir:
+        raise HTTPException(status_code=404, detail="No task directory found for this run")
+    
+    # Construct full task directory path
+    backend_dir = Path.cwd()
+    full_task_dir = backend_dir / task_dir
+    
+    if not full_task_dir.exists():
+        raise HTTPException(status_code=404, detail="Task directory not found")
+    
+    # Create temporary ZIP file
+    with tempfile.NamedTemporaryFile(delete=False, suffix='.zip') as temp_zip:
+        with zipfile.ZipFile(temp_zip.name, 'w', zipfile.ZIP_DEFLATED) as zipf:
+            # Add all files from the task directory
+            for file_path in full_task_dir.rglob('*'):
+                if file_path.is_file():
+                    # Add file to zip with relative path
+                    arcname = file_path.relative_to(full_task_dir)
+                    zipf.write(file_path, arcname)
+        
+        # Return the ZIP file
+        return FileResponse(
+            path=temp_zip.name,
+            filename=f"run_{run_id}_{run.task_name.replace(' ', '_')}.zip",
+            media_type="application/zip"
+        )
 
 @router.delete("/{project_id}")
 async def delete_project(

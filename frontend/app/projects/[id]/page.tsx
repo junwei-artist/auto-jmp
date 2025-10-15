@@ -7,13 +7,18 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Badge } from '@/components/ui/badge'
 import { Alert, AlertDescription } from '@/components/ui/alert-simple'
 import { Switch } from '@/components/ui/switch'
-import { Loader2, Upload, FileText, BarChart3, Users, Share2, ArrowLeft, Download, Eye, Copy, Globe, Lock, Trash2, Settings } from 'lucide-react'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { Loader2, Upload, FileText, BarChart3, Users, Share2, ArrowLeft, Download, Eye, Copy, Globe, Lock, Trash2, Settings, MessageSquare, UserPlus } from 'lucide-react'
 import { useAuth } from '@/lib/auth'
 import { projectApi, runApi } from '@/lib/api'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { useLanguage } from '@/lib/language'
 import { LanguageSelector } from '@/components/LanguageSelector'
 import { ImageGallery } from '@/components/ImageGallery'
+import { ProjectMembership } from '@/components/ProjectMembership'
+import { EnhancedProjectMembership } from '@/components/EnhancedProjectMembership'
+import { ProjectComments } from '@/components/ProjectComments'
+import { NotificationBell } from '@/components/NotificationCenter'
 import toast from 'react-hot-toast'
 
 interface Project {
@@ -21,13 +26,24 @@ interface Project {
   name: string
   description?: string
   owner_id: string
+  owner_email?: string
+  owner_display_name?: string
   allow_guest: boolean
   is_public: boolean
   created_at: string
+  member_count?: number
+  run_count?: number
   plugin_name?: string
   owner?: {
     email: string
   }
+}
+
+interface ProjectMember {
+  user_id: string
+  email?: string
+  role: 'owner' | 'member' | 'watcher'
+  is_guest: boolean
 }
 
 interface Run {
@@ -40,6 +56,9 @@ interface Run {
   created_at: string
   started_at?: string
   finished_at?: string
+  started_by?: string
+  started_by_email?: string
+  started_by_is_guest?: boolean
 }
 
 interface Artifact {
@@ -75,6 +94,8 @@ export default function ProjectPage() {
   const [selectedRun, setSelectedRun] = useState<Run | null>(null)
   const [showGallery, setShowGallery] = useState(false)
   const [serverInfo, setServerInfo] = useState<{public_url?: string, local_url?: string} | null>(null)
+  const [currentUserRole, setCurrentUserRole] = useState<'owner' | 'member' | 'watcher'>('watcher')
+  const [activeTab, setActiveTab] = useState('analysis')
 
   // Fetch server info for public sharing
   useEffect(() => {
@@ -121,6 +142,15 @@ export default function ProjectPage() {
     enabled: !!user && !!projectId,
   })
 
+  // Debug logging
+  useEffect(() => {
+    console.log('Project data:', project)
+    console.log('Project loading:', projectLoading)
+    console.log('Project error:', projectError)
+    console.log('User:', user)
+    console.log('Project ID:', projectId)
+  }, [project, projectLoading, projectError, user, projectId])
+
   // Fetch project runs with auto-refresh
   const { data: runs, isLoading: runsLoading, refetch: refetchRuns } = useQuery<Run[]>({
     queryKey: ['project-runs', projectId],
@@ -136,6 +166,49 @@ export default function ProjectPage() {
     queryFn: () => projectApi.getProjectArtifacts(projectId),
     enabled: !!user && !!projectId,
   })
+
+  // Fetch project members to determine user role
+  const { data: members, isLoading: membersLoading, error: membersError } = useQuery<ProjectMember[]>({
+    queryKey: ['project-members', projectId],
+    queryFn: async () => {
+      const token = getAuthToken()
+      if (!token) {
+        throw new Error('No authentication token available')
+      }
+      
+      const response = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/v1/members/projects/${projectId}/members`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include'
+      })
+      
+      if (!response.ok) {
+        if (response.status === 401) {
+          throw new Error('Authentication required. Please log in again.')
+        }
+        throw new Error(`Failed to fetch members: ${response.status}`)
+      }
+      
+      return response.json()
+    },
+    enabled: !!user && !!projectId,
+    retry: false, // Don't retry on auth errors
+  })
+
+  // Determine current user's role - simplified to just check ownership
+  useEffect(() => {
+    if (project && user) {
+      // Only check if user is the owner, let backend handle other permissions
+      if (project.owner_id === user.id) {
+        setCurrentUserRole('owner')
+      } else {
+        // For non-owners, let backend determine access permissions
+        setCurrentUserRole('member') // Default to member, backend will enforce actual permissions
+      }
+    }
+  }, [project, user])
 
   // Delete run mutation
   const deleteRunMutation = useMutation({
@@ -343,6 +416,7 @@ export default function ProjectPage() {
               {t('projects.backToDashboard')}
             </Button>
             <div className="flex items-center space-x-2">
+              <NotificationBell />
               <LanguageSelector />
               {user && !user.is_guest && (
                 <Button 
@@ -381,6 +455,17 @@ export default function ProjectPage() {
                 variant="outline" 
                 size="sm"
                 onClick={() => {
+                  setActiveTab('members')
+                }}
+                className="text-blue-600 hover:text-blue-700 hover:bg-blue-50"
+              >
+                <UserPlus className="mr-2 h-4 w-4" />
+                Manage Members
+              </Button>
+              <Button 
+                variant="outline" 
+                size="sm"
+                onClick={() => {
                   if (confirm('Are you sure you want to delete this project? This action cannot be undone.')) {
                     deleteProjectMutation.mutate()
                   }
@@ -401,178 +486,242 @@ export default function ProjectPage() {
 
         <div className="grid lg:grid-cols-3 gap-8">
           {/* Main Content */}
-          <div className="lg:col-span-2 space-y-6">
-            {/* Upload / Plugin Section */}
-            {project?.plugin_name ? (
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center">
-                    <Upload className="mr-2 h-5 w-5" />
-                    Use Plugin Wizard
-                  </CardTitle>
-                  <CardDescription>
-                    This project was created with plugin "{project.plugin_name}". Open the wizard to upload another Excel and run analysis.
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <Button 
-                    className="w-full"
-                    onClick={() => router.push(`/plugins/${project.plugin_name}/wizard?projectId=${projectId}&plugin=${project.plugin_name}`)}
-                  >
-                    Open {project.plugin_name} Wizard
-                  </Button>
-                </CardContent>
-              </Card>
-            ) : (
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center">
-                    <Upload className="mr-2 h-5 w-5" />
-                    {t('projects.startAnalysis')}
-                  </CardTitle>
-                  <CardDescription>
-                    {t('projects.startAnalysisSubtitle')}
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="grid md:grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-sm font-medium mb-2">{t('projects.csvFile')}</label>
-                      <input
-                        type="file"
-                        accept=".csv"
-                        onChange={(e) => handleFileChange('csv', e.target.files?.[0] || null)}
-                        className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
-                      />
-                      {csvFile && (
-                        <p className="text-sm text-green-600 mt-1">✓ {csvFile.name}</p>
-                      )}
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium mb-2">{t('projects.jslFile')}</label>
-                      <input
-                        type="file"
-                        accept=".jsl"
-                        onChange={(e) => handleFileChange('jsl', e.target.files?.[0] || null)}
-                        className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
-                      />
-                      {jslFile && (
-                        <p className="text-sm text-green-600 mt-1">✓ {jslFile.name}</p>
-                      )}
-                    </div>
-                  </div>
-                  
-                  <Button 
-                    onClick={() => startRunMutation.mutate()}
-                    disabled={!csvFile || !jslFile || startRunMutation.isPending}
-                    className="w-full"
-                  >
-                    {startRunMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                    {startRunMutation.isPending ? t('projects.starting') : t('projects.startRun')}
-                  </Button>
-                </CardContent>
-              </Card>
-            )}
+          <div className="lg:col-span-2">
+            <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
+              <TabsList className="grid w-full grid-cols-4">
+                <TabsTrigger value="analysis" className="flex items-center space-x-2">
+                  <BarChart3 className="h-4 w-4" />
+                  <span>Analysis</span>
+                </TabsTrigger>
+                <TabsTrigger value="members" className="flex items-center space-x-2">
+                  <Users className="h-4 w-4" />
+                  <span>Members</span>
+                </TabsTrigger>
+                <TabsTrigger value="comments" className="flex items-center space-x-2">
+                  <MessageSquare className="h-4 w-4" />
+                  <span>Comments</span>
+                </TabsTrigger>
+                <TabsTrigger value="history" className="flex items-center space-x-2">
+                  <FileText className="h-4 w-4" />
+                  <span>History</span>
+                </TabsTrigger>
+              </TabsList>
 
-            {/* Runs History */}
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center">
-                  <BarChart3 className="mr-2 h-5 w-5" />
-                  {t('projects.analysisHistory')}
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                {runsLoading ? (
-                  <div className="text-center py-4">
-                    <Loader2 className="h-6 w-6 animate-spin mx-auto mb-2" />
-                    <p className="text-gray-600">{t('projects.loadingRuns')}</p>
-                  </div>
-                ) : runs && runs.length > 0 ? (
-                  <div className="space-y-3">
-                    {runs.map((run) => (
-                      <div key={run.id} className="flex items-center justify-between p-3 border rounded-lg">
-                        <div className="flex items-center space-x-3">
-                          <Badge className={getStatusColor(run.status)}>
-                            {run.status}
-                          </Badge>
-                          <div>
-                            <p className="font-medium">{run.task_name}</p>
-                            <p className="text-sm text-gray-600">
-                              {run.image_count} images • {new Date(run.created_at).toLocaleString()}
-                            </p>
-                          </div>
+              <TabsContent value="analysis" className="space-y-6">
+                {/* Upload / Plugin Section */}
+                {project?.plugin_name ? (
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="flex items-center">
+                        <Upload className="mr-2 h-5 w-5" />
+                        Use Plugin Wizard
+                      </CardTitle>
+                      <CardDescription>
+                        This project was created with plugin "{project.plugin_name}". Open the wizard to upload another Excel and run analysis.
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                      <Button 
+                        className="w-full"
+                        onClick={() => router.push(`/plugins/${project.plugin_name}/wizard?projectId=${projectId}&plugin=${project.plugin_name}`)}
+                      >
+                        Open {project.plugin_name} Wizard
+                      </Button>
+                    </CardContent>
+                  </Card>
+                ) : (
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="flex items-center">
+                        <Upload className="mr-2 h-5 w-5" />
+                        {t('projects.startAnalysis')}
+                      </CardTitle>
+                      <CardDescription>
+                        {t('projects.startAnalysisSubtitle')}
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                      <div className="grid md:grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-sm font-medium mb-2">{t('projects.csvFile')}</label>
+                          <input
+                            type="file"
+                            accept=".csv"
+                            onChange={(e) => handleFileChange('csv', e.target.files?.[0] || null)}
+                            className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
+                          />
+                          {csvFile && (
+                            <p className="text-sm text-green-600 mt-1">✓ {csvFile.name}</p>
+                          )}
                         </div>
-                        <div className="flex items-center space-x-2">
-                          <Button 
-                            variant="outline" 
-                            size="sm"
-                            onClick={() => {
-                              setSelectedRun(run)
-                              setShowGallery(true)
-                            }}
-                          >
-                            <Eye className="h-4 w-4" />
-                          </Button>
-                          <Button 
-                            variant="outline" 
-                            size="sm"
-                            onClick={async () => {
-                              try {
-                                // Download the ZIP file directly
-                                const downloadResponse = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/v1/uploads/download-zip/${run.id}`, {
-                                  headers: {
-                                    'Authorization': `Bearer ${getAuthToken()}`,
-                                  },
-                                })
-                                
-                                if (!downloadResponse.ok) throw new Error('Download failed')
-                                
-                                const blob = await downloadResponse.blob()
-                                const url = window.URL.createObjectURL(blob)
-                                const a = document.createElement('a')
-                                a.href = url
-                                a.download = `run_${run.id}_results.zip`
-                                document.body.appendChild(a)
-                                a.click()
-                                window.URL.revokeObjectURL(url)
-                                document.body.removeChild(a)
-                                
-                                toast.success('ZIP file downloaded successfully!')
-                              } catch (error) {
-                                console.error('Download error:', error)
-                                toast.error('Failed to download ZIP file')
-                              }
-                            }}
-                          >
-                            <Download className="h-4 w-4" />
-                          </Button>
-                          <Button 
-                            variant="outline" 
-                            size="sm"
-                            onClick={() => {
-                              if (confirm('Are you sure you want to delete this run? This action cannot be undone.')) {
-                                deleteRunMutation.mutate(run.id)
-                              }
-                            }}
-                            disabled={deleteRunMutation.isPending}
-                            className="text-red-600 hover:text-red-700 hover:bg-red-50"
-                          >
-                            {deleteRunMutation.isPending ? (
-                              <Loader2 className="h-4 w-4 animate-spin" />
-                            ) : (
-                              <Trash2 className="h-4 w-4" />
-                            )}
-                          </Button>
+                        <div>
+                          <label className="block text-sm font-medium mb-2">{t('projects.jslFile')}</label>
+                          <input
+                            type="file"
+                            accept=".jsl"
+                            onChange={(e) => handleFileChange('jsl', e.target.files?.[0] || null)}
+                            className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
+                          />
+                          {jslFile && (
+                            <p className="text-sm text-green-600 mt-1">✓ {jslFile.name}</p>
+                          )}
                         </div>
                       </div>
-                    ))}
-                  </div>
-                ) : (
-                  <p className="text-gray-600 text-center py-4">No analysis runs yet</p>
+                      
+                      <Button 
+                        onClick={() => startRunMutation.mutate()}
+                        disabled={!csvFile || !jslFile || startRunMutation.isPending}
+                        className="w-full"
+                      >
+                        {startRunMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                        {startRunMutation.isPending ? t('projects.starting') : t('projects.startRun')}
+                      </Button>
+                    </CardContent>
+                  </Card>
                 )}
-              </CardContent>
-            </Card>
+              </TabsContent>
+
+              <TabsContent value="members">
+                {membersError ? (
+                  <Card>
+                    <CardContent className="p-6">
+                      <Alert>
+                        <AlertDescription>
+                          {membersError.message.includes('Authentication') 
+                            ? 'Please log out and log back in to refresh your authentication token.'
+                            : `Error loading members: ${membersError.message}`
+                          }
+                        </AlertDescription>
+                      </Alert>
+                    </CardContent>
+                  </Card>
+                ) : (
+                  <EnhancedProjectMembership 
+                    projectId={projectId}
+                    currentUserRole={currentUserRole}
+                  />
+                )}
+              </TabsContent>
+
+              <TabsContent value="comments">
+                <ProjectComments 
+                  projectId={projectId}
+                  currentUserRole={currentUserRole}
+                  onCommentChange={() => {
+                    // Comments will auto-refresh via their internal state
+                  }}
+                />
+              </TabsContent>
+
+              <TabsContent value="history" className="space-y-6">
+                {/* Runs History */}
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center">
+                      <BarChart3 className="mr-2 h-5 w-5" />
+                      {t('projects.analysisHistory')}
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    {runsLoading ? (
+                      <div className="text-center py-4">
+                        <Loader2 className="h-6 w-6 animate-spin mx-auto mb-2" />
+                        <p className="text-gray-600">{t('projects.loadingRuns')}</p>
+                      </div>
+                    ) : runs && runs.length > 0 ? (
+                      <div className="space-y-3">
+                        {runs.map((run) => (
+                          <div key={run.id} className="flex items-center justify-between p-3 border rounded-lg">
+                            <div className="flex items-center space-x-3">
+                              <Badge className={getStatusColor(run.status)}>
+                                {run.status}
+                              </Badge>
+                              <div>
+                                <p className="font-medium">{run.task_name}</p>
+                                <p className="text-sm text-gray-600">
+                                  {run.image_count} images • {new Date(run.created_at).toLocaleString()}
+                                </p>
+                                {run.started_by_email && (
+                                  <p className="text-xs text-gray-500">
+                                    Started by: {run.started_by_email}
+                                  </p>
+                                )}
+                              </div>
+                            </div>
+                            <div className="flex items-center space-x-2">
+                              <Button 
+                                variant="outline" 
+                                size="sm"
+                                onClick={() => {
+                                  setSelectedRun(run)
+                                  setShowGallery(true)
+                                }}
+                              >
+                                <Eye className="h-4 w-4" />
+                              </Button>
+                              <Button 
+                                variant="outline" 
+                                size="sm"
+                                onClick={async () => {
+                                  try {
+                                    // Download the ZIP file directly
+                                    const downloadResponse = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/v1/uploads/download-zip/${run.id}`, {
+                                      headers: {
+                                        'Authorization': `Bearer ${getAuthToken()}`,
+                                      },
+                                    })
+                                    
+                                    if (!downloadResponse.ok) throw new Error('Download failed')
+                                    
+                                    const blob = await downloadResponse.blob()
+                                    const url = window.URL.createObjectURL(blob)
+                                    const a = document.createElement('a')
+                                    a.href = url
+                                    a.download = `run_${run.id}_results.zip`
+                                    document.body.appendChild(a)
+                                    a.click()
+                                    window.URL.revokeObjectURL(url)
+                                    document.body.removeChild(a)
+                                    
+                                    toast.success('ZIP file downloaded successfully!')
+                                  } catch (error) {
+                                    console.error('Download error:', error)
+                                    toast.error('Failed to download ZIP file')
+                                  }
+                                }}
+                              >
+                                <Download className="h-4 w-4" />
+                              </Button>
+                              {currentUserRole === 'owner' && (
+                                <Button 
+                                  variant="outline" 
+                                  size="sm"
+                                  onClick={() => {
+                                    if (confirm('Are you sure you want to delete this run? This action cannot be undone.')) {
+                                      deleteRunMutation.mutate(run.id)
+                                    }
+                                  }}
+                                  disabled={deleteRunMutation.isPending}
+                                  className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                                >
+                                  {deleteRunMutation.isPending ? (
+                                    <Loader2 className="h-4 w-4 animate-spin" />
+                                  ) : (
+                                    <Trash2 className="h-4 w-4" />
+                                  )}
+                                </Button>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-gray-600 text-center py-4">No analysis runs yet</p>
+                    )}
+                  </CardContent>
+                </Card>
+              </TabsContent>
+            </Tabs>
           </div>
 
           {/* Sidebar */}
@@ -585,7 +734,7 @@ export default function ProjectPage() {
               <CardContent className="space-y-3">
                 <div>
                   <p className="text-sm font-medium text-gray-600">{t('projects.owner')}</p>
-                  <p className="text-sm">{project?.owner?.email || t('projects.unknown')}</p>
+                  <p className="text-sm">{project?.owner_display_name || project?.owner_email || t('projects.unknown')}</p>
                 </div>
                 <div>
                   <p className="text-sm font-medium text-gray-600">{t('projects.created')}</p>
@@ -620,6 +769,50 @@ export default function ProjectPage() {
                     }
                   </p>
                 </div>
+              </CardContent>
+            </Card>
+
+            {/* Member Management */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center">
+                  <Users className="mr-2 h-5 w-5" />
+                  Member Management
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <div>
+                  <p className="text-sm font-medium text-gray-600">Project Owner</p>
+                  <p className="text-sm">
+                    {project?.owner_display_name || project?.owner_email || 'Loading...'}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-sm font-medium text-gray-600">Your Access</p>
+                  <p className="text-sm capitalize">
+                    {currentUserRole === 'owner' ? 'Owner (Full Access)' : 'Member (Limited Access)'}
+                  </p>
+                </div>
+                <Button 
+                  className="w-full"
+                  variant="outline"
+                  onClick={() => {
+                    setActiveTab('members')
+                  }}
+                >
+                  <UserPlus className="mr-2 h-4 w-4" />
+                  Manage Members
+                </Button>
+                {currentUserRole === 'owner' && (
+                  <p className="text-xs text-gray-500">
+                    As the project owner, you have full control over this project
+                  </p>
+                )}
+                {currentUserRole !== 'owner' && (
+                  <p className="text-xs text-gray-500">
+                    Your access permissions are determined by the project owner
+                  </p>
+                )}
               </CardContent>
             </Card>
 

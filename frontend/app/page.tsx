@@ -8,7 +8,8 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Alert, AlertDescription } from '@/components/ui/alert-simple'
-import { Loader2, Upload, FileText, BarChart3, Users, Share2 } from 'lucide-react'
+import { Loader2, Upload, FileText, BarChart3, Users, Share2, HelpCircle, Menu } from 'lucide-react'
+import { DataUploadSVG, RealTimeProcessingSVG, ShareCollaborateSVG, AnalyticsDashboardSVG, PluginEcosystemSVG } from '@/components/svg/Illustrations'
 import { useAuth } from '@/lib/auth'
 import { authApi } from '@/lib/api'
 import { useMutation } from '@tanstack/react-query'
@@ -117,6 +118,13 @@ export default function HomePage() {
     guestMutation.mutate()
   }
 
+  // Redirect to dashboard if user is already logged in
+  useEffect(() => {
+    if (user) {
+      router.push('/dashboard')
+    }
+  }, [user, router])
+
   // Skip setup check for now
   // if (setupStatus === null) {
   //   return (
@@ -130,54 +138,102 @@ export default function HomePage() {
   // }
 
   if (user) {
-    router.push('/dashboard')
     return null
   }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100">
-      <div className="container mx-auto px-4 py-8">
-        {/* Header */}
-        <div className="flex justify-end mb-4">
-          <LanguageSelector />
-        </div>
-        <div className="text-center mb-12">
-          <div className="flex items-center justify-center mb-6">
-            <BarChart3 className="h-12 w-12 text-blue-600 mr-4" />
-            <h1 className="text-4xl font-bold text-gray-900">{t('landing.title')}</h1>
+      {/* Top Menu Bar */}
+      <div className="bg-white shadow-sm border-b">
+        <div className="container mx-auto px-4 py-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-4">
+              <BarChart3 className="h-8 w-8 text-blue-600" />
+              <h1 className="text-xl font-bold text-gray-900">{t('landing.title')}</h1>
+            </div>
+            <div className="flex items-center space-x-4">
+              <Button 
+                variant="ghost" 
+                onClick={() => window.open('/help', '_blank')}
+                className="flex items-center space-x-2"
+              >
+                <HelpCircle className="h-4 w-4" />
+                <span>{t('help.title')}</span>
+              </Button>
+              <LanguageSelector />
+            </div>
           </div>
-          <p className="text-xl text-gray-600 max-w-2xl mx-auto">
-            {t('landing.subtitle')}
-          </p>
+        </div>
+      </div>
+
+      <div className="container mx-auto px-4 py-8">
+        {/* Hero Section */}
+        <div className="text-center mb-16">
+          <div className="flex flex-col items-center justify-center mb-8">
+            <div className="relative mb-6">
+              <AnalyticsDashboardSVG className="w-24 h-24" />
+              <div className="absolute -top-2 -right-2">
+                <PluginEcosystemSVG className="w-16 h-16" />
+              </div>
+            </div>
+            <h1 className="text-5xl font-bold text-gray-900 mb-4 bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
+              {t('landing.title')}
+            </h1>
+            <p className="text-xl text-gray-600 max-w-3xl mx-auto leading-relaxed">
+              {t('landing.subtitle')}
+            </p>
+          </div>
+          
+          {/* Quick Stats */}
+          <div className="grid grid-cols-3 gap-8 max-w-2xl mx-auto mb-12">
+            <div className="text-center">
+              <div className="text-3xl font-bold text-blue-600">3+</div>
+              <div className="text-sm text-gray-600">Analysis Plugins</div>
+            </div>
+            <div className="text-center">
+              <div className="text-3xl font-bold text-green-600">Real-time</div>
+              <div className="text-sm text-gray-600">Processing</div>
+            </div>
+            <div className="text-center">
+              <div className="text-3xl font-bold text-purple-600">Multi-lang</div>
+              <div className="text-sm text-gray-600">Support</div>
+            </div>
+          </div>
         </div>
 
         {/* Features */}
-        <div className="grid md:grid-cols-3 gap-6 mb-12">
-          <Card>
-            <CardHeader>
-              <Upload className="h-8 w-8 text-blue-600 mb-2" />
-              <CardTitle>{t('landing.features.easyUpload.title')}</CardTitle>
-              <CardDescription>
+        <div className="grid md:grid-cols-3 gap-8 mb-16">
+          <Card className="group hover:shadow-lg transition-all duration-300 border-0 bg-white/80 backdrop-blur-sm">
+            <CardHeader className="text-center pb-4">
+              <div className="flex justify-center mb-4">
+                <DataUploadSVG className="w-16 h-16" />
+              </div>
+              <CardTitle className="text-xl font-semibold text-gray-900">{t('landing.features.easyUpload.title')}</CardTitle>
+              <CardDescription className="text-gray-600 leading-relaxed">
                 {t('landing.features.easyUpload.description')}
               </CardDescription>
             </CardHeader>
           </Card>
           
-          <Card>
-            <CardHeader>
-              <BarChart3 className="h-8 w-8 text-green-600 mb-2" />
-              <CardTitle>{t('landing.features.realTime.title')}</CardTitle>
-              <CardDescription>
+          <Card className="group hover:shadow-lg transition-all duration-300 border-0 bg-white/80 backdrop-blur-sm">
+            <CardHeader className="text-center pb-4">
+              <div className="flex justify-center mb-4">
+                <RealTimeProcessingSVG className="w-16 h-16" />
+              </div>
+              <CardTitle className="text-xl font-semibold text-gray-900">{t('landing.features.realTime.title')}</CardTitle>
+              <CardDescription className="text-gray-600 leading-relaxed">
                 {t('landing.features.realTime.description')}
               </CardDescription>
             </CardHeader>
           </Card>
           
-          <Card>
-            <CardHeader>
-              <Share2 className="h-8 w-8 text-purple-600 mb-2" />
-              <CardTitle>{t('landing.features.share.title')}</CardTitle>
-              <CardDescription>
+          <Card className="group hover:shadow-lg transition-all duration-300 border-0 bg-white/80 backdrop-blur-sm">
+            <CardHeader className="text-center pb-4">
+              <div className="flex justify-center mb-4">
+                <ShareCollaborateSVG className="w-16 h-16" />
+              </div>
+              <CardTitle className="text-xl font-semibold text-gray-900">{t('landing.features.share.title')}</CardTitle>
+              <CardDescription className="text-gray-600 leading-relaxed">
                 {t('landing.features.share.description')}
               </CardDescription>
             </CardHeader>
@@ -185,23 +241,29 @@ export default function HomePage() {
         </div>
 
         {/* Auth Forms */}
-        <div className="max-w-md mx-auto">
-          <Tabs defaultValue="login" className="w-full">
-            <TabsList className="grid w-full grid-cols-3">
-              <TabsTrigger value="login">{t('auth.login')}</TabsTrigger>
-              <TabsTrigger value="register">{t('auth.register')}</TabsTrigger>
-              <TabsTrigger value="guest">{t('auth.guest')}</TabsTrigger>
-            </TabsList>
+        <div className="max-w-lg mx-auto">
+          <div className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-xl border border-white/20 p-8">
+            <div className="text-center mb-8">
+              <h2 className="text-2xl font-bold text-gray-900 mb-2">Get Started</h2>
+              <p className="text-gray-600">Choose how you'd like to access the platform</p>
+            </div>
             
-            <TabsContent value="login">
-              <Card>
-                <CardHeader>
-                  <CardTitle>{t('auth.loginTitle')}</CardTitle>
-                  <CardDescription>
+            <Tabs defaultValue="login" className="w-full">
+              <TabsList className="grid w-full grid-cols-3 bg-gray-100 p-1 rounded-lg">
+                <TabsTrigger value="login" className="rounded-md">{t('auth.login')}</TabsTrigger>
+                <TabsTrigger value="register" className="rounded-md">{t('auth.register')}</TabsTrigger>
+                <TabsTrigger value="guest" className="rounded-md">{t('auth.guest')}</TabsTrigger>
+              </TabsList>
+            
+            <TabsContent value="login" className="mt-6">
+              <div>
+                <div className="text-center mb-6">
+                  <h3 className="text-lg font-semibold text-gray-900">{t('auth.loginTitle')}</h3>
+                  <p className="text-sm text-gray-600 mt-1">
                     {t('auth.loginSubtitle')}
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
+                  </p>
+                </div>
+                <div>
                   <form onSubmit={handleLogin} className="space-y-4">
                     <div className="space-y-2">
                       <Label htmlFor="email">{t('auth.email')}</Label>
@@ -231,19 +293,19 @@ export default function HomePage() {
                       {loginMutation.isPending ? t('auth.signingIn') : t('auth.login')}
                     </Button>
                   </form>
-                </CardContent>
-              </Card>
+                </div>
+              </div>
             </TabsContent>
             
-            <TabsContent value="register">
-              <Card>
-                <CardHeader>
-                  <CardTitle>{t('auth.registerTitle')}</CardTitle>
-                  <CardDescription>
+            <TabsContent value="register" className="mt-6">
+              <div>
+                <div className="text-center mb-6">
+                  <h3 className="text-lg font-semibold text-gray-900">{t('auth.registerTitle')}</h3>
+                  <p className="text-sm text-gray-600 mt-1">
                     {t('auth.registerSubtitle')}
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
+                  </p>
+                </div>
+                <div>
                   <form onSubmit={handleRegister} className="space-y-4">
                     <div className="space-y-2">
                       <Label htmlFor="email">{t('auth.email')}</Label>
@@ -273,19 +335,19 @@ export default function HomePage() {
                       {registerMutation.isPending ? t('auth.creatingAccount') : t('auth.register')}
                     </Button>
                   </form>
-                </CardContent>
-              </Card>
+                </div>
+              </div>
             </TabsContent>
             
-            <TabsContent value="guest">
-              <Card>
-                <CardHeader>
-                  <CardTitle>{t('auth.tryAsGuest')}</CardTitle>
-                  <CardDescription>
+            <TabsContent value="guest" className="mt-6">
+              <div>
+                <div className="text-center mb-6">
+                  <h3 className="text-lg font-semibold text-gray-900">{t('auth.tryAsGuest')}</h3>
+                  <p className="text-sm text-gray-600 mt-1">
                     {t('auth.guestDescription')}
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
+                  </p>
+                </div>
+                <div>
                   <Alert className="mb-4">
                     <AlertDescription>
                       {t('auth.guestWarning')}
@@ -300,10 +362,11 @@ export default function HomePage() {
                     {guestMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                     {guestMutation.isPending ? t('auth.creatingGuest') : t('auth.guest')}
                   </Button>
-                </CardContent>
-              </Card>
+                </div>
+              </div>
             </TabsContent>
           </Tabs>
+          </div>
         </div>
       </div>
     </div>

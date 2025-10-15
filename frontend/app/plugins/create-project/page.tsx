@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, Suspense } from 'react'
+import { useState, useEffect, Suspense, useMemo } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -19,46 +19,54 @@ interface Plugin {
   features: string[]
 }
 
-const plugins: Plugin[] = [
-  {
-    id: 'excel2boxplotv1',
-    name: 'Excel to Boxplot V1',
-    description: 'Convert Excel files to CSV and JSL scripts with three-checkpoint validation system for boxplot analysis',
-    icon: <BarChart3 className="h-8 w-8 text-blue-600" />,
-    features: [
-      'Three-checkpoint validation system',
-      'Automatic file fixing for corrupted Excel files',
-      'Boundary calculation (min, max, inc, tick)',
-      'CSV and JSL generation',
-      'Boxplot visualization'
-    ]
-  },
-  {
-    id: 'excel2boxplotv2',
-    name: 'Excel to Boxplot V2',
-    description: 'Excel to CSV/JSL with alternate column naming (Y Variable, DETAIL, Target, USL, LSL, Label; Stage as category)',
-    icon: <BarChart3 className="h-8 w-8 text-indigo-600" />,
-    features: [
-      'V2 meta column mapping (Y Variable/DETAIL/Target/USL/LSL/Label)',
-      'Prefers Stage as categorical variable',
-      'Three-checkpoint validation (informational)',
-      'Boundary calculation (min, max, inc, tick)',
-      'CSV and JSL generation'
-    ]
-  },
-  {
-    id: 'excel2processcapability',
-    name: 'Excel to Process Capability',
-    description: 'Convert Excel files to CSV and JSL scripts for process capability analysis',
-    icon: <FileSpreadsheet className="h-8 w-8 text-green-600" />,
-    features: [
-      'Process capability analysis',
-      'Statistical process control',
-      'Capability indices calculation',
-      'Control charts generation'
-    ]
+const getPlugins = (t: (key: string) => string): Plugin[] => {
+  // Helper function to get translation with proper fallback
+  const getTranslation = (key: string, fallback: string) => {
+    const translation = t(key)
+    return translation === key ? fallback : translation
   }
-]
+
+  return [
+    {
+      id: 'excel2boxplotv1',
+      name: getTranslation('plugin.excel2boxplotv1.name', 'Excel to Boxplot V1'),
+      description: getTranslation('plugin.excel2boxplotv1.description', 'Convert Excel files to CSV and JSL scripts with three-checkpoint validation system'),
+      icon: <BarChart3 className="h-8 w-8 text-blue-600" />,
+      features: [
+        getTranslation('plugin.excel2boxplotv1.features.0', 'Three-checkpoint validation system'),
+        getTranslation('plugin.excel2boxplotv1.features.1', 'Automatic file fixing for corrupted Excel files'),
+        getTranslation('plugin.excel2boxplotv1.features.2', 'Boundary calculation (min, max, inc, tick)'),
+        getTranslation('plugin.excel2boxplotv1.features.3', 'CSV and JSL generation'),
+        getTranslation('plugin.excel2boxplotv1.features.4', 'Boxplot visualization')
+      ]
+    },
+    {
+      id: 'excel2boxplotv2',
+      name: getTranslation('plugin.excel2boxplotv2.name', 'Excel to Boxplot V2'),
+      description: getTranslation('plugin.excel2boxplotv2.description', 'Excel to CSV/JSL with V2 column mapping'),
+      icon: <BarChart3 className="h-8 w-8 text-indigo-600" />,
+      features: [
+        getTranslation('plugin.excel2boxplotv2.features.0', 'V2 meta column mapping (Y Variable/DETAIL/Target/USL/LSL/Label)'),
+        getTranslation('plugin.excel2boxplotv2.features.1', 'Prefers Stage as categorical variable'),
+        getTranslation('plugin.excel2boxplotv2.features.2', 'Three-checkpoint validation (informational)'),
+        getTranslation('plugin.excel2boxplotv2.features.3', 'Boundary calculation (min, max, inc, tick)'),
+        getTranslation('plugin.excel2boxplotv2.features.4', 'CSV and JSL generation')
+      ]
+    },
+    {
+      id: 'excel2processcapability',
+      name: getTranslation('plugin.excel2processcapability.name', 'Excel to Process Capability'),
+      description: getTranslation('plugin.excel2processcapability.description', 'Convert Excel data to process capability analysis (Cp, Cpk, Pp, Ppk)'),
+      icon: <FileSpreadsheet className="h-8 w-8 text-green-600" />,
+      features: [
+        getTranslation('plugin.excel2processcapability.features.0', 'Process capability analysis'),
+        getTranslation('plugin.excel2processcapability.features.1', 'Statistical process control'),
+        getTranslation('plugin.excel2processcapability.features.2', 'Capability indices calculation'),
+        getTranslation('plugin.excel2processcapability.features.3', 'Control charts generation')
+      ]
+    }
+  ]
+}
 
 function PluginSelectionContent() {
   const router = useRouter()
@@ -71,23 +79,24 @@ function PluginSelectionContent() {
     isPublic: false
   })
   const [isCreating, setIsCreating] = useState(false)
+  
+  // Memoize plugins to prevent infinite re-renders
+  const plugins = useMemo(() => getPlugins(t), [t])
 
   // Handle URL parameter for pre-selected plugin
   useEffect(() => {
     const pluginParam = searchParams.get('plugin')
     if (pluginParam) {
       const plugin = plugins.find(p => p.id === pluginParam)
-      if (plugin) {
+      if (plugin && !selectedPlugin) {
         setSelectedPlugin(plugin)
-        if (!projectData.name) {
-          setProjectData(prev => ({
-            ...prev,
-            name: `${plugin.name} Analysis - ${new Date().toLocaleDateString()}`
-          }))
-        }
+        setProjectData(prev => ({
+          ...prev,
+          name: prev.name || `${plugin.name} Analysis - ${new Date().toLocaleDateString()}`
+        }))
       }
     }
-  }, [searchParams, projectData.name])
+  }, [searchParams, plugins, selectedPlugin])
 
   const handlePluginSelect = (plugin: Plugin) => {
     setSelectedPlugin(plugin)
@@ -127,7 +136,7 @@ function PluginSelectionContent() {
 
       if (response.ok) {
         const project = await response.json()
-        // Navigate to the wizard page with project ID and plugin info
+        // Navigate to the wizard page with project ID
         router.push(`/plugins/${selectedPlugin.id}/wizard?projectId=${project.id}&plugin=${selectedPlugin.id}`)
       } else {
         const errorData = await response.json()

@@ -24,11 +24,22 @@ import {
   Trash2,
   Loader2
 } from 'lucide-react'
+import { 
+  ProjectStatsSVG, 
+  RunStatsSVG, 
+  ActiveRunsSVG, 
+  EmptyProjectsSVG, 
+  PluginCardSVG, 
+  QuickAnalysisSVG, 
+  RecentRunsSVG,
+  WelcomeSVG 
+} from '@/components/svg/DashboardIllustrations'
 import { useAuth } from '@/lib/auth'
 import { projectApi, runApi } from '@/lib/api'
 import { useQuery, useMutation } from '@tanstack/react-query'
 import { useLanguage } from '@/lib/language'
 import { LanguageSelector } from '@/components/LanguageSelector'
+import { NotificationBell } from '@/components/NotificationCenter'
 import toast from 'react-hot-toast'
 
 interface Project {
@@ -182,6 +193,7 @@ export default function DashboardPage() {
                   {user.is_guest ? t('auth.guest') : user.email}
                 </span>
               </div>
+              <NotificationBell />
               <LanguageSelector />
               {!user.is_guest && (
                 <Button 
@@ -205,47 +217,55 @@ export default function DashboardPage() {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {/* Welcome Section */}
         <div className="mb-8">
-          <h2 className="text-2xl font-bold text-gray-900 mb-2">
-            {user.is_guest ? t('auth.guestWelcome') : t('auth.welcome')}!
-          </h2>
-          <p className="text-gray-600">
-            {t('dashboard.welcomeMessage')}
-          </p>
+          <div className="flex items-center space-x-4 mb-4">
+            <WelcomeSVG className="w-16 h-16" />
+            <div>
+              <h2 className="text-3xl font-bold text-gray-900">
+                {user.is_guest ? t('auth.guestWelcome') : t('auth.welcome')}!
+              </h2>
+              <p className="text-gray-600 text-lg">
+                {t('dashboard.welcomeMessage')}
+              </p>
+            </div>
+          </div>
         </div>
 
         {/* Quick Stats */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-          <Card>
+          <Card className="group hover:shadow-lg transition-all duration-300">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">{t('dashboard.stats.totalProjects')}</CardTitle>
-              <FileText className="h-4 w-4 text-muted-foreground" />
+              <ProjectStatsSVG className="w-8 h-8" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">{projects.length}</div>
+              <div className="text-3xl font-bold text-blue-600">{projects.length}</div>
+              <p className="text-xs text-gray-500 mt-1">Active projects</p>
             </CardContent>
           </Card>
           
-          <Card>
+          <Card className="group hover:shadow-lg transition-all duration-300">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">{t('dashboard.stats.totalRuns')}</CardTitle>
-              <BarChart3 className="h-4 w-4 text-muted-foreground" />
+              <RunStatsSVG className="w-8 h-8" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">
+              <div className="text-3xl font-bold text-green-600">
                 {projects.reduce((sum: number, p: any) => sum + p.run_count, 0)}
               </div>
+              <p className="text-xs text-gray-500 mt-1">Total analyses</p>
             </CardContent>
           </Card>
           
-          <Card>
+          <Card className="group hover:shadow-lg transition-all duration-300">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">{t('dashboard.stats.activeRuns')}</CardTitle>
-              <Clock className="h-4 w-4 text-muted-foreground" />
+              <ActiveRunsSVG className="w-8 h-8" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">
+              <div className="text-3xl font-bold text-amber-600">
                 {recentRuns.filter((r: Run) => ['running', 'queued'].includes(r.status)).length}
               </div>
+              <p className="text-xs text-gray-500 mt-1">Currently processing</p>
             </CardContent>
           </Card>
         </div>
@@ -322,15 +342,15 @@ export default function DashboardPage() {
           )}
 
           {projects.length === 0 ? (
-            <Card>
-              <CardContent className="flex flex-col items-center justify-center py-12">
-                <FileText className="h-12 w-12 text-gray-400 mb-4" />
-                <h3 className="text-lg font-medium text-gray-900 mb-2">No projects yet</h3>
-                <p className="text-gray-500 text-center mb-4">
-                  Create your first project to start analyzing data with JMP.
+            <Card className="bg-gradient-to-br from-blue-50 to-indigo-50 border-blue-200">
+              <CardContent className="flex flex-col items-center justify-center py-16">
+                <EmptyProjectsSVG className="w-24 h-24 mb-6" />
+                <h3 className="text-xl font-semibold text-gray-900 mb-3">No projects yet</h3>
+                <p className="text-gray-600 text-center mb-6 max-w-md">
+                  Create your first project to start analyzing data with JMP. Upload Excel files and generate beautiful visualizations.
                 </p>
-                <Button onClick={() => setShowCreateProject(true)}>
-                  <Plus className="h-4 w-4 mr-2" />
+                <Button onClick={() => setShowCreateProject(true)} size="lg" className="bg-blue-600 hover:bg-blue-700">
+                  <Plus className="h-5 w-5 mr-2" />
                   Create Your First Project
                 </Button>
               </CardContent>
@@ -404,31 +424,37 @@ export default function DashboardPage() {
           <h3 className="text-lg font-semibold text-gray-900 mb-6">Analysis Plugins</h3>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <Card 
-              className="cursor-pointer hover:shadow-md transition-shadow"
+              className="cursor-pointer hover:shadow-lg transition-all duration-300 group border-purple-200 bg-gradient-to-br from-purple-50 to-pink-50"
               onClick={() => router.push('/plugins')}
             >
               <CardHeader>
-                <CardTitle className="flex items-center space-x-2">
-                  <BarChart3 className="h-5 w-5 text-blue-600" />
-                  <span>Excel Analysis Plugins</span>
-                </CardTitle>
-                <CardDescription>
+                <div className="flex items-center justify-between">
+                  <CardTitle className="flex items-center space-x-3">
+                    <PluginCardSVG className="w-8 h-8" />
+                    <span className="text-lg">Excel Analysis Plugins</span>
+                  </CardTitle>
+                </div>
+                <CardDescription className="text-gray-600">
                   Convert Excel files to statistical analysis and visualizations
                 </CardDescription>
               </CardHeader>
               <CardContent>
-                <div className="space-y-2">
-                  <div className="flex items-center space-x-2">
-                    <div className="w-2 h-2 bg-green-500 rounded-full"></div>
-                    <span className="text-sm text-gray-600">Excel2Boxplot V1</span>
+                <div className="space-y-3">
+                  <div className="flex items-center space-x-3">
+                    <div className="w-3 h-3 bg-green-500 rounded-full"></div>
+                    <span className="text-sm text-gray-700">Excel2Boxplot V1</span>
                   </div>
-                  <div className="flex items-center space-x-2">
-                    <div className="w-2 h-2 bg-green-500 rounded-full"></div>
-                    <span className="text-sm text-gray-600">Excel2ProcessCapability</span>
+                  <div className="flex items-center space-x-3">
+                    <div className="w-3 h-3 bg-green-500 rounded-full"></div>
+                    <span className="text-sm text-gray-700">Excel2Boxplot V2</span>
+                  </div>
+                  <div className="flex items-center space-x-3">
+                    <div className="w-3 h-3 bg-green-500 rounded-full"></div>
+                    <span className="text-sm text-gray-700">Excel2ProcessCapability</span>
                   </div>
                 </div>
-                <div className="mt-4">
-                  <Button variant="outline" className="w-full">
+                <div className="mt-6">
+                  <Button variant="outline" className="w-full group-hover:bg-purple-600 group-hover:text-white group-hover:border-purple-600">
                     View All Plugins
                   </Button>
                 </div>
@@ -436,31 +462,37 @@ export default function DashboardPage() {
             </Card>
 
             <Card 
-              className="cursor-pointer hover:shadow-md transition-shadow"
+              className="cursor-pointer hover:shadow-lg transition-all duration-300 group border-red-200 bg-gradient-to-br from-red-50 to-orange-50"
               onClick={() => router.push('/plugins/excel2boxplotv1')}
             >
               <CardHeader>
-                <CardTitle className="flex items-center space-x-2">
-                  <BarChart3 className="h-5 w-5 text-purple-600" />
-                  <span>Quick Boxplot Analysis</span>
-                </CardTitle>
-                <CardDescription>
+                <div className="flex items-center justify-between">
+                  <CardTitle className="flex items-center space-x-3">
+                    <QuickAnalysisSVG className="w-8 h-8" />
+                    <span className="text-lg">Quick Boxplot Analysis</span>
+                  </CardTitle>
+                </div>
+                <CardDescription className="text-gray-600">
                   Upload Excel file and generate boxplot analysis instantly
                 </CardDescription>
               </CardHeader>
               <CardContent>
-                <div className="space-y-2">
-                  <div className="flex items-center space-x-2">
-                    <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
-                    <span className="text-sm text-gray-600">Single & Grouped Boxplots</span>
+                <div className="space-y-3">
+                  <div className="flex items-center space-x-3">
+                    <div className="w-3 h-3 bg-red-500 rounded-full"></div>
+                    <span className="text-sm text-gray-700">Single & Grouped Boxplots</span>
                   </div>
-                  <div className="flex items-center space-x-2">
-                    <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
-                    <span className="text-sm text-gray-600">Statistical Insights</span>
+                  <div className="flex items-center space-x-3">
+                    <div className="w-3 h-3 bg-red-500 rounded-full"></div>
+                    <span className="text-sm text-gray-700">Statistical Insights</span>
+                  </div>
+                  <div className="flex items-center space-x-3">
+                    <div className="w-3 h-3 bg-red-500 rounded-full"></div>
+                    <span className="text-sm text-gray-700">Real-time Processing</span>
                   </div>
                 </div>
-                <div className="mt-4">
-                  <Button className="w-full">
+                <div className="mt-6">
+                  <Button className="w-full bg-red-600 hover:bg-red-700 group-hover:bg-red-700">
                     Start Boxplot Analysis
                   </Button>
                 </div>
@@ -472,15 +504,18 @@ export default function DashboardPage() {
         {/* Recent Runs */}
         {recentRuns.length > 0 && (
           <div>
-            <h3 className="text-lg font-semibold text-gray-900 mb-6">Recent Runs</h3>
+            <div className="flex items-center space-x-3 mb-6">
+              <RecentRunsSVG className="w-8 h-8" />
+              <h3 className="text-lg font-semibold text-gray-900">Recent Runs</h3>
+            </div>
             <div className="space-y-4">
               {recentRuns.slice(0, 5).map((run: Run) => (
-                <Card key={run.id}>
+                <Card key={run.id} className="hover:shadow-md transition-shadow">
                   <CardContent className="flex items-center justify-between py-4">
                     <div className="flex items-center space-x-4">
                       {getStatusIcon(run.status)}
                       <div>
-                        <p className="font-medium">{run.task_name}</p>
+                        <p className="font-medium text-gray-900">{run.task_name}</p>
                         <p className="text-sm text-gray-500">
                           {run.message || 'No message'}
                         </p>
