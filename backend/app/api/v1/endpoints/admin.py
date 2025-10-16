@@ -544,6 +544,33 @@ async def get_plugins(
                 "能力指数计算",
                 "控制图生成"
             ]
+        },
+        {
+            "id": "excel2cpkv1",
+            "name": "Excel to CPK V1",
+            "version": "1.0.0",
+            "description": "Convert Excel files to CSV and JSL scripts for Process Capability (CPK) analysis with three-checkpoint validation system",
+            "icon": "📈",
+            "category": "analysis",
+            "supported_formats": [".xlsx", ".xls", ".xlsm"],
+            "english_name": "Excel to CPK V1",
+            "english_description": "Convert Excel files to CSV and JSL scripts for Process Capability (CPK) analysis with three-checkpoint validation system",
+            "chinese_name": "Excel转CPK V1",
+            "chinese_description": "将Excel文件转换为CSV和JSL脚本，用于过程能力（CPK）分析，具有三点验证系统",
+            "english_features": [
+                "Three-checkpoint validation system",
+                "Process Capability (CPK) analysis",
+                "Spec data validation and normalization",
+                "FAI column matching",
+                "CSV and JSL generation for JMP"
+            ],
+            "chinese_features": [
+                "三点验证系统",
+                "过程能力（CPK）分析",
+                "规格数据验证和标准化",
+                "FAI列匹配",
+                "为JMP生成CSV和JSL"
+            ]
         }
     ]
     

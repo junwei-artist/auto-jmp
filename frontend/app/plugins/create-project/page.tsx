@@ -64,6 +64,19 @@ const getPlugins = (t: (key: string) => string): Plugin[] => {
         getTranslation('plugin.excel2processcapability.features.2', 'Capability indices calculation'),
         getTranslation('plugin.excel2processcapability.features.3', 'Control charts generation')
       ]
+    },
+    {
+      id: 'excel2cpkv1',
+      name: getTranslation('plugin.excel2cpkv1.name', 'Excel to CPK V1'),
+      description: getTranslation('plugin.excel2cpkv1.description', 'Convert Excel files to CSV and JSL scripts for Process Capability (CPK) analysis with three-checkpoint validation system'),
+      icon: <BarChart3 className="h-8 w-8 text-purple-600" />,
+      features: [
+        getTranslation('plugin.excel2cpkv1.features.0', 'Three-checkpoint validation system'),
+        getTranslation('plugin.excel2cpkv1.features.1', 'Process Capability (CPK) analysis'),
+        getTranslation('plugin.excel2cpkv1.features.2', 'Spec data validation and normalization'),
+        getTranslation('plugin.excel2cpkv1.features.3', 'FAI column matching'),
+        getTranslation('plugin.excel2cpkv1.features.4', 'CSV and JSL generation for JMP')
+      ]
     }
   ]
 }

@@ -92,6 +92,33 @@ export default function PluginsPage() {
       },
       components: {},
       hooks: {}
+    },
+    {
+      config: {
+        id: 'excel2cpkv1',
+        name: 'Excel to CPK V1',
+        version: '1.0.0',
+        description: 'Convert Excel files to CSV and JSL scripts for Process Capability (CPK) analysis with three-checkpoint validation system',
+        icon: '📈',
+        category: 'analysis',
+        supportedFormats: ['.xlsx', '.xls', '.xlsm'],
+        routes: [
+          {
+            path: '/plugins/excel2cpkv1',
+            component: 'AnalysisForm',
+            title: 'Excel to CSV/JSL Converter (CPK)',
+            description: 'Upload Excel file with meta/data sheets, validate structure, and generate CSV + JSL for Process Capability analysis'
+          }
+        ],
+        apiEndpoints: [
+          '/api/v1/extensions/excel2cpkv1/validate',
+          '/api/v1/extensions/excel2cpkv1/process',
+          '/api/v1/extensions/excel2cpkv1/create-project',
+          '/api/v1/extensions/excel2cpkv1/run-analysis'
+        ]
+      },
+      components: {},
+      hooks: {}
     }
   ]
 

@@ -39,6 +39,8 @@ class ExtensionManager:
                 class_name = 'Excel2BoxplotV2Extension'
             elif extension_name == 'excel2processcapability':
                 class_name = 'Excel2ProcessCapabilityExtension'
+            elif extension_name == 'excel2cpkv1':
+                class_name = 'Excel2CPKV1Extension'
             
             extension_class = getattr(module, class_name)
             

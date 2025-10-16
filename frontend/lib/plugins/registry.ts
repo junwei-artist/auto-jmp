@@ -98,7 +98,8 @@ class PluginRegistry {
     const pluginModules = [
       { name: 'excel2boxplotv1', import: () => import('../../plugins/excel2boxplotv1/config') },
       { name: 'excel2boxplotv2', import: () => import('../../plugins/excel2boxplotv2/config') },
-      { name: 'excel2processcapability', import: () => import('../../plugins/excel2processcapability/config') }
+      { name: 'excel2processcapability', import: () => import('../../plugins/excel2processcapability/config') },
+      { name: 'excel2cpkv1', import: () => import('../../plugins/excel2cpkv1/config') }
     ]
 
     for (const { name, import: importPlugin } of pluginModules) {
