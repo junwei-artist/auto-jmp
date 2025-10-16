@@ -25,7 +25,8 @@ import {
   Trash2,
   Loader2,
   Crown,
-  UserCheck
+  UserCheck,
+  HelpCircle
 } from 'lucide-react'
 import { 
   ProjectStatsSVG, 
@@ -276,6 +277,15 @@ export default function DashboardPage() {
                   {user.is_guest ? t('auth.guest') : user.email}
                 </span>
               </div>
+              <Button 
+                variant="ghost" 
+                size="sm"
+                onClick={() => window.open('/help', '_blank')}
+                className="flex items-center space-x-2"
+              >
+                <HelpCircle className="h-4 w-4" />
+                <span>{t('help.title')}</span>
+              </Button>
               <NotificationBell />
               <LanguageSelector />
               {!user.is_guest && (
