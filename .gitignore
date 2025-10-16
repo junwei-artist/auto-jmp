@@ -70,3 +70,4 @@ credentials/
 excel-jsl-csv/
 tasks/
 uploads/
+.DS_Store
