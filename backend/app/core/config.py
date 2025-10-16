@@ -39,8 +39,12 @@ class Settings(BaseSettings):
     EMAILS_FROM_EMAIL: Optional[str] = None
     EMAILS_FROM_NAME: Optional[str] = None
     
-    # CORS - Allow all origins for network access
-    BACKEND_CORS_ORIGINS: List[str] = ["*"]
+    # CORS - Allow specific origins for network access
+    BACKEND_CORS_ORIGINS: List[str] = [
+        "http://10.5.216.11:4800",
+        "http://localhost:4800",
+        "http://127.0.0.1:4800",
+    ]
     
     # File Upload
     MAX_FILE_SIZE: int = 100 * 1024 * 1024  # 100MB

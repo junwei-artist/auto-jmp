@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func
+from sqlalchemy import select, func, and_
 from pydantic import BaseModel
 from typing import List, Optional
 import uuid
@@ -10,7 +10,7 @@ from app.core.database import get_db
 from app.core.auth import get_current_user, get_current_user_optional
 from app.core.celery import celery_app
 from app.core.websocket import publish_run_update
-from app.models import Project, Run, RunStatus, AppUser, Artifact, ProjectMember, AppSetting
+from app.models import Project, Run, RunStatus, AppUser, Artifact, ProjectMember, AppSetting, RunComment
 
 router = APIRouter()
 
@@ -41,6 +41,24 @@ class ArtifactResponse(BaseModel):
     mime_type: Optional[str]
     created_at: datetime
     download_url: Optional[str] = None
+
+class RunCommentResponse(BaseModel):
+    id: str
+    user_id: str
+    user_email: Optional[str]
+    user_is_guest: bool
+    parent_id: Optional[str]
+    content: str
+    created_at: datetime
+    updated_at: datetime
+    replies: List['RunCommentResponse'] = []
+
+class RunCommentCreate(BaseModel):
+    content: str
+    parent_id: Optional[str] = None
+
+class RunCommentUpdate(BaseModel):
+    content: str
 
 @router.get("/", response_model=List[RunResponse])
 async def list_runs(
@@ -402,3 +420,230 @@ async def delete_run(
     await db.commit()
     
     return {"message": "Run deleted successfully"}
+
+# Run Comments endpoints
+@router.get("/{run_id}/comments", response_model=List[RunCommentResponse])
+async def get_run_comments(
+    run_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: Optional[AppUser] = Depends(get_current_user_optional)
+):
+    """Get all comments for a run."""
+    # Get run and check access
+    result = await db.execute(select(Run).where(Run.id == uuid.UUID(run_id), Run.deleted_at.is_(None)))
+    run = result.scalar_one_or_none()
+    
+    if not run:
+        raise HTTPException(status_code=404, detail="Run not found")
+    
+    # Check project access
+    await check_project_access(db, run.project_id, current_user)
+    
+    # Get all top-level comments (no parent_id)
+    result = await db.execute(
+        select(RunComment, AppUser).join(AppUser).where(
+            and_(
+                RunComment.run_id == uuid.UUID(run_id),
+                RunComment.parent_id.is_(None),
+                RunComment.deleted_at.is_(None)
+            )
+        ).order_by(RunComment.created_at.desc())
+    )
+    
+    comments = []
+    for comment, user in result:
+        # Get replies for this comment
+        replies_result = await db.execute(
+            select(RunComment, AppUser).join(AppUser).where(
+                and_(
+                    RunComment.parent_id == comment.id,
+                    RunComment.deleted_at.is_(None)
+                )
+            ).order_by(RunComment.created_at.asc())
+        )
+        
+        replies = []
+        for reply, reply_user in replies_result:
+            replies.append(RunCommentResponse(
+                id=str(reply.id),
+                user_id=str(reply.user_id),
+                user_email=reply_user.email,
+                user_is_guest=reply_user.is_guest,
+                parent_id=str(reply.parent_id) if reply.parent_id else None,
+                content=reply.content,
+                created_at=reply.created_at,
+                updated_at=reply.updated_at,
+                replies=[]
+            ))
+        
+        comments.append(RunCommentResponse(
+            id=str(comment.id),
+            user_id=str(comment.user_id),
+            user_email=user.email,
+            user_is_guest=user.is_guest,
+            parent_id=str(comment.parent_id) if comment.parent_id else None,
+            content=comment.content,
+            created_at=comment.created_at,
+            updated_at=comment.updated_at,
+            replies=replies
+        ))
+    
+    return comments
+
+@router.post("/{run_id}/comments")
+async def create_run_comment(
+    run_id: str,
+    comment_data: RunCommentCreate,
+    db: AsyncSession = Depends(get_db),
+    current_user: Optional[AppUser] = Depends(get_current_user_optional)
+):
+    """Create a new comment on a run."""
+    if not current_user:
+        raise HTTPException(status_code=401, detail="Authentication required")
+    
+    # Get run and check access
+    result = await db.execute(select(Run).where(Run.id == uuid.UUID(run_id), Run.deleted_at.is_(None)))
+    run = result.scalar_one_or_none()
+    
+    if not run:
+        raise HTTPException(status_code=404, detail="Run not found")
+    
+    # Check project access
+    await check_project_access(db, run.project_id, current_user)
+    
+    # If replying to a comment, verify parent exists
+    if comment_data.parent_id:
+        result = await db.execute(
+            select(RunComment).where(
+                and_(
+                    RunComment.id == uuid.UUID(comment_data.parent_id),
+                    RunComment.run_id == uuid.UUID(run_id),
+                    RunComment.deleted_at.is_(None)
+                )
+            )
+        )
+        parent_comment = result.scalar_one_or_none()
+        
+        if not parent_comment:
+            raise HTTPException(status_code=404, detail="Parent comment not found")
+    
+    # Create comment
+    comment = RunComment(
+        run_id=uuid.UUID(run_id),
+        user_id=current_user.id,
+        parent_id=uuid.UUID(comment_data.parent_id) if comment_data.parent_id else None,
+        content=comment_data.content
+    )
+    
+    db.add(comment)
+    await db.commit()
+    await db.refresh(comment)
+    
+    return {"message": "Comment created successfully", "comment_id": str(comment.id)}
+
+@router.put("/{run_id}/comments/{comment_id}")
+async def update_run_comment(
+    run_id: str,
+    comment_id: str,
+    comment_data: RunCommentUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_user: Optional[AppUser] = Depends(get_current_user_optional)
+):
+    """Update a run comment."""
+    if not current_user:
+        raise HTTPException(status_code=401, detail="Authentication required")
+    
+    # Get run and check access
+    result = await db.execute(select(Run).where(Run.id == uuid.UUID(run_id), Run.deleted_at.is_(None)))
+    run = result.scalar_one_or_none()
+    
+    if not run:
+        raise HTTPException(status_code=404, detail="Run not found")
+    
+    # Check project access
+    await check_project_access(db, run.project_id, current_user)
+    
+    # Find comment
+    result = await db.execute(
+        select(RunComment).where(
+            and_(
+                RunComment.id == uuid.UUID(comment_id),
+                RunComment.run_id == uuid.UUID(run_id),
+                RunComment.deleted_at.is_(None)
+            )
+        )
+    )
+    comment = result.scalar_one_or_none()
+    
+    if not comment:
+        raise HTTPException(status_code=404, detail="Comment not found")
+    
+    # Check permissions (comment author or project owner)
+    if comment.user_id != current_user.id:
+        # Check if user is project owner
+        project_result = await db.execute(
+            select(Project).where(Project.id == run.project_id)
+        )
+        project = project_result.scalar_one_or_none()
+        
+        if not project or project.owner_id != current_user.id:
+            raise HTTPException(status_code=403, detail="Permission denied")
+    
+    # Update comment
+    comment.content = comment_data.content
+    await db.commit()
+    
+    return {"message": "Comment updated successfully"}
+
+@router.delete("/{run_id}/comments/{comment_id}")
+async def delete_run_comment(
+    run_id: str,
+    comment_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: Optional[AppUser] = Depends(get_current_user_optional)
+):
+    """Delete a run comment."""
+    if not current_user:
+        raise HTTPException(status_code=401, detail="Authentication required")
+    
+    # Get run and check access
+    result = await db.execute(select(Run).where(Run.id == uuid.UUID(run_id), Run.deleted_at.is_(None)))
+    run = result.scalar_one_or_none()
+    
+    if not run:
+        raise HTTPException(status_code=404, detail="Run not found")
+    
+    # Check project access
+    await check_project_access(db, run.project_id, current_user)
+    
+    # Find comment
+    result = await db.execute(
+        select(RunComment).where(
+            and_(
+                RunComment.id == uuid.UUID(comment_id),
+                RunComment.run_id == uuid.UUID(run_id),
+                RunComment.deleted_at.is_(None)
+            )
+        )
+    )
+    comment = result.scalar_one_or_none()
+    
+    if not comment:
+        raise HTTPException(status_code=404, detail="Comment not found")
+    
+    # Check permissions (comment author or project owner)
+    if comment.user_id != current_user.id:
+        # Check if user is project owner
+        project_result = await db.execute(
+            select(Project).where(Project.id == run.project_id)
+        )
+        project = project_result.scalar_one_or_none()
+        
+        if not project or project.owner_id != current_user.id:
+            raise HTTPException(status_code=403, detail="Permission denied")
+    
+    # Soft delete comment
+    comment.deleted_at = datetime.now(timezone.utc)
+    await db.commit()
+    
+    return {"message": "Comment deleted successfully"}

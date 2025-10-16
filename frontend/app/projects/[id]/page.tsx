@@ -8,7 +8,7 @@ import { Badge } from '@/components/ui/badge'
 import { Alert, AlertDescription } from '@/components/ui/alert-simple'
 import { Switch } from '@/components/ui/switch'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { Loader2, Upload, FileText, BarChart3, Users, Share2, ArrowLeft, Download, Eye, Copy, Globe, Lock, Trash2, Settings, MessageSquare, UserPlus } from 'lucide-react'
+import { Loader2, Upload, FileText, BarChart3, Users, Share2, ArrowLeft, Download, Eye, Globe, Lock, Trash2, Settings, MessageSquare, UserPlus, ChevronDown, ChevronRight, Edit2, Check, X } from 'lucide-react'
 import { useAuth } from '@/lib/auth'
 import { projectApi, runApi } from '@/lib/api'
 import { useMutation, useQuery } from '@tanstack/react-query'
@@ -18,6 +18,7 @@ import { ImageGallery } from '@/components/ImageGallery'
 import { ProjectMembership } from '@/components/ProjectMembership'
 import { EnhancedProjectMembership } from '@/components/EnhancedProjectMembership'
 import { ProjectComments } from '@/components/ProjectComments'
+import RunComments from '@/components/RunComments'
 import { NotificationBell } from '@/components/NotificationCenter'
 import toast from 'react-hot-toast'
 
@@ -76,7 +77,7 @@ interface Artifact {
 export default function ProjectPage() {
   const params = useParams()
   const router = useRouter()
-  const { user } = useAuth()
+  const { user, ready } = useAuth()
   const { t } = useLanguage()
   const projectId = params.id as string
 
@@ -96,6 +97,11 @@ export default function ProjectPage() {
   const [serverInfo, setServerInfo] = useState<{public_url?: string, local_url?: string} | null>(null)
   const [currentUserRole, setCurrentUserRole] = useState<'owner' | 'member' | 'watcher'>('watcher')
   const [activeTab, setActiveTab] = useState('analysis')
+  const [expandedComments, setExpandedComments] = useState<Set<string>>(new Set())
+  const [runCommentCounts, setRunCommentCounts] = useState<Record<string, number>>({})
+  const [isEditingProject, setIsEditingProject] = useState(false)
+  const [editProjectName, setEditProjectName] = useState('')
+  const [editProjectDescription, setEditProjectDescription] = useState('')
 
   // Fetch server info for public sharing
   useEffect(() => {
@@ -113,15 +119,6 @@ export default function ProjectPage() {
     fetchServerInfo()
   }, [])
 
-  // Copy to clipboard function
-  const copyToClipboard = async (text: string) => {
-    try {
-      await navigator.clipboard.writeText(text)
-      toast.success('Copied to clipboard!')
-    } catch (error) {
-      toast.error('Failed to copy to clipboard')
-    }
-  }
 
   // Handle visibility toggle
   const handleVisibilityToggle = (isPublic: boolean) => {
@@ -139,7 +136,7 @@ export default function ProjectPage() {
   const { data: project, isLoading: projectLoading, error: projectError } = useQuery<Project>({
     queryKey: ['project', projectId],
     queryFn: () => projectApi.getProject(projectId),
-    enabled: !!user && !!projectId,
+    enabled: !!user && !!projectId && ready,
   })
 
   // Debug logging
@@ -155,7 +152,7 @@ export default function ProjectPage() {
   const { data: runs, isLoading: runsLoading, refetch: refetchRuns } = useQuery<Run[]>({
     queryKey: ['project-runs', projectId],
     queryFn: () => projectApi.getProjectRuns(projectId),
-    enabled: !!user && !!projectId,
+    enabled: !!user && !!projectId && ready,
     refetchInterval: 5000, // Simple 5-second refresh
     refetchIntervalInBackground: true,
   })
@@ -164,7 +161,7 @@ export default function ProjectPage() {
   const { data: artifacts, isLoading: artifactsLoading } = useQuery<Artifact[]>({
     queryKey: ['project-artifacts', projectId],
     queryFn: () => projectApi.getProjectArtifacts(projectId),
-    enabled: !!user && !!projectId,
+    enabled: !!user && !!projectId && ready,
   })
 
   // Fetch project members to determine user role
@@ -193,7 +190,7 @@ export default function ProjectPage() {
       
       return response.json()
     },
-    enabled: !!user && !!projectId,
+    enabled: !!user && !!projectId && ready,
     retry: false, // Don't retry on auth errors
   })
 
@@ -237,9 +234,23 @@ export default function ProjectPage() {
 
   // Update project mutation
   const updateProjectMutation = useMutation({
-    mutationFn: (data: { is_public?: boolean }) => projectApi.updateProject(projectId, data),
+    mutationFn: (data: { is_public?: boolean; name?: string; description?: string }) => projectApi.updateProject(projectId, data),
     onSuccess: () => {
       toast.success('Project updated successfully!')
+      // Refresh project data
+      window.location.reload() // Simple refresh to get updated data
+    },
+    onError: (error: Error) => {
+      toast.error(error.message)
+    },
+  })
+
+  // Update project details mutation
+  const updateProjectDetailsMutation = useMutation({
+    mutationFn: (data: { name: string; description?: string }) => projectApi.updateProject(projectId, data),
+    onSuccess: () => {
+      toast.success('Project details updated successfully!')
+      setIsEditingProject(false)
       // Refresh project data
       window.location.reload() // Simple refresh to get updated data
     },
@@ -369,12 +380,52 @@ export default function ProjectPage() {
     }
   }
 
+  // Toggle comments expansion for a run
+  const toggleComments = (runId: string) => {
+    setExpandedComments(prev => {
+      const newSet = new Set(prev)
+      if (newSet.has(runId)) {
+        newSet.delete(runId)
+      } else {
+        newSet.add(runId)
+      }
+      return newSet
+    })
+  }
+
+  // Handle edit mode functions
+  const startEditing = () => {
+    if (project) {
+      setEditProjectName(project.name)
+      setEditProjectDescription(project.description || '')
+      setIsEditingProject(true)
+    }
+  }
+
+  const cancelEditing = () => {
+    setIsEditingProject(false)
+    setEditProjectName('')
+    setEditProjectDescription('')
+  }
+
+  const saveProjectDetails = () => {
+    if (!editProjectName.trim()) {
+      toast.error('Project name is required')
+      return
+    }
+    
+    updateProjectDetailsMutation.mutate({
+      name: editProjectName.trim(),
+      description: editProjectDescription.trim() || undefined
+    })
+  }
+
   if (projectLoading) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="text-center">
           <Loader2 className="h-8 w-8 animate-spin mx-auto mb-4" />
-          <p className="text-gray-600">Loading project...</p>
+          <p className="text-gray-600">{t('project.loading')}</p>
         </div>
       </div>
     )
@@ -386,7 +437,7 @@ export default function ProjectPage() {
         <div className="text-center">
           <Alert className="max-w-md">
             <AlertDescription>
-              Project not found or you don't have access to it.
+              {t('project.notFound')}
             </AlertDescription>
           </Alert>
           <Button 
@@ -395,7 +446,7 @@ export default function ProjectPage() {
             variant="outline"
           >
             <ArrowLeft className="mr-2 h-4 w-4" />
-            Back to Dashboard
+            {t('projects.backToDashboard')}
           </Button>
         </div>
       </div>
@@ -431,10 +482,77 @@ export default function ProjectPage() {
           </div>
           
           <div className="flex items-center justify-between">
-            <div>
-              <h1 className="text-3xl font-bold text-gray-900">{project?.name}</h1>
-              {project?.description && (
-                <p className="text-gray-600 mt-2">{project.description}</p>
+            <div className="flex-1">
+              {isEditingProject ? (
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Project Name
+                    </label>
+                    <input
+                      type="text"
+                      value={editProjectName}
+                      onChange={(e) => setEditProjectName(e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      placeholder="Enter project name"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Project Description
+                    </label>
+                    <textarea
+                      value={editProjectDescription}
+                      onChange={(e) => setEditProjectDescription(e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      rows={3}
+                      placeholder="Enter project description (optional)"
+                    />
+                  </div>
+                  <div className="flex space-x-2">
+                    <Button
+                      onClick={saveProjectDetails}
+                      disabled={updateProjectDetailsMutation.isPending}
+                      size="sm"
+                      className="bg-green-600 hover:bg-green-700"
+                    >
+                      {updateProjectDetailsMutation.isPending ? (
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      ) : (
+                        <Check className="mr-2 h-4 w-4" />
+                      )}
+                      Save
+                    </Button>
+                    <Button
+                      onClick={cancelEditing}
+                      disabled={updateProjectDetailsMutation.isPending}
+                      variant="outline"
+                      size="sm"
+                    >
+                      <X className="mr-2 h-4 w-4" />
+                      Cancel
+                    </Button>
+                  </div>
+                </div>
+              ) : (
+                <div>
+                  <div className="flex items-center space-x-2">
+                    <h1 className="text-3xl font-bold text-gray-900">{project?.name}</h1>
+                    {currentUserRole === 'owner' && (
+                      <Button
+                        onClick={startEditing}
+                        variant="ghost"
+                        size="sm"
+                        className="text-gray-500 hover:text-gray-700"
+                      >
+                        <Edit2 className="h-4 w-4" />
+                      </Button>
+                    )}
+                  </div>
+                  {project?.description && (
+                    <p className="text-gray-600 mt-2">{project.description}</p>
+                  )}
+                </div>
               )}
             </div>
             <div className="flex items-center space-x-2">
@@ -442,12 +560,12 @@ export default function ProjectPage() {
                 {project?.is_public ? (
                   <>
                     <Globe className="mr-1 h-3 w-3" />
-                    Public
+                    {t('project.visibility.public')}
                   </>
                 ) : (
                   <>
                     <Lock className="mr-1 h-3 w-3" />
-                    Private
+                    {t('project.visibility.private')}
                   </>
                 )}
               </Badge>
@@ -460,13 +578,13 @@ export default function ProjectPage() {
                 className="text-blue-600 hover:text-blue-700 hover:bg-blue-50"
               >
                 <UserPlus className="mr-2 h-4 w-4" />
-                Manage Members
+                {t('project.manageMembers')}
               </Button>
               <Button 
                 variant="outline" 
                 size="sm"
                 onClick={() => {
-                  if (confirm('Are you sure you want to delete this project? This action cannot be undone.')) {
+                  if (confirm(t('project.deleteConfirm'))) {
                     deleteProjectMutation.mutate()
                   }
                 }}
@@ -478,7 +596,7 @@ export default function ProjectPage() {
                 ) : (
                   <Trash2 className="mr-2 h-4 w-4" />
                 )}
-                Delete Project
+                {t('project.deleteProject')}
               </Button>
             </div>
           </div>
@@ -491,19 +609,19 @@ export default function ProjectPage() {
               <TabsList className="grid w-full grid-cols-4">
                 <TabsTrigger value="analysis" className="flex items-center space-x-2">
                   <BarChart3 className="h-4 w-4" />
-                  <span>Analysis</span>
+                  <span>{t('project.tabs.analysis')}</span>
                 </TabsTrigger>
                 <TabsTrigger value="members" className="flex items-center space-x-2">
                   <Users className="h-4 w-4" />
-                  <span>Members</span>
+                  <span>{t('project.tabs.members')}</span>
                 </TabsTrigger>
                 <TabsTrigger value="comments" className="flex items-center space-x-2">
                   <MessageSquare className="h-4 w-4" />
-                  <span>Comments</span>
+                  <span>{t('project.tabs.comments')}</span>
                 </TabsTrigger>
                 <TabsTrigger value="history" className="flex items-center space-x-2">
                   <FileText className="h-4 w-4" />
-                  <span>History</span>
+                  <span>{t('project.tabs.history')}</span>
                 </TabsTrigger>
               </TabsList>
 
@@ -514,10 +632,10 @@ export default function ProjectPage() {
                     <CardHeader>
                       <CardTitle className="flex items-center">
                         <Upload className="mr-2 h-5 w-5" />
-                        Use Plugin Wizard
+                        {t('project.pluginWizard.title')}
                       </CardTitle>
                       <CardDescription>
-                        This project was created with plugin "{project.plugin_name}". Open the wizard to upload another Excel and run analysis.
+                        {t('project.pluginWizard.subtitle', { plugin: project.plugin_name })}
                       </CardDescription>
                     </CardHeader>
                     <CardContent>
@@ -525,7 +643,7 @@ export default function ProjectPage() {
                         className="w-full"
                         onClick={() => router.push(`/plugins/${project.plugin_name}/wizard?projectId=${projectId}&plugin=${project.plugin_name}`)}
                       >
-                        Open {project.plugin_name} Wizard
+                        {t('project.pluginWizard.open', { plugin: project.plugin_name })}
                       </Button>
                     </CardContent>
                   </Card>
@@ -579,6 +697,149 @@ export default function ProjectPage() {
                     </CardContent>
                   </Card>
                 )}
+
+                {/* Runs Display */}
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center">
+                      <BarChart3 className="mr-2 h-5 w-5" />
+                      {t('projects.analysisHistory')}
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    {runsLoading ? (
+                      <div className="text-center py-4">
+                        <Loader2 className="h-6 w-6 animate-spin mx-auto mb-2" />
+                        <p className="text-gray-600">{t('projects.loadingRuns')}</p>
+                      </div>
+                    ) : runs && runs.length > 0 ? (
+                      <div className="space-y-4">
+                        {runs.map((run) => (
+                          <div key={run.id} className="border rounded-lg p-4">
+                            <div className="flex items-center justify-between mb-3">
+                              <div className="flex items-center space-x-3">
+                                <Badge className={getStatusColor(run.status)}>
+                                  {run.status}
+                                </Badge>
+                                <div>
+                                  <p className="font-medium">{run.task_name}</p>
+                                  <p className="text-sm text-gray-600">
+                                    {run.image_count} {t('project.analysisHistory.images')} • {new Date(run.created_at).toLocaleString()}
+                                  </p>
+                                  {run.started_by_email && (
+                                    <p className="text-xs text-gray-500">
+                                      {t('project.analysisHistory.startedBy', { email: run.started_by_email })}
+                                    </p>
+                                  )}
+                                </div>
+                              </div>
+                              <div className="flex items-center space-x-2">
+                                <Button 
+                                  variant="outline" 
+                                  size="sm"
+                                  onClick={() => {
+                                    setSelectedRun(run)
+                                    setShowGallery(true)
+                                  }}
+                                >
+                                  <Eye className="h-4 w-4" />
+                                </Button>
+                                <Button 
+                                  variant="outline" 
+                                  size="sm"
+                                  onClick={async () => {
+                                    try {
+                                      // Download the ZIP file directly
+                                      const downloadResponse = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/v1/uploads/download-zip/${run.id}`, {
+                                        headers: {
+                                          'Authorization': `Bearer ${getAuthToken()}`,
+                                        },
+                                      })
+                                      
+                                      if (!downloadResponse.ok) throw new Error('Download failed')
+                                      
+                                      const blob = await downloadResponse.blob()
+                                      const url = window.URL.createObjectURL(blob)
+                                      const a = document.createElement('a')
+                                      a.href = url
+                                      a.download = `run_${run.id}_results.zip`
+                                      document.body.appendChild(a)
+                                      a.click()
+                                      window.URL.revokeObjectURL(url)
+                                      document.body.removeChild(a)
+                                      
+                                      toast.success('ZIP file downloaded successfully!')
+                                    } catch (error) {
+                                      console.error('Download error:', error)
+                                      toast.error('Failed to download ZIP file')
+                                    }
+                                  }}
+                                >
+                                  <Download className="h-4 w-4" />
+                                </Button>
+                                {currentUserRole === 'owner' && (
+                                  <Button 
+                                    variant="outline" 
+                                    size="sm"
+                                    onClick={() => {
+                                      if (confirm('Are you sure you want to delete this run? This action cannot be undone.')) {
+                                        deleteRunMutation.mutate(run.id)
+                                      }
+                                    }}
+                                    disabled={deleteRunMutation.isPending}
+                                    className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                                  >
+                                    {deleteRunMutation.isPending ? (
+                                      <Loader2 className="h-4 w-4 animate-spin" />
+                                    ) : (
+                                      <Trash2 className="h-4 w-4" />
+                                    )}
+                                  </Button>
+                                )}
+                              </div>
+                            </div>
+                            
+                            {/* Comments Toggle Button */}
+                            <div className="mt-3 pt-3 border-t border-gray-200">
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => toggleComments(run.id)}
+                                className="w-full justify-start text-gray-600 hover:text-gray-800"
+                              >
+                                {expandedComments.has(run.id) ? (
+                                  <ChevronDown className="mr-2 h-4 w-4" />
+                                ) : (
+                                  <ChevronRight className="mr-2 h-4 w-4" />
+                                )}
+                                <MessageSquare className="mr-2 h-4 w-4" />
+                                Comments {runCommentCounts[run.id] > 0 && `(${runCommentCounts[run.id]})`}
+                              </Button>
+                            </div>
+                            
+                            {/* Run Comments - Collapsible */}
+                            {expandedComments.has(run.id) && (
+                              <div className="mt-3">
+                                <RunComments 
+                                  runId={run.id}
+                                  currentUserRole={currentUserRole}
+                                  onCommentCountChange={(count) => {
+                                    setRunCommentCounts(prev => ({
+                                      ...prev,
+                                      [run.id]: count
+                                    }))
+                                  }}
+                                />
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-gray-600 text-center py-4">{t('project.analysisHistory.noRuns')}</p>
+                    )}
+                  </CardContent>
+                </Card>
               </TabsContent>
 
               <TabsContent value="members">
@@ -639,11 +900,11 @@ export default function ProjectPage() {
                               <div>
                                 <p className="font-medium">{run.task_name}</p>
                                 <p className="text-sm text-gray-600">
-                                  {run.image_count} images • {new Date(run.created_at).toLocaleString()}
+                                  {run.image_count} {t('project.analysisHistory.images')} • {new Date(run.created_at).toLocaleString()}
                                 </p>
                                 {run.started_by_email && (
                                   <p className="text-xs text-gray-500">
-                                    Started by: {run.started_by_email}
+                                    {t('project.analysisHistory.startedBy', { email: run.started_by_email })}
                                   </p>
                                 )}
                               </div>
@@ -716,7 +977,7 @@ export default function ProjectPage() {
                         ))}
                       </div>
                     ) : (
-                      <p className="text-gray-600 text-center py-4">No analysis runs yet</p>
+                      <p className="text-gray-600 text-center py-4">{t('project.analysisHistory.noRuns')}</p>
                     )}
                   </CardContent>
                 </Card>
@@ -741,18 +1002,18 @@ export default function ProjectPage() {
                   <p className="text-sm">{project?.created_at ? new Date(project.created_at).toLocaleDateString() : t('projects.unknown')}</p>
                 </div>
                 <div>
-                  <p className="text-sm font-medium text-gray-600">Visibility</p>
+                  <p className="text-sm font-medium text-gray-600">{t('project.visibility.title')}</p>
                   <div className="flex items-center justify-between mt-2">
                     <div className="flex items-center space-x-2">
                       {project?.is_public ? (
                         <>
                           <Globe className="h-3 w-3 text-green-600" />
-                          <span className="text-sm text-green-600">Public</span>
+                          <span className="text-sm text-green-600">{t('project.visibility.public')}</span>
                         </>
                       ) : (
                         <>
                           <Lock className="h-3 w-3 text-gray-600" />
-                          <span className="text-sm text-gray-600">Private</span>
+                          <span className="text-sm text-gray-600">{t('project.visibility.private')}</span>
                         </>
                       )}
                     </div>
@@ -764,8 +1025,8 @@ export default function ProjectPage() {
                   </div>
                   <p className="text-xs text-gray-500 mt-1">
                     {project?.is_public 
-                      ? 'Anyone with the link can view this project' 
-                      : 'Only you and project members can view this project'
+                      ? t('project.visibility.publicDescription')
+                      : t('project.visibility.privateDescription')
                     }
                   </p>
                 </div>
@@ -777,20 +1038,20 @@ export default function ProjectPage() {
               <CardHeader>
                 <CardTitle className="flex items-center">
                   <Users className="mr-2 h-5 w-5" />
-                  Member Management
+                  {t('project.memberManagement.title')}
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-3">
                 <div>
-                  <p className="text-sm font-medium text-gray-600">Project Owner</p>
+                  <p className="text-sm font-medium text-gray-600">{t('project.memberManagement.owner')}</p>
                   <p className="text-sm">
                     {project?.owner_display_name || project?.owner_email || 'Loading...'}
                   </p>
                 </div>
                 <div>
-                  <p className="text-sm font-medium text-gray-600">Your Access</p>
+                  <p className="text-sm font-medium text-gray-600">{t('project.memberManagement.yourAccess')}</p>
                   <p className="text-sm capitalize">
-                    {currentUserRole === 'owner' ? 'Owner (Full Access)' : 'Member (Limited Access)'}
+                    {currentUserRole === 'owner' ? t('project.memberManagement.ownerAccess') : t('project.memberManagement.memberAccess')}
                   </p>
                 </div>
                 <Button 
@@ -801,16 +1062,16 @@ export default function ProjectPage() {
                   }}
                 >
                   <UserPlus className="mr-2 h-4 w-4" />
-                  Manage Members
+                  {t('project.memberManagement.manageMembers')}
                 </Button>
                 {currentUserRole === 'owner' && (
                   <p className="text-xs text-gray-500">
-                    As the project owner, you have full control over this project
+                    {t('project.memberManagement.ownerDescription')}
                   </p>
                 )}
                 {currentUserRole !== 'owner' && (
                   <p className="text-xs text-gray-500">
-                    Your access permissions are determined by the project owner
+                    {t('project.memberManagement.memberDescription')}
                   </p>
                 )}
               </CardContent>
@@ -823,17 +1084,17 @@ export default function ProjectPage() {
               </CardHeader>
               <CardContent className="space-y-3">
                 <div className="flex justify-between">
-                  <span className="text-sm text-gray-600">Total Runs</span>
+                  <span className="text-sm text-gray-600">{t('project.quickStats.totalRuns')}</span>
                   <span className="font-medium">{runs?.length || 0}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-sm text-gray-600">Total Images</span>
+                  <span className="text-sm text-gray-600">{t('project.quickStats.totalImages')}</span>
                   <span className="font-medium">
                     {runs?.reduce((sum, run) => sum + run.image_count, 0) || 0}
                   </span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-sm text-gray-600">Artifacts</span>
+                  <span className="text-sm text-gray-600">{t('project.quickStats.artifacts')}</span>
                   <span className="font-medium">{artifacts?.length || 0}</span>
                 </div>
               </CardContent>
@@ -845,37 +1106,28 @@ export default function ProjectPage() {
                 <CardHeader>
                   <CardTitle className="flex items-center">
                     <Globe className="mr-2 h-4 w-4 text-green-600" />
-                    {t('projects.publicSharing')}
+                    {t('project.publicSharing.title')}
                   </CardTitle>
                   <CardDescription>
-                    This project is publicly accessible via URL
+                    {t('project.publicSharing.subtitle')}
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-3">
                   {getPublicProjectUrl() ? (
                     <>
                       <div>
-                        <p className="text-sm font-medium text-gray-600 mb-2">Public URL</p>
+                        <p className="text-sm font-medium text-gray-600 mb-2">{t('project.publicSharing.publicUrl')}</p>
                         <div className="bg-gray-50 p-2 rounded text-xs font-mono break-all">
                           {getPublicProjectUrl()}
                         </div>
                       </div>
-                      <Button 
-                        variant="outline" 
-                        size="sm" 
-                        className="w-full"
-                        onClick={() => copyToClipboard(getPublicProjectUrl()!)}
-                      >
-                        <Copy className="mr-2 h-4 w-4" />
-                        Copy Link
-                      </Button>
                       <p className="text-xs text-gray-500">
-                        Anyone with this link can view the project and its runs
+                        {t('project.publicSharing.shareDescription')}
                       </p>
                     </>
                   ) : (
                     <p className="text-sm text-gray-500">
-                      Server information not available
+                      {t('project.publicSharing.serverNotAvailable')}
                     </p>
                   )}
                 </CardContent>

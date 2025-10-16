@@ -6,6 +6,8 @@ import { Badge } from '@/components/ui/badge'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Bell, BellRing, Check, CheckCheck, MessageSquare, UserPlus, Play, AlertCircle, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
+import { useAuth } from '@/lib/auth'
+import { useLanguage } from '@/lib/language'
 
 interface Notification {
   id: string
@@ -64,22 +66,22 @@ const getNotificationColor = (type: string) => {
   }
 }
 
-const formatTimeAgo = (dateString: string) => {
+const formatTimeAgo = (dateString: string, t: (key: string, params?: any) => string) => {
   const date = new Date(dateString)
   const now = new Date()
   const diffInSeconds = Math.floor((now.getTime() - date.getTime()) / 1000)
   
   if (diffInSeconds < 60) {
-    return 'Just now'
+    return t('notifications.justNow')
   } else if (diffInSeconds < 3600) {
     const minutes = Math.floor(diffInSeconds / 60)
-    return `${minutes}m ago`
+    return t('notifications.minutesAgo', { minutes })
   } else if (diffInSeconds < 86400) {
     const hours = Math.floor(diffInSeconds / 3600)
-    return `${hours}h ago`
+    return t('notifications.hoursAgo', { hours })
   } else {
     const days = Math.floor(diffInSeconds / 86400)
-    return `${days}d ago`
+    return t('notifications.daysAgo', { days })
   }
 }
 
@@ -87,6 +89,8 @@ export function NotificationCenter({ className }: NotificationCenterProps) {
   const [notifications, setNotifications] = useState<Notification[]>([])
   const [isLoading, setIsLoading] = useState(false)
   const [unreadCount, setUnreadCount] = useState(0)
+  const { ready, user } = useAuth()
+  const { t } = useLanguage()
 
   const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:4700'
 
@@ -113,7 +117,7 @@ export function NotificationCenter({ className }: NotificationCenterProps) {
       setUnreadCount(unread)
     } catch (error) {
       console.error('Error fetching notifications:', error)
-      toast.error('Failed to load notifications')
+      toast.error(t('notifications.loadFailed'))
     } finally {
       setIsLoading(false)
     }
@@ -143,7 +147,7 @@ export function NotificationCenter({ className }: NotificationCenterProps) {
       setUnreadCount(prev => Math.max(0, prev - 1))
     } catch (error) {
       console.error('Error marking notification as read:', error)
-      toast.error('Failed to mark notification as read')
+      toast.error(t('notifications.markReadFailed'))
     }
   }
 
@@ -167,20 +171,21 @@ export function NotificationCenter({ className }: NotificationCenterProps) {
         prev.map(n => ({ ...n, is_read: true }))
       )
       setUnreadCount(0)
-      toast.success('All notifications marked as read')
+      toast.success(t('notifications.markAllReadSuccess'))
     } catch (error) {
       console.error('Error marking all notifications as read:', error)
-      toast.error('Failed to mark all notifications as read')
+      toast.error(t('notifications.markAllReadFailed'))
     }
   }
 
   useEffect(() => {
+    if (!ready || !user) return
     fetchNotifications()
     
     // Refresh notifications every 30 seconds
     const interval = setInterval(fetchNotifications, 30000)
     return () => clearInterval(interval)
-  }, [])
+  }, [ready, user])
 
   return (
     <Card className={className}>
@@ -188,7 +193,7 @@ export function NotificationCenter({ className }: NotificationCenterProps) {
         <CardTitle className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <BellRing className="h-5 w-5" />
-            Notifications
+            {t('notifications.title')}
             {unreadCount > 0 && (
               <Badge variant="destructive" className="ml-2">
                 {unreadCount}
@@ -198,23 +203,23 @@ export function NotificationCenter({ className }: NotificationCenterProps) {
           {unreadCount > 0 && (
             <Button variant="outline" size="sm" onClick={markAllAsRead}>
               <CheckCheck className="h-4 w-4 mr-1" />
-              Mark All Read
+              {t('notifications.markAllRead')}
             </Button>
           )}
         </CardTitle>
         <CardDescription>
-          Stay updated with project activities and team changes.
+          {t('notifications.subtitle')}
         </CardDescription>
       </CardHeader>
       <CardContent>
         <ScrollArea className="h-96">
           {isLoading ? (
-            <div className="text-center py-8">Loading notifications...</div>
+            <div className="text-center py-8">{t('notifications.loading')}</div>
           ) : notifications.length === 0 ? (
             <div className="text-center py-8 text-gray-500">
               <Bell className="h-12 w-12 mx-auto mb-4 text-gray-300" />
-              <p>No notifications yet</p>
-              <p className="text-sm">You'll see project updates here</p>
+              <p>{t('notifications.noNotifications')}</p>
+              <p className="text-sm">{t('notifications.noNotificationsMessage')}</p>
             </div>
           ) : (
             <div className="space-y-3">
@@ -244,7 +249,7 @@ export function NotificationCenter({ className }: NotificationCenterProps) {
                             <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
                           )}
                           <span className="text-xs text-gray-500">
-                            {formatTimeAgo(notification.created_at)}
+                            {formatTimeAgo(notification.created_at, t)}
                           </span>
                         </div>
                       </div>
@@ -255,7 +260,7 @@ export function NotificationCenter({ className }: NotificationCenterProps) {
                       </p>
                       {notification.project_id && (
                         <Badge variant="outline" className="mt-2 text-xs">
-                          Project ID: {notification.project_id.slice(0, 8)}...
+                          {t('notifications.projectId', { id: notification.project_id.slice(0, 8) })}
                         </Badge>
                       )}
                     </div>
@@ -274,6 +279,7 @@ export function NotificationCenter({ className }: NotificationCenterProps) {
 export function NotificationBell() {
   const [unreadCount, setUnreadCount] = useState(0)
   const [isOpen, setIsOpen] = useState(false)
+  const { ready, user } = useAuth()
 
   const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:4700'
 
@@ -296,12 +302,13 @@ export function NotificationBell() {
   }
 
   useEffect(() => {
+    if (!ready || !user) return
     fetchUnreadCount()
     
     // Refresh count every 30 seconds
     const interval = setInterval(fetchUnreadCount, 30000)
     return () => clearInterval(interval)
-  }, [])
+  }, [ready, user])
 
   return (
     <div className="relative">

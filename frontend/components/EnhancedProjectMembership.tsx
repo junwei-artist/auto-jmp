@@ -10,6 +10,8 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { UserPlus, Search, Users, Building, UserCheck, Mail, Trash2, Edit } from 'lucide-react'
 import { toast } from 'sonner'
+import { useAuth } from '@/lib/auth'
+import { useLanguage } from '@/lib/language'
 
 interface ProjectMember {
   user_id: string
@@ -77,6 +79,8 @@ export function EnhancedProjectMembership({ projectId, currentUserRole }: Enhanc
   const [newMemberRole, setNewMemberRole] = useState('watcher')
   const [selectedUser, setSelectedUser] = useState<User | null>(null)
   const [showAddDialog, setShowAddDialog] = useState(false)
+  const { ready, user } = useAuth()
+  const { t } = useLanguage()
 
   const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:4700'
 
@@ -121,7 +125,7 @@ export function EnhancedProjectMembership({ projectId, currentUserRole }: Enhanc
       setMembers(data)
     } catch (error) {
       console.error('Error fetching members:', error)
-      toast.error('Failed to load members')
+      toast.error(t('membership.loadMembersFailed'))
     }
   }
 
@@ -196,7 +200,7 @@ export function EnhancedProjectMembership({ projectId, currentUserRole }: Enhanc
       setSearchResults(data)
     } catch (error) {
       console.error('Error searching users:', error)
-      toast.error('Failed to search users')
+      toast.error(t('membership.searchUsersFailed'))
     } finally {
       setIsLoading(false)
     }
@@ -223,7 +227,7 @@ export function EnhancedProjectMembership({ projectId, currentUserRole }: Enhanc
         throw new Error(error.detail || 'Failed to add member')
       }
 
-      toast.success(`Added ${user.display_name || user.email} as ${newMemberRole}`)
+      toast.success(t('membership.memberAdded', { name: user.display_name || user.email, role: newMemberRole }))
       await fetchMembers()
       setShowAddDialog(false)
       setSelectedUser(null)
@@ -254,7 +258,7 @@ export function EnhancedProjectMembership({ projectId, currentUserRole }: Enhanc
         throw new Error(error.detail || 'Failed to update member role')
       }
 
-      toast.success('Member role updated successfully')
+      toast.success(t('membership.roleUpdated'))
       await fetchMembers()
     } catch (error) {
       console.error('Error updating member role:', error)
@@ -278,7 +282,7 @@ export function EnhancedProjectMembership({ projectId, currentUserRole }: Enhanc
         throw new Error(error.detail || 'Failed to remove member')
       }
 
-      toast.success('Member removed successfully')
+      toast.success(t('membership.memberRemoved'))
       await fetchMembers()
     } catch (error) {
       console.error('Error removing member:', error)
@@ -287,11 +291,12 @@ export function EnhancedProjectMembership({ projectId, currentUserRole }: Enhanc
   }
 
   useEffect(() => {
+    if (!ready || !user) return
     fetchMembers()
     fetchDepartments()
     fetchBusinessGroups()
     fetchRoles()
-  }, [projectId])
+  }, [ready, user, projectId])
 
   useEffect(() => {
     const timeoutId = setTimeout(() => {
@@ -307,10 +312,10 @@ export function EnhancedProjectMembership({ projectId, currentUserRole }: Enhanc
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Users className="h-5 w-5" />
-            Project Members
+            {t('membership.title')}
           </CardTitle>
           <CardDescription>
-            You can view project members but cannot manage them.
+            {t('membership.viewOnly.subtitle')}
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -351,17 +356,17 @@ export function EnhancedProjectMembership({ projectId, currentUserRole }: Enhanc
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           <Users className="h-5 w-5" />
-          Project Members
+          {t('membership.title')}
         </CardTitle>
         <CardDescription>
-          Manage project members and their roles.
+          {t('membership.subtitle')}
         </CardDescription>
       </CardHeader>
       <CardContent>
         <Tabs defaultValue="members" className="w-full">
           <TabsList className="grid w-full grid-cols-2">
-            <TabsTrigger value="members">Current Members</TabsTrigger>
-            <TabsTrigger value="add">Add Members</TabsTrigger>
+            <TabsTrigger value="members">{t('membership.tabs.current')}</TabsTrigger>
+            <TabsTrigger value="add">{t('membership.tabs.add')}</TabsTrigger>
           </TabsList>
           
           <TabsContent value="members" className="space-y-4">
@@ -418,22 +423,22 @@ export function EnhancedProjectMembership({ projectId, currentUserRole }: Enhanc
                         </AlertDialogTrigger>
                         <AlertDialogContent>
                           <AlertDialogHeader>
-                            <AlertDialogTitle>Remove Member</AlertDialogTitle>
+                            <AlertDialogTitle>{t('membership.removeMember')}</AlertDialogTitle>
                             <AlertDialogDescription>
-                              Are you sure you want to remove {member.display_name || member.email} from this project?
+                              {t('membership.removeConfirm', { name: member.display_name || member.email })}
                             </AlertDialogDescription>
                           </AlertDialogHeader>
                           <AlertDialogFooter>
-                            <AlertDialogCancel>Cancel</AlertDialogCancel>
+                            <AlertDialogCancel>{t('common.cancel')}</AlertDialogCancel>
                             <AlertDialogAction onClick={() => handleRemoveMember(member.user_id)}>
-                              Remove
+                              {t('membership.remove')}
                             </AlertDialogAction>
                           </AlertDialogFooter>
                         </AlertDialogContent>
                       </AlertDialog>
                     )}
                     {member.role.toLowerCase() === 'owner' && (
-                      <Badge variant="default">Owner</Badge>
+                      <Badge variant="default">{t('membership.owner')}</Badge>
                     )}
                   </div>
                 </div>
@@ -445,11 +450,11 @@ export function EnhancedProjectMembership({ projectId, currentUserRole }: Enhanc
             <div className="space-y-4">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                  <Label htmlFor="search">Search Users</Label>
+                  <Label htmlFor="search">{t('membership.searchUsers')}</Label>
                   <div className="flex gap-2">
                     <Input
                       id="search"
-                      placeholder="Search by email or name..."
+                      placeholder={t('membership.searchPlaceholder')}
                       value={searchQuery}
                       onChange={(e) => setSearchQuery(e.target.value)}
                     />
@@ -460,7 +465,7 @@ export function EnhancedProjectMembership({ projectId, currentUserRole }: Enhanc
                 </div>
                 
                 <div>
-                  <Label htmlFor="role">Role</Label>
+                  <Label htmlFor="role">{t('membership.role')}</Label>
                   <Select value={newMemberRole} onValueChange={setNewMemberRole}>
                     <SelectTrigger>
                       <SelectValue />
@@ -478,13 +483,13 @@ export function EnhancedProjectMembership({ projectId, currentUserRole }: Enhanc
               
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                  <Label htmlFor="department">Filter by Department</Label>
+                  <Label htmlFor="department">{t('membership.filterDepartment')}</Label>
                   <Select value={selectedDepartment} onValueChange={setSelectedDepartment}>
                     <SelectTrigger>
-                      <SelectValue placeholder="All departments" />
+                      <SelectValue placeholder={t('membership.allDepartments')} />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="all">All departments</SelectItem>
+                      <SelectItem value="all">{t('membership.allDepartments')}</SelectItem>
                       {departments.map((dept) => (
                         <SelectItem key={dept.id} value={dept.id}>
                           {dept.name} ({dept.user_count} users)
@@ -495,13 +500,13 @@ export function EnhancedProjectMembership({ projectId, currentUserRole }: Enhanc
                 </div>
                 
                 <div>
-                  <Label htmlFor="business-group">Filter by Business Group</Label>
+                  <Label htmlFor="business-group">{t('membership.filterBusinessGroup')}</Label>
                   <Select value={selectedBusinessGroup} onValueChange={setSelectedBusinessGroup}>
                     <SelectTrigger>
-                      <SelectValue placeholder="All business groups" />
+                      <SelectValue placeholder={t('membership.allBusinessGroups')} />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="all">All business groups</SelectItem>
+                      <SelectItem value="all">{t('membership.allBusinessGroups')}</SelectItem>
                       {businessGroups.map((group) => (
                         <SelectItem key={group.id} value={group.id}>
                           {group.name} ({group.user_count} users)
@@ -513,12 +518,12 @@ export function EnhancedProjectMembership({ projectId, currentUserRole }: Enhanc
               </div>
               
               <div className="space-y-2">
-                <Label>Search Results</Label>
+                <Label>{t('membership.searchResults')}</Label>
                 {isLoading ? (
-                  <div className="text-center py-4">Searching...</div>
+                  <div className="text-center py-4">{t('membership.searching')}</div>
                 ) : searchResults.length === 0 ? (
                   <div className="text-center py-4 text-gray-500">
-                    {searchQuery ? 'No users found' : 'Enter a search term to find users'}
+                    {searchQuery ? t('membership.noUsersFound') : t('membership.enterSearchTerm')}
                   </div>
                 ) : (
                   <div className="space-y-2">
@@ -551,7 +556,7 @@ export function EnhancedProjectMembership({ projectId, currentUserRole }: Enhanc
                           onClick={() => handleAddMember(user)}
                           disabled={members.some(m => m.user_id === user.id)}
                         >
-                          {members.some(m => m.user_id === user.id) ? 'Already Member' : 'Add'}
+                          {members.some(m => m.user_id === user.id) ? t('membership.alreadyMember') : t('membership.add')}
                         </Button>
                       </div>
                     ))}

@@ -11,6 +11,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog'
 import { Users, UserPlus, Crown, Shield, Eye, Trash2, Edit } from 'lucide-react'
 import { toast } from 'sonner'
+import { useAuth } from '@/lib/auth'
 
 interface ProjectMember {
   user_id: string
@@ -33,6 +34,7 @@ export function ProjectMembership({ projectId, currentUserRole, onMembershipChan
   const [editingMember, setEditingMember] = useState<ProjectMember | null>(null)
   const [newMemberEmail, setNewMemberEmail] = useState('')
   const [newMemberRole, setNewMemberRole] = useState<'member' | 'watcher'>('member')
+  const { ready, user } = useAuth()
 
   const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:4700'
 
@@ -69,8 +71,9 @@ export function ProjectMembership({ projectId, currentUserRole, onMembershipChan
   }
 
   useEffect(() => {
+    if (!ready || !user) return
     fetchMembers()
-  }, [projectId])
+  }, [ready, user, projectId])
 
   // Add member
   const handleAddMember = async () => {

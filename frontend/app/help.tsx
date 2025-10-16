@@ -8,6 +8,7 @@ import { Badge } from '@/components/ui/badge'
 import { HelpCircle, BookOpen, FileText, BarChart3, Upload, Users, Share2, Settings, ChevronRight, ExternalLink } from 'lucide-react'
 import { useLanguage } from '@/lib/language'
 import { LanguageSelector } from '@/components/LanguageSelector'
+import { LoginFlowSVG, PluginWorkflowSVG, ResultsViewSVG, PluginComparisonSVG, LoginFlowSVG_CN, PluginWorkflowSVG_CN, ResultsViewSVG_CN, PluginComparisonSVG_CN } from '@/components/svg/HelpIllustrations'
 
 export default function HelpPage() {
   const { t, language } = useLanguage()
@@ -325,6 +326,95 @@ Excel转CSV/JSL，使用V2列映射。
                       return <p key={index} className="mb-3 text-gray-700">{line}</p>
                     }
                   })}
+                  
+                  {/* Add SVG illustrations based on active section */}
+                  {activeSection === 'gettingStarted' && (
+                    <div className="mt-8 space-y-8">
+                      <div>
+                        <h3 className="text-lg font-semibold mb-4 text-gray-900">
+                          {language === 'zh' ? '应用流程' : 'Application Flow'}
+                        </h3>
+                        <div className="bg-gray-50 p-4 rounded-lg">
+                          {language === 'zh' ? (
+                            <LoginFlowSVG_CN className="w-full h-64" />
+                          ) : (
+                            <LoginFlowSVG className="w-full h-64" />
+                          )}
+                        </div>
+                        <p className="text-sm text-gray-600 mt-2">
+                          {language === 'zh' 
+                            ? '此图表显示了从登录到插件选择的完整用户旅程。'
+                            : 'This diagram shows the complete user journey from login to plugin selection.'
+                          }
+                        </p>
+                      </div>
+                    </div>
+                  )}
+                  
+                  {activeSection === 'plugins' && (
+                    <div className="mt-8 space-y-8">
+                      <div>
+                        <h3 className="text-lg font-semibold mb-4 text-gray-900">
+                          {language === 'zh' ? '插件工作流程' : 'Plugin Workflow'}
+                        </h3>
+                        <div className="bg-gray-50 p-4 rounded-lg">
+                          {language === 'zh' ? (
+                            <PluginWorkflowSVG_CN className="w-full h-80" />
+                          ) : (
+                            <PluginWorkflowSVG className="w-full h-80" />
+                          )}
+                        </div>
+                        <p className="text-sm text-gray-600 mt-2">
+                          {language === 'zh' 
+                            ? '此工作流程显示了使用任何插件的分步过程。'
+                            : 'This workflow shows the step-by-step process for using any plugin.'
+                          }
+                        </p>
+                      </div>
+                      
+                      <div>
+                        <h3 className="text-lg font-semibold mb-4 text-gray-900">
+                          {language === 'zh' ? '插件对比' : 'Plugin Comparison'}
+                        </h3>
+                        <div className="bg-gray-50 p-4 rounded-lg">
+                          {language === 'zh' ? (
+                            <PluginComparisonSVG_CN className="w-full h-96" />
+                          ) : (
+                            <PluginComparisonSVG className="w-full h-96" />
+                          )}
+                        </div>
+                        <p className="text-sm text-gray-600 mt-2">
+                          {language === 'zh' 
+                            ? '比较每个可用插件的功能和使用场景。'
+                            : 'Compare features and use cases for each available plugin.'
+                          }
+                        </p>
+                      </div>
+                    </div>
+                  )}
+                  
+                  {activeSection === 'troubleshooting' && (
+                    <div className="mt-8 space-y-8">
+                      <div>
+                        <h3 className="text-lg font-semibold mb-4 text-gray-900">
+                          {language === 'zh' ? '结果视图' : 'Results View'}
+                        </h3>
+                        <div className="bg-gray-50 p-4 rounded-lg">
+                          {language === 'zh' ? (
+                            <ResultsViewSVG_CN className="w-full h-64" />
+                          ) : (
+                            <ResultsViewSVG className="w-full h-64" />
+                          )}
+                        </div>
+                        <p className="text-sm text-gray-600 mt-2">
+                          {language === 'zh' 
+                            ? '了解结果仪表板和可用操作。'
+                            : 'Understanding the results dashboard and available actions.'
+                          }
+                        </p>
+                      </div>
+                    </div>
+                  )}
                 </div>
               </CardContent>
             </Card>

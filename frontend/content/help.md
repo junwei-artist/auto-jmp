@@ -22,6 +22,8 @@ The Data Analysis Platform is a powerful tool for processing Excel data and gene
 5. **Configure Analysis**: Select variables and configure settings
 6. **Run Analysis**: Start the analysis and monitor progress
 
+*Note: Visual workflow diagrams are available in the help interface to guide you through each step.*
+
 ### Supported File Formats
 - Excel files (.xlsx, .xls)
 - CSV files (.csv)
@@ -58,6 +60,8 @@ Converts Excel data to process capability analysis.
 - Capability indices calculation (Cp, Cpk, Pp, Ppk)
 - Control charts generation
 
+*Note: Detailed plugin comparison charts and workflow diagrams are available in the help interface.*
+
 ## Troubleshooting
 
 ### Common Issues
@@ -78,6 +82,8 @@ Converts Excel data to process capability analysis.
 - **"Invalid file format"**: Ensure your file is a valid Excel or CSV file
 - **"Analysis failed"**: Check your data structure and try again
 - **"Authentication failed"**: Refresh the page and login again
+
+*Note: Visual guides for understanding results and troubleshooting are available in the help interface.*
 
 ## Support & Contact
 
@@ -134,6 +140,8 @@ If you need additional assistance:
 5. **配置分析**：选择变量并配置设置
 6. **运行分析**：开始分析并监控进度
 
+*注意：帮助界面中提供了可视化工作流程图来指导您完成每个步骤。*
+
 ### 支持的文件格式
 - Excel文件（.xlsx, .xls）
 - CSV文件（.csv）
@@ -170,6 +178,8 @@ Excel转CSV/JSL，使用V2列映射。
 - 能力指数计算（Cp、Cpk、Pp、Ppk）
 - 控制图生成
 
+*注意：帮助界面中提供了详细的插件对比图表和工作流程图。*
+
 ## 故障排除
 
 ### 常见问题
@@ -190,6 +200,8 @@ Excel转CSV/JSL，使用V2列映射。
 - **"无效文件格式"**：确保您的文件是有效的Excel或CSV文件
 - **"分析失败"**：检查您的数据结构并重试
 - **"身份验证失败"**：刷新页面并重新登录
+
+*注意：帮助界面中提供了理解结果和故障排除的可视化指南。*
 
 ## 支持与联系
 

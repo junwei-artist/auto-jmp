@@ -54,6 +54,7 @@ class AppUser(Base):
     runs = relationship("Run", back_populates="started_by_user")
     created_shares = relationship("ShareLink", back_populates="created_by_user")
     comments = relationship("ProjectComment")
+    run_comments = relationship("RunComment")
     department = relationship("Department", back_populates="users")
     business_group = relationship("BusinessGroup", back_populates="users")
     notifications = relationship("Notification", back_populates="user")
@@ -130,6 +131,7 @@ class Run(Base):
     project = relationship("Project", back_populates="runs")
     started_by_user = relationship("AppUser", back_populates="runs")
     artifacts = relationship("Artifact", back_populates="run")
+    comments = relationship("RunComment", back_populates="run")
 
 class ShareLink(Base):
     __tablename__ = "share_link"
@@ -179,6 +181,24 @@ class ProjectComment(Base):
     user = relationship("AppUser", overlaps="comments")
     parent = relationship("ProjectComment", remote_side=[id])
     replies = relationship("ProjectComment", back_populates="parent")
+
+class RunComment(Base):
+    __tablename__ = "run_comment"
+    
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    run_id = Column(UUID(as_uuid=True), ForeignKey("run.id", ondelete="CASCADE"))
+    user_id = Column(UUID(as_uuid=True), ForeignKey("app_user.id"))
+    parent_id = Column(UUID(as_uuid=True), ForeignKey("run_comment.id"), nullable=True)  # For replies
+    content = Column(Text, nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    deleted_at = Column(DateTime(timezone=True), nullable=True)  # Soft delete
+    
+    # Relationships
+    run = relationship("Run", back_populates="comments")
+    user = relationship("AppUser", back_populates="run_comments")
+    parent = relationship("RunComment", remote_side=[id])
+    replies = relationship("RunComment", back_populates="parent")
 
 class Department(Base):
     __tablename__ = "department"

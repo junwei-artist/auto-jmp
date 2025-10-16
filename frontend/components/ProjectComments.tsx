@@ -9,6 +9,8 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Badge } from '@/components/ui/badge'
 import { MessageSquare, Reply, Edit, Trash2, Send, MoreHorizontal } from 'lucide-react'
 import { toast } from 'sonner'
+import { useAuth } from '@/lib/auth'
+import { useLanguage } from '@/lib/language'
 
 interface ProjectComment {
   id: string
@@ -37,6 +39,8 @@ export function ProjectComments({ projectId, currentUserRole, onCommentChange }:
   const [replyingTo, setReplyingTo] = useState<ProjectComment | null>(null)
   const [newComment, setNewComment] = useState('')
   const [replyComment, setReplyComment] = useState('')
+  const { ready, user } = useAuth()
+  const { t } = useLanguage()
 
   const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:4700'
 
@@ -66,20 +70,21 @@ export function ProjectComments({ projectId, currentUserRole, onCommentChange }:
       setComments(data)
     } catch (error) {
       console.error('Error fetching comments:', error)
-      toast.error('Failed to load comments')
+      toast.error(t('comments.loadFailed'))
     } finally {
       setIsLoading(false)
     }
   }
 
   useEffect(() => {
+    if (!ready || !user) return
     fetchComments()
-  }, [projectId])
+  }, [ready, user, projectId])
 
   // Add comment
   const handleAddComment = async () => {
     if (!newComment.trim()) {
-      toast.error('Please enter a comment')
+      toast.error(t('comments.pleaseEnterComment'))
       return
     }
 
@@ -102,7 +107,7 @@ export function ProjectComments({ projectId, currentUserRole, onCommentChange }:
         throw new Error(error.detail || 'Failed to add comment')
       }
 
-      toast.success('Comment added successfully')
+      toast.success(t('comments.commentAdded'))
       setNewComment('')
       setReplyingTo(null)
       setIsAddDialogOpen(false)
@@ -117,7 +122,7 @@ export function ProjectComments({ projectId, currentUserRole, onCommentChange }:
   // Update comment
   const handleUpdateComment = async () => {
     if (!editingComment || !editingComment.content.trim()) {
-      toast.error('Please enter a comment')
+      toast.error(t('comments.pleaseEnterComment'))
       return
     }
 
@@ -139,7 +144,7 @@ export function ProjectComments({ projectId, currentUserRole, onCommentChange }:
         throw new Error(error.detail || 'Failed to update comment')
       }
 
-      toast.success('Comment updated successfully')
+      toast.success(t('comments.commentUpdated'))
       setEditingComment(null)
       setIsEditDialogOpen(false)
       fetchComments()
@@ -166,7 +171,7 @@ export function ProjectComments({ projectId, currentUserRole, onCommentChange }:
         throw new Error(error.detail || 'Failed to delete comment')
       }
 
-      toast.success('Comment deleted successfully')
+      toast.success(t('comments.commentDeleted'))
       fetchComments()
       onCommentChange?.()
     } catch (error: any) {
@@ -198,7 +203,7 @@ export function ProjectComments({ projectId, currentUserRole, onCommentChange }:
             </span>
             {comment.user_is_guest && (
               <Badge variant="outline" className="text-xs">
-                Guest
+                {t('comments.guest')}
               </Badge>
             )}
             <span className="text-xs text-gray-500">
@@ -206,7 +211,7 @@ export function ProjectComments({ projectId, currentUserRole, onCommentChange }:
             </span>
             {comment.updated_at !== comment.created_at && (
               <span className="text-xs text-gray-400">
-                (edited)
+                {t('comments.edited')}
               </span>
             )}
           </div>
@@ -235,18 +240,18 @@ export function ProjectComments({ projectId, currentUserRole, onCommentChange }:
                 </AlertDialogTrigger>
                 <AlertDialogContent>
                   <AlertDialogHeader>
-                    <AlertDialogTitle>Delete Comment</AlertDialogTitle>
+                    <AlertDialogTitle>{t('comments.deleteComment')}</AlertDialogTitle>
                     <AlertDialogDescription>
-                      Are you sure you want to delete this comment? This action cannot be undone.
+                      {t('comments.deleteConfirm')}
                     </AlertDialogDescription>
                   </AlertDialogHeader>
                   <AlertDialogFooter>
-                    <AlertDialogCancel>Cancel</AlertDialogCancel>
+                    <AlertDialogCancel>{t('common.cancel')}</AlertDialogCancel>
                     <AlertDialogAction
                       onClick={() => handleDeleteComment(comment.id)}
                       className="bg-red-600 hover:bg-red-700"
                     >
-                      Delete Comment
+                      {t('comments.deleteCommentAction')}
                     </AlertDialogAction>
                   </AlertDialogFooter>
                 </AlertDialogContent>
@@ -268,7 +273,7 @@ export function ProjectComments({ projectId, currentUserRole, onCommentChange }:
               }}
             >
               <Reply className="h-4 w-4 mr-2" />
-              Reply
+              {t('comments.reply')}
             </Button>
           </div>
         )}
@@ -289,13 +294,13 @@ export function ProjectComments({ projectId, currentUserRole, onCommentChange }:
         <CardHeader>
           <CardTitle className="flex items-center space-x-2">
             <MessageSquare className="h-5 w-5" />
-            <span>Project Comments</span>
+            <span>{t('comments.title')}</span>
           </CardTitle>
         </CardHeader>
         <CardContent>
           <div className="text-center py-4">
             <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900 mx-auto"></div>
-            <p className="text-gray-600 mt-2">Loading comments...</p>
+            <p className="text-gray-600 mt-2">{t('comments.loading')}</p>
           </div>
         </CardContent>
       </Card>
@@ -310,10 +315,10 @@ export function ProjectComments({ projectId, currentUserRole, onCommentChange }:
             <div>
               <CardTitle className="flex items-center space-x-2">
                 <MessageSquare className="h-5 w-5" />
-                <span>Project Comments</span>
+                <span>{t('comments.title')}</span>
               </CardTitle>
               <CardDescription>
-                Discuss and collaborate on this project
+                {t('comments.subtitle')}
               </CardDescription>
             </div>
             {canComment && (
@@ -321,23 +326,23 @@ export function ProjectComments({ projectId, currentUserRole, onCommentChange }:
                 <DialogTrigger asChild>
                   <Button size="sm">
                     <MessageSquare className="h-4 w-4 mr-2" />
-                    Add Comment
+                    {t('comments.addComment')}
                   </Button>
                 </DialogTrigger>
                 <DialogContent>
                   <DialogHeader>
                     <DialogTitle>
-                      {replyingTo ? `Reply to ${replyingTo.user_email || 'Guest User'}` : 'Add Comment'}
+                      {replyingTo ? t('comments.replyTo', { name: replyingTo.user_email || 'Guest User' }) : t('comments.addComment')}
                     </DialogTitle>
                     <DialogDescription>
-                      {replyingTo ? 'Write a reply to this comment.' : 'Share your thoughts about this project.'}
+                      {replyingTo ? t('comments.replySubtitle') : t('comments.writeComment')}
                     </DialogDescription>
                   </DialogHeader>
                   <div className="space-y-4">
                     {replyingTo && (
                       <div className="bg-gray-50 p-3 rounded-lg">
                         <div className="text-sm text-gray-600 mb-1">
-                          Replying to {replyingTo.user_email || 'Guest User'}:
+                          {t('comments.replyingTo', { name: replyingTo.user_email || 'Guest User' })}
                         </div>
                         <div className="text-sm text-gray-800">
                           {replyingTo.content}
@@ -346,7 +351,7 @@ export function ProjectComments({ projectId, currentUserRole, onCommentChange }:
                     )}
                     <div>
                       <Textarea
-                        placeholder="Write your comment..."
+                        placeholder={t('comments.writeComment')}
                         value={replyingTo ? replyComment : newComment}
                         onChange={(e) => replyingTo ? setReplyComment(e.target.value) : setNewComment(e.target.value)}
                         rows={4}
@@ -359,7 +364,7 @@ export function ProjectComments({ projectId, currentUserRole, onCommentChange }:
                       setReplyingTo(null)
                       setReplyComment('')
                     }}>
-                      Cancel
+                      {t('common.cancel')}
                     </Button>
                     <Button onClick={() => {
                       if (replyingTo) {
@@ -371,7 +376,7 @@ export function ProjectComments({ projectId, currentUserRole, onCommentChange }:
                       }
                     }}>
                       <Send className="h-4 w-4 mr-2" />
-                      {replyingTo ? 'Reply' : 'Comment'}
+                      {replyingTo ? t('comments.replyAction') : t('comments.commentAction')}
                     </Button>
                   </DialogFooter>
                 </DialogContent>
@@ -387,9 +392,9 @@ export function ProjectComments({ projectId, currentUserRole, onCommentChange }:
             {comments.length === 0 && (
               <div className="text-center py-8 text-gray-500">
                 <MessageSquare className="h-12 w-12 mx-auto mb-4 text-gray-300" />
-                <p>No comments yet</p>
+                <p>{t('comments.noComments')}</p>
                 {canComment && (
-                  <p className="text-sm mt-2">Be the first to start the conversation!</p>
+                  <p className="text-sm mt-2">{t('comments.noCommentsMessage')}</p>
                 )}
               </div>
             )}
@@ -401,15 +406,15 @@ export function ProjectComments({ projectId, currentUserRole, onCommentChange }:
       <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Edit Comment</DialogTitle>
+            <DialogTitle>{t('comments.editComment')}</DialogTitle>
             <DialogDescription>
-              Update your comment
+              {t('comments.editSubtitle')}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             <div>
               <Textarea
-                placeholder="Write your comment..."
+                placeholder={t('comments.writeComment')}
                 value={editingComment?.content || ''}
                 onChange={(e) => {
                   if (editingComment) {
@@ -425,10 +430,10 @@ export function ProjectComments({ projectId, currentUserRole, onCommentChange }:
               setEditingComment(null)
               setIsEditDialogOpen(false)
             }}>
-              Cancel
+              {t('common.cancel')}
             </Button>
             <Button onClick={handleUpdateComment}>
-              Update Comment
+              {t('comments.updateComment')}
             </Button>
           </DialogFooter>
         </DialogContent>

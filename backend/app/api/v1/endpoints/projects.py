@@ -200,6 +200,139 @@ async def list_projects(
     
     return project_responses
 
+@router.get("/owned", response_model=List[ProjectResponse])
+async def list_owned_projects(
+    db: AsyncSession = Depends(get_db),
+    current_user: Optional[AppUser] = Depends(get_current_user_optional)
+):
+    """List projects owned by the current user."""
+    if not current_user:
+        return []
+    
+    # Get projects where user is the owner
+    result = await db.execute(
+        select(Project).where(
+            Project.owner_id == current_user.id,
+            Project.deleted_at.is_(None)
+        )
+    )
+    projects = result.scalars().all()
+    
+    project_responses = []
+    for project in projects:
+        # Get member count
+        member_count_result = await db.execute(
+            select(ProjectMember).where(ProjectMember.project_id == project.id)
+        )
+        member_count = len(member_count_result.scalars().all())
+        
+        # Get run count
+        run_count_result = await db.execute(
+            select(Run).where(Run.project_id == project.id, Run.deleted_at.is_(None))
+        )
+        run_count = len(run_count_result.scalars().all())
+        
+        # Handle is_public field safely - existing projects may not have this field
+        is_public_value = False
+        if hasattr(project, 'is_public') and project.is_public is not None:
+            is_public_value = project.is_public
+        
+        # Get owner details
+        owner_email = None
+        owner_display_name = None
+        if project.owner_id:
+            owner_result = await db.execute(
+                select(AppUser).where(AppUser.id == project.owner_id)
+            )
+            owner = owner_result.scalar_one_or_none()
+            if owner:
+                owner_email = owner.email
+                owner_display_name = owner.display_name
+        
+        project_responses.append(ProjectResponse(
+            id=str(project.id),
+            name=project.name,
+            description=project.description,
+            owner_id=str(project.owner_id),
+            owner_email=owner_email,
+            owner_display_name=owner_display_name,
+            allow_guest=project.allow_guest,
+            is_public=is_public_value,
+            created_at=project.created_at,
+            member_count=member_count,
+            run_count=run_count,
+            plugin_name=getattr(project, 'plugin_name', None)
+        ))
+    
+    return project_responses
+
+@router.get("/member", response_model=List[ProjectResponse])
+async def list_member_projects(
+    db: AsyncSession = Depends(get_db),
+    current_user: Optional[AppUser] = Depends(get_current_user_optional)
+):
+    """List projects where the current user is a member (not owner)."""
+    if not current_user:
+        return []
+    
+    # Get projects where user is a member but not the owner
+    result = await db.execute(
+        select(Project).join(ProjectMember).where(
+            ProjectMember.user_id == current_user.id,
+            Project.owner_id != current_user.id,
+            Project.deleted_at.is_(None)
+        )
+    )
+    projects = result.scalars().all()
+    
+    project_responses = []
+    for project in projects:
+        # Get member count
+        member_count_result = await db.execute(
+            select(ProjectMember).where(ProjectMember.project_id == project.id)
+        )
+        member_count = len(member_count_result.scalars().all())
+        
+        # Get run count
+        run_count_result = await db.execute(
+            select(Run).where(Run.project_id == project.id, Run.deleted_at.is_(None))
+        )
+        run_count = len(run_count_result.scalars().all())
+        
+        # Handle is_public field safely - existing projects may not have this field
+        is_public_value = False
+        if hasattr(project, 'is_public') and project.is_public is not None:
+            is_public_value = project.is_public
+        
+        # Get owner details
+        owner_email = None
+        owner_display_name = None
+        if project.owner_id:
+            owner_result = await db.execute(
+                select(AppUser).where(AppUser.id == project.owner_id)
+            )
+            owner = owner_result.scalar_one_or_none()
+            if owner:
+                owner_email = owner.email
+                owner_display_name = owner.display_name
+        
+        project_responses.append(ProjectResponse(
+            id=str(project.id),
+            name=project.name,
+            description=project.description,
+            owner_id=str(project.owner_id),
+            owner_email=owner_email,
+            owner_display_name=owner_display_name,
+            allow_guest=project.allow_guest,
+            is_public=is_public_value,
+            created_at=project.created_at,
+            member_count=member_count,
+            run_count=run_count,
+            plugin_name=getattr(project, 'plugin_name', None)
+        ))
+    
+    return project_responses
+
 @router.get("/{project_id}", response_model=ProjectResponse)
 async def get_project(
     project_id: str,
@@ -262,6 +395,13 @@ async def update_project(
 ):
     """Update project details."""
     project = await check_project_access(db, uuid.UUID(project_id), current_user, require_owner=False)
+    
+    # Check if user is trying to update name or description - only owners can do this
+    if (project_data.name is not None or project_data.description is not None) and project.owner_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only project owners can update project name and description"
+        )
     
     if project_data.name is not None:
         project.name = project_data.name
