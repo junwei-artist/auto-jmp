@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, UploadFile, File, HTTPException, Form
 from fastapi.responses import JSONResponse
 from typing import Dict, Any, List
 import pandas as pd
+import numpy as np
 import tempfile
 import os
 from pathlib import Path
@@ -497,6 +498,18 @@ async def validate_data_modular(
             # Overall validation result
             overall_valid = all(checkpoint["valid"] for checkpoint in checkpoints)
             
+            # Convert validations DataFrames to JSON-serializable format
+            serializable_validations = {}
+            for key, df in validations.items():
+                if isinstance(df, pd.DataFrame):
+                    # Convert DataFrame to list of dictionaries, handling numpy types
+                    serializable_validations[key] = df.replace({np.nan: None}).to_dict('records')
+                else:
+                    serializable_validations[key] = df
+            
+            # Convert missing_in_data DataFrame to JSON-serializable format
+            serializable_missing_in_data = missing_in_data.replace({np.nan: None}).to_dict('records') if len(missing_in_data) > 0 else []
+            
             validation_results = {
                 "valid": overall_valid,
                 "message": "CPK data validation completed" if overall_valid else "CPK validation completed with issues",
@@ -511,7 +524,8 @@ async def validate_data_modular(
                 "fai_columns_found": len(fai_cols),
                 "matched_spec_rows": len(matched_spec),
                 "missing_in_data_rows": len(missing_in_data),
-                "validations": validations,
+                "missing_in_data": serializable_missing_in_data,
+                "validations": serializable_validations,
                 "has_errors": not overall_valid,
                 "has_warnings": any(k.startswith("Warning_") for k in validations.keys())
             }
