@@ -77,6 +77,19 @@ const getPlugins = (t: (key: string) => string): Plugin[] => {
         getTranslation('plugin.excel2cpkv1.features.3', 'FAI column matching'),
         getTranslation('plugin.excel2cpkv1.features.4', 'CSV and JSL generation for JMP')
       ]
+    },
+    {
+      id: 'excel2commonality',
+      name: getTranslation('plugin.excel2commonality.name', 'Excel to Commonality'),
+      description: getTranslation('plugin.excel2commonality.description', 'Convert Excel files to CSV and JSL scripts for commonality analysis with multi-variable visualization'),
+      icon: <BarChart3 className="h-8 w-8 text-orange-600" />,
+      features: [
+        getTranslation('plugin.excel2commonality.features.0', 'Automatic sheet detection'),
+        getTranslation('plugin.excel2commonality.features.1', 'FAI column detection'),
+        getTranslation('plugin.excel2commonality.features.2', 'Multi-variable visualization'),
+        getTranslation('plugin.excel2commonality.features.3', 'JSL script generation'),
+        getTranslation('plugin.excel2commonality.features.4', 'CSV export')
+      ]
     }
   ]
 }

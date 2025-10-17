@@ -119,6 +119,33 @@ export default function PluginsPage() {
       },
       components: {},
       hooks: {}
+    },
+    {
+      config: {
+        id: 'excel2commonality',
+        name: 'Excel to Commonality',
+        version: '1.0.0',
+        description: 'Convert Excel files to CSV and JSL scripts for commonality analysis with multi-variable visualization',
+        icon: '🔗',
+        category: 'analysis',
+        supportedFormats: ['.xlsx', '.xls', '.xlsm', '.xlsb'],
+        routes: [
+          {
+            path: '/plugins/excel2commonality',
+            component: 'AnalysisForm',
+            title: 'Commonality Analysis',
+            description: 'Upload Excel file with required columns for commonality analysis'
+          }
+        ],
+        apiEndpoints: [
+          '/api/v1/extensions/excel2commonality/validate',
+          '/api/v1/extensions/excel2commonality/process',
+          '/api/v1/extensions/excel2commonality/analyze',
+          '/api/v1/extensions/excel2commonality/info'
+        ]
+      },
+      components: {},
+      hooks: {}
     }
   ]
 

@@ -571,6 +571,35 @@ async def get_plugins(
                 "FAI列匹配",
                 "为JMP生成CSV和JSL"
             ]
+        },
+        {
+            "id": "excel2commonality",
+            "name": "Excel to Commonality",
+            "version": "1.0.0",
+            "description": "Convert Excel files to CSV and JSL scripts for commonality analysis with multi-variable visualization",
+            "icon": "🔗",
+            "category": "analysis",
+            "supported_formats": [".xlsx", ".xls", ".xlsm", ".xlsb"],
+            "english_name": "Excel to Commonality",
+            "english_description": "Convert Excel files to CSV and JSL scripts for commonality analysis with multi-variable visualization",
+            "chinese_name": "Excel转共性分析",
+            "chinese_description": "将Excel文件转换为CSV和JSL脚本，用于多变量可视化的共性分析",
+            "english_features": [
+                "Automatic sheet detection",
+                "FAI column detection",
+                "Multi-variable visualization",
+                "JSL script generation",
+                "CSV export",
+                "Required columns validation"
+            ],
+            "chinese_features": [
+                "自动工作表检测",
+                "FAI列检测",
+                "多变量可视化",
+                "JSL脚本生成",
+                "CSV导出",
+                "必需列验证"
+            ]
         }
     ]
     

@@ -41,6 +41,8 @@ class ExtensionManager:
                 class_name = 'Excel2ProcessCapabilityExtension'
             elif extension_name == 'excel2cpkv1':
                 class_name = 'Excel2CPKV1Extension'
+            elif extension_name == 'excel2commonality':
+                class_name = 'Excel2CommonalityExtension'
             
             extension_class = getattr(module, class_name)
             

@@ -17,6 +17,7 @@ from extensions.excel2boxplotv1.api import router as excel2boxplotv1_router
 from extensions.excel2boxplotv2.api import router as excel2boxplotv2_router
 from extensions.excel2processcapability.api import router as excel2processcapability_router
 from extensions.excel2cpkv1.api import router as excel2cpkv1_router
+from extensions.excel2commonality.api import router as excel2commonality_router
 
 # Load environment variables
 load_dotenv()
@@ -81,6 +82,7 @@ app.include_router(excel2boxplotv1_router, prefix=f"{settings.API_V1_STR}/extens
 app.include_router(excel2boxplotv2_router, prefix=f"{settings.API_V1_STR}/extensions")
 app.include_router(excel2processcapability_router, prefix=f"{settings.API_V1_STR}/extensions")
 app.include_router(excel2cpkv1_router, prefix=f"{settings.API_V1_STR}/extensions")
+app.include_router(excel2commonality_router, prefix=f"{settings.API_V1_STR}/extensions")
 
 # Include WebSocket router
 app.include_router(websocket_router)
