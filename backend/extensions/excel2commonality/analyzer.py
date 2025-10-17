@@ -13,6 +13,7 @@ from datetime import datetime
 from typing import Dict, List, Any, Tuple, Optional
 from pathlib import Path
 import logging
+from .analyzer_meta import MetaAnalyzer
 
 logger = logging.getLogger(__name__)
 
@@ -69,6 +70,37 @@ class CommonalityAnalyzer:
     def find_fai_columns(self, df: pd.DataFrame) -> List[str]:
         """Return all columns containing 'FAI' (case-insensitive)."""
         return [c for c in df.columns if "FAI" in str(c).upper()]
+    
+    def check_meta_sheet(self, file_path: str, engine: str) -> bool:
+        """
+        Check if Excel file has a 'meta' sheet with required columns.
+        
+        Args:
+            file_path: Path to Excel file
+            engine: Pandas engine to use for reading Excel
+            
+        Returns:
+            True if meta sheet exists with required columns, False otherwise
+        """
+        try:
+            xls = pd.ExcelFile(file_path, engine=engine)
+            if "meta" not in xls.sheet_names:
+                return False
+            
+            # Check if meta sheet has required columns
+            meta_df = pd.read_excel(file_path, sheet_name="meta", nrows=5, engine=engine)
+            required_meta_cols = {"test_name", "target", "usl", "lsl"}
+            
+            if required_meta_cols.issubset(meta_df.columns):
+                logger.info("Meta sheet detected with required columns: test_name, target, usl, lsl")
+                return True
+            else:
+                logger.info("Meta sheet exists but missing required columns")
+                return False
+                
+        except Exception as e:
+            logger.warning(f"Error checking meta sheet: {str(e)}")
+            return False
     
     def generate_jsl(self, fai_columns: List[str], csv_filename: str) -> str:
         """Generate JSL script for all FAI columns."""
@@ -234,15 +266,18 @@ If( Is Scriptable( gb ),
             # 2) Find data sheet
             data_sheet = self.find_data_sheet(file_path, engine)
             
-            # 3) Load the full data sheet
+            # 3) Check if meta sheet exists with required columns
+            has_meta_sheet = self.check_meta_sheet(file_path, engine)
+            
+            # 4) Load the full data sheet
             df = pd.read_excel(file_path, sheet_name=data_sheet, engine=engine)
             
-            # 4) Find FAI columns
+            # 5) Find FAI columns
             fai_cols = self.find_fai_columns(df)
             if not fai_cols:
                 raise ValueError("No columns containing 'FAI' found.")
             
-            # 5) Generate UUID and filenames
+            # 6) Generate UUID and filenames
             uid = str(uuid.uuid4())[:8]
             csv_filename = f"commonality_data_{uid}.csv"
             jsl_filename = f"commonality_graphs_{uid}.jsl"
@@ -250,19 +285,32 @@ If( Is Scriptable( gb ),
             csv_path = os.path.join(output_dir, csv_filename)
             jsl_path = os.path.join(output_dir, jsl_filename)
             
-            # 6) Save CSV
+            # 7) Save CSV
             df.to_csv(csv_path, index=False, encoding="utf-8-sig")
             
-            # 7) Generate and save JSL
-            jsl_content = self.generate_jsl(fai_cols, csv_filename)
+            # 8) Generate JSL based on whether meta sheet exists
+            if has_meta_sheet:
+                logger.info("Using MetaAnalyzer for JSL generation with specifications")
+                meta_analyzer = MetaAnalyzer()
+                meta_result = meta_analyzer.analyze_with_meta(file_path, data_sheet, engine)
+                jsl_content = meta_result["jsl_content"]
+                analysis_mode = "meta"
+            else:
+                logger.info("Using standard analyzer for JSL generation")
+                jsl_content = self.generate_jsl(fai_cols, csv_filename)
+                analysis_mode = "standard"
+            
+            # 9) Save JSL
             with open(jsl_path, "w", encoding="utf-8") as f:
                 f.write(jsl_content)
             
             return {
                 "success": True,
-                "message": "Commonality analysis completed successfully",
+                "message": f"Commonality analysis completed successfully using {analysis_mode} mode",
                 "file_format": file_format,
                 "data_sheet": data_sheet,
+                "has_meta_sheet": has_meta_sheet,
+                "analysis_mode": analysis_mode,
                 "fai_columns_found": len(fai_cols),
                 "fai_columns": fai_cols,
                 "csv_content": df.to_csv(index=False, encoding="utf-8-sig"),
