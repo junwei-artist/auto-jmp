@@ -1,0 +1,46 @@
+@router.post("/validate-data")
+async def validate_data_modular(
+    file: UploadFile = File(...),
+    cat_var: str = Form(...)
+):
+    """Validate data using modular approach"""
+    try:
+        logger.info(f"Validating data with categorical variable: {cat_var}")
+        
+        # Save uploaded file temporarily
+        with tempfile.NamedTemporaryFile(delete=False, suffix='.xlsx') as tmp_file:
+            content = await file.read()
+            tmp_file.write(content)
+            tmp_file.flush()
+            
+            # Create a new file handler instance for this request (thread-safe)
+            request_file_handler = FileHandler()
+            load_result = request_file_handler.load_excel_file(tmp_file.name)
+            if not load_result["success"]:
+                os.unlink(tmp_file.name)
+                return load_result
+            
+            # Get data
+            df_meta = request_file_handler.df_meta
+            df_data = request_file_handler.df_data_raw
+            
+            # Create a new validator instance for this request (thread-safe)
+            request_validator = DataValidator()
+            result = request_validator.run_full_validation(df_meta, df_data, cat_var)
+            
+            # Clean up temp file and standardized file if created
+            os.unlink(tmp_file.name)
+            if request_file_handler.was_standardized and request_file_handler.standardized_file_path:
+                request_file_handler.cleanup()
+            
+            return result
+            
+    except Exception as e:
+        logger.error(f"Error validating data: {str(e)}", exc_info=True)
+        return JSONResponse(
+            status_code=400,
+            content={
+                "success": False,
+                "error": str(e)
+            }
+        )

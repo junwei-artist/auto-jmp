@@ -55,6 +55,8 @@ class AppUser(Base):
     created_shares = relationship("ShareLink", back_populates="created_by_user")
     comments = relationship("ProjectComment")
     run_comments = relationship("RunComment")
+    artifact_comments = relationship("ArtifactComment")
+    uploaded_attachments = relationship("ProjectAttachment", back_populates="uploader")
     department = relationship("Department", back_populates="users")
     business_group = relationship("BusinessGroup", back_populates="users")
     notifications = relationship("Notification", back_populates="user")
@@ -78,6 +80,7 @@ class Project(Base):
     artifacts = relationship("Artifact", back_populates="project")
     runs = relationship("Run", back_populates="project")
     share_links = relationship("ShareLink", back_populates="project")
+    attachments = relationship("ProjectAttachment", back_populates="project")
     comments = relationship("ProjectComment")
 
 class ProjectMember(Base):
@@ -110,6 +113,7 @@ class Artifact(Base):
     # Relationships
     project = relationship("Project", back_populates="artifacts")
     run = relationship("Run", back_populates="artifacts")
+    comments = relationship("ArtifactComment", back_populates="artifact")
 
 class Run(Base):
     __tablename__ = "run"
@@ -200,6 +204,24 @@ class RunComment(Base):
     parent = relationship("RunComment", remote_side=[id])
     replies = relationship("RunComment", back_populates="parent")
 
+class ArtifactComment(Base):
+    __tablename__ = "artifact_comment"
+    
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    artifact_id = Column(UUID(as_uuid=True), ForeignKey("artifact.id", ondelete="CASCADE"))
+    user_id = Column(UUID(as_uuid=True), ForeignKey("app_user.id"))
+    parent_id = Column(UUID(as_uuid=True), ForeignKey("artifact_comment.id"), nullable=True)  # For replies
+    content = Column(Text, nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    deleted_at = Column(DateTime(timezone=True), nullable=True)  # Soft delete
+    
+    # Relationships
+    artifact = relationship("Artifact", back_populates="comments")
+    user = relationship("AppUser", back_populates="artifact_comments")
+    parent = relationship("ArtifactComment", remote_side=[id])
+    replies = relationship("ArtifactComment", back_populates="parent")
+
 class Department(Base):
     __tablename__ = "department"
     
@@ -223,14 +245,32 @@ class BusinessGroup(Base):
     users = relationship("AppUser", back_populates="business_group")
 
 class NotificationType(str, enum.Enum):
-    PROJECT_ADDED = "project_added"
-    PROJECT_UPDATED = "project_updated"
-    PROJECT_DELETED = "project_deleted"
-    MEMBER_ADDED = "member_added"
-    MEMBER_REMOVED = "member_removed"
-    COMMENT_ADDED = "comment_added"
-    RUN_COMPLETED = "run_completed"
-    RUN_FAILED = "run_failed"
+    PROJECT_ADDED = "PROJECT_ADDED"
+    PROJECT_UPDATED = "PROJECT_UPDATED"
+    PROJECT_DELETED = "PROJECT_DELETED"
+    MEMBER_ADDED = "MEMBER_ADDED"
+    MEMBER_REMOVED = "MEMBER_REMOVED"
+    COMMENT_ADDED = "COMMENT_ADDED"
+    ARTIFACT_COMMENT_ADDED = "ARTIFACT_COMMENT_ADDED"
+    RUN_COMPLETED = "RUN_COMPLETED"
+    RUN_FAILED = "RUN_FAILED"
+
+class ProjectAttachment(Base):
+    __tablename__ = "project_attachment"
+    
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    project_id = Column(UUID(as_uuid=True), ForeignKey("project.id", ondelete="CASCADE"))
+    uploaded_by = Column(UUID(as_uuid=True), ForeignKey("app_user.id", ondelete="CASCADE"))
+    filename = Column(String, nullable=False)
+    description = Column(Text, nullable=False)  # Required description, defaults to filename
+    storage_key = Column(String, nullable=False)
+    file_size = Column(BigInteger, nullable=False)
+    mime_type = Column(String, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    
+    # Relationships
+    project = relationship("Project", back_populates="attachments")
+    uploader = relationship("AppUser", back_populates="uploaded_attachments")
 
 class Notification(Base):
     __tablename__ = "notification"

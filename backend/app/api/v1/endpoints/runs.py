@@ -10,7 +10,9 @@ from app.core.database import get_db
 from app.core.auth import get_current_user, get_current_user_optional
 from app.core.celery import celery_app
 from app.core.websocket import publish_run_update
-from app.models import Project, Run, RunStatus, AppUser, Artifact, ProjectMember, AppSetting, RunComment
+from app.core.storage import local_storage
+from app.models import Project, Run, RunStatus, AppUser, Artifact, ProjectMember, AppSetting, RunComment, ProjectAttachment
+from app.services.notification_service import NotificationService
 
 router = APIRouter()
 
@@ -188,6 +190,35 @@ async def create_run(
     
     db.add(csv_artifact)
     db.add(jsl_artifact)
+    await db.commit()
+    
+    # Create project attachments for input files
+    run_id_str = str(run.id)
+    
+    # Create CSV attachment
+    csv_attachment = ProjectAttachment(
+        project_id=project_id,
+        uploaded_by=current_user.id if current_user else None,
+        filename=f"data_{run_id_str[:8]}.csv",
+        description=f"Uploaded for generating run {run_id_str}",
+        storage_key=run_data.csv_key,
+        file_size=0,  # We'll update this if needed
+        mime_type="text/csv"
+    )
+    
+    # Create JSL attachment
+    jsl_attachment = ProjectAttachment(
+        project_id=project_id,
+        uploaded_by=current_user.id if current_user else None,
+        filename=f"script_{run_id_str[:8]}.jsl",
+        description=f"Uploaded for generating run {run_id_str}",
+        storage_key=run_data.jsl_key,
+        file_size=0,  # We'll update this if needed
+        mime_type="text/plain"
+    )
+    
+    db.add(csv_attachment)
+    db.add(jsl_attachment)
     await db.commit()
     
     # Check queue mode setting
@@ -538,6 +569,14 @@ async def create_run_comment(
     db.add(comment)
     await db.commit()
     await db.refresh(comment)
+    
+    # Send notification to project members about new run comment
+    await NotificationService.notify_comment_added(
+        db=db,
+        project_id=run.project_id,
+        commenter_user_id=current_user.id,
+        comment_content=comment_data.content
+    )
     
     return {"message": "Comment created successfully", "comment_id": str(comment.id)}
 

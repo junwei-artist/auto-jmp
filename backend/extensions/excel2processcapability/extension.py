@@ -5,9 +5,10 @@ from typing import List, Dict, Any
 class Excel2ProcessCapabilityExtension(BaseExtension):
     """Excel to Process Capability analysis extension"""
     
-    def __init__(self):
+    def __init__(self, language: str = 'en'):
         super().__init__()
-        self.analyzer = ProcessCapabilityAnalyzer()
+        self.analyzer = ProcessCapabilityAnalyzer(language=language)
+        self.language = language
     
     def get_name(self) -> str:
         return "excel2processcapability"
@@ -17,6 +18,9 @@ class Excel2ProcessCapabilityExtension(BaseExtension):
     
     def get_description(self) -> str:
         return "Excel to Process Capability analysis (Cp, Cpk, Pp, Ppk)"
+    
+    def get_chinese_description(self) -> str:
+        return "将Excel数据转换为过程能力分析（Cp、Cpk、Pp、Ppk）"
     
     def get_supported_formats(self) -> List[str]:
         return ['.xlsx', '.xls', '.xlsm']

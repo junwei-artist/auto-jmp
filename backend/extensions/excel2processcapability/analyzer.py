@@ -6,6 +6,25 @@ from ..base.analyzer import BaseAnalyzer
 class ProcessCapabilityAnalyzer(BaseAnalyzer):
     """Process Capability-specific analyzer"""
     
+    def __init__(self, language: str = 'en'):
+        self.language = language
+        self.messages = {
+            'en': {
+                'missing_columns': "Missing required columns: {columns}",
+                'value_not_numeric': "Value column must be numeric for process capability analysis",
+                'spec_limits_required': "Specification limits must be provided",
+                'spec_limits_invalid': "Specification lower limit must be less than upper limit",
+                'data_valid': "Data is valid for process capability analysis"
+            },
+            'zh': {
+                'missing_columns': "缺少必需的列: {columns}",
+                'value_not_numeric': "值列必须是数值类型才能进行过程能力分析",
+                'spec_limits_required': "必须提供规格限制",
+                'spec_limits_invalid': "规格下限必须小于上限",
+                'data_valid': "数据适合进行过程能力分析"
+            }
+        }
+    
     def get_analysis_type(self) -> str:
         return "process_capability"
     
@@ -31,14 +50,14 @@ class ProcessCapabilityAnalyzer(BaseAnalyzer):
     
     def validate_data(self, df: pd.DataFrame, chart_type: str) -> Dict[str, Any]:
         """Validate data for process capability analysis"""
-        required = self.required_columns.get(chart_type, [])
+        required = self.get_required_columns().get(chart_type, [])
         missing = [col for col in required if col not in df.columns]
         
         if missing:
             return {
                 'valid': False,
                 'missing_columns': missing,
-                'message': f"Missing required columns: {', '.join(missing)}"
+                'message': self.messages[self.language]['missing_columns'].format(columns=', '.join(missing))
             }
         
         # Check for numeric data
@@ -46,7 +65,7 @@ class ProcessCapabilityAnalyzer(BaseAnalyzer):
         if 'value' not in numeric_cols:
             return {
                 'valid': False,
-                'message': "Value column must be numeric for process capability analysis"
+                'message': self.messages[self.language]['value_not_numeric']
             }
         
         # Check specification limits
@@ -57,25 +76,25 @@ class ProcessCapabilityAnalyzer(BaseAnalyzer):
             if spec_lower is None or spec_upper is None:
                 return {
                     'valid': False,
-                    'message': "Specification limits must be provided"
+                    'message': self.messages[self.language]['spec_limits_required']
                 }
             
             if spec_lower >= spec_upper:
                 return {
                     'valid': False,
-                    'message': "Specification lower limit must be less than upper limit"
+                    'message': self.messages[self.language]['spec_limits_invalid']
                 }
         
         return {
             'valid': True,
             'numeric_columns': numeric_cols,
-            'message': "Data is valid for process capability analysis"
+            'message': self.messages[self.language]['data_valid']
         }
     
     def preprocess_data(self, df: pd.DataFrame, chart_type: str) -> pd.DataFrame:
         """Preprocess data for process capability analysis"""
         # Remove rows with missing values in required columns
-        required = self.required_columns.get(chart_type, [])
+        required = self.get_required_columns().get(chart_type, [])
         df_clean = df.dropna(subset=required)
         
         # Convert numeric columns

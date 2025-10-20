@@ -516,20 +516,25 @@ async def validate_data_modular(
             tmp_file.write(content)
             tmp_file.flush()
             
-            # Load file
-            load_result = file_handler.load_excel_file(tmp_file.name)
+            # Create a new file handler instance for this request (thread-safe)
+            request_file_handler = FileHandler()
+            load_result = request_file_handler.load_excel_file(tmp_file.name)
             if not load_result["success"]:
+                os.unlink(tmp_file.name)
                 return load_result
             
             # Get data
-            df_meta = file_handler.df_meta
-            df_data = file_handler.df_data_raw
+            df_meta = request_file_handler.df_meta
+            df_data = request_file_handler.df_data_raw
             
-            # Run full validation
-            result = validator.run_full_validation(df_meta, df_data, cat_var)
+            # Create a new validator instance for this request (thread-safe)
+            request_validator = DataValidator()
+            result = request_validator.run_full_validation(df_meta, df_data, cat_var)
             
-            # Clean up temp file
+            # Clean up temp file and standardized file if created
             os.unlink(tmp_file.name)
+            if request_file_handler.was_standardized and request_file_handler.standardized_file_path:
+                request_file_handler.cleanup()
             
             return result
             
@@ -542,6 +547,7 @@ async def validate_data_modular(
                 "error": str(e)
             }
         )
+
 
 @router.post("/process-data")
 async def process_data_modular(

@@ -149,7 +149,10 @@ export default function HomePage() {
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-4">
               <BarChart3 className="h-8 w-8 text-blue-600" />
-              <h1 className="text-xl font-bold text-gray-900">{t('landing.title')}</h1>
+              <div>
+                <h1 className="text-xl font-bold text-gray-900">{t('landing.title')}</h1>
+                <p className="text-xs text-gray-500">by Dr J. Sun</p>
+              </div>
             </div>
             <div className="flex items-center space-x-4">
               <Button 
@@ -369,6 +372,15 @@ export default function HomePage() {
           </div>
         </div>
       </div>
+
+      {/* Footer */}
+      <footer className="bg-white/50 backdrop-blur-sm border-t border-white/20 py-6">
+        <div className="container mx-auto px-4 text-center">
+          <p className="text-gray-600 text-sm">
+            Developed by Dr J. Sun
+          </p>
+        </div>
+      </footer>
     </div>
   )
 }

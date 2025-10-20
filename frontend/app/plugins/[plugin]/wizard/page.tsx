@@ -156,8 +156,12 @@ function ExcelProcessingWizardContent() {
       const formData = new FormData()
       formData.append('file', excelFile)
 
+      const token = localStorage.getItem('access_token')
       const response = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/v1/extensions/${pluginName}/load-file`, {
         method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`
+        },
         body: formData
       })
 
@@ -193,8 +197,12 @@ function ExcelProcessingWizardContent() {
       formData.append('file', excelFile)
       formData.append('cat_var', selectedCategoricalVariable)
 
+      const token = localStorage.getItem('access_token')
       const response = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/v1/extensions/${pluginName}/validate-data`, {
         method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`
+        },
         body: formData
       })
 
@@ -227,8 +235,12 @@ function ExcelProcessingWizardContent() {
       formData.append('file', excelFile)
       formData.append('cat_var', selectedCategoricalVariable)
 
+      const token = localStorage.getItem('access_token')
       const response = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/v1/extensions/${pluginName}/process-data`, {
         method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`
+        },
         body: formData
       })
 
@@ -255,8 +267,12 @@ function ExcelProcessingWizardContent() {
       formData.append('file', excelFile)
       formData.append('cat_var', selectedCategoricalVariable)
 
+      const token = localStorage.getItem('access_token')
       const response = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/v1/extensions/${pluginName}/generate-files`, {
         method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`
+        },
         body: formData
       })
 
@@ -299,8 +315,12 @@ function ExcelProcessingWizardContent() {
       formData.append('project_name', projectInfo?.name || 'Analysis')
       formData.append('project_description', projectInfo?.description || '')
 
+      const token = localStorage.getItem('access_token')
       const response = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/v1/extensions/${pluginName}/run-analysis`, {
         method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`
+        },
         body: formData
       })
 

@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File
+from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Query
 from fastapi.responses import FileResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from pydantic import BaseModel
@@ -55,7 +55,7 @@ async def get_presigned_upload_url(
     storage_key = local_storage.generate_storage_key(request.filename, request.content_type)
     
     # For local development, we'll use a simple upload endpoint
-    upload_url = f"/api/v1/uploads/upload/{storage_key}"
+    upload_url = f"/api/v1/uploads/upload?storage_key={storage_key}"
     
     return PresignedUploadResponse(
         upload_url=upload_url,
@@ -63,9 +63,9 @@ async def get_presigned_upload_url(
         expires_in=3600
     )
 
-@router.post("/upload/{storage_key}")
+@router.post("/upload")
 async def upload_file(
-    storage_key: str,
+    storage_key: str = Query(...),
     file: UploadFile = File(...),
     current_user: Optional[AppUser] = Depends(get_current_user_optional)
 ):

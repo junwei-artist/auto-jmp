@@ -1,8 +1,8 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Button } from '@/components/ui/button'
-import { Eye, ChevronLeft, ChevronRight, ZoomIn, ZoomOut, RotateCcw, Download, X } from 'lucide-react'
+import { Eye, ChevronLeft, ChevronRight, ZoomIn, ZoomOut, RotateCcw, Download, X, MessageCircle } from 'lucide-react'
 
 interface Artifact {
   id: string
@@ -22,6 +22,11 @@ interface PublicImageGalleryProps {
   backendUrl: string
 }
 
+interface ArtifactCommentCount {
+  artifact_id: string
+  comment_count: number
+}
+
 export function PublicImageGallery({ artifacts, projectId, backendUrl }: PublicImageGalleryProps) {
   const imageArtifacts = artifacts.filter(a => 
     (a.kind === 'output_image' || a.kind === 'output_png') && a.mime_type?.startsWith('image/')
@@ -30,6 +35,39 @@ export function PublicImageGallery({ artifacts, projectId, backendUrl }: PublicI
   const [selectedImageIndex, setSelectedImageIndex] = useState<number | null>(null)
   const [zoomLevel, setZoomLevel] = useState(100)
   const [rotation, setRotation] = useState(0)
+  const [commentCounts, setCommentCounts] = useState<ArtifactCommentCount[]>([])
+
+  // Fetch comment counts for all image artifacts
+  useEffect(() => {
+    const fetchCommentCounts = async () => {
+      if (imageArtifacts.length === 0) return
+      
+      try {
+        const response = await fetch(`${backendUrl}/api/v1/artifacts/public/comment-counts`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(imageArtifacts.map(a => a.id)),
+        })
+        
+        if (response.ok) {
+          const data = await response.json()
+          setCommentCounts(data)
+        }
+      } catch (error) {
+        console.error('Failed to fetch comment counts:', error)
+      }
+    }
+
+    fetchCommentCounts()
+  }, [imageArtifacts, backendUrl])
+
+  // Helper function to get comment count for an artifact
+  const getCommentCount = (artifactId: string): number => {
+    const count = commentCounts.find(cc => cc.artifact_id === artifactId)
+    return count?.comment_count || 0
+  }
 
   if (imageArtifacts.length === 0) {
     return (
@@ -169,6 +207,14 @@ export function PublicImageGallery({ artifacts, projectId, backendUrl }: PublicI
               <div className="absolute top-2 left-2 bg-black bg-opacity-70 text-white text-xs px-2 py-1 rounded-full">
                 {index + 1}
               </div>
+              
+              {/* Comment count badge */}
+              {getCommentCount(artifact.id) > 0 && (
+                <div className="absolute top-2 right-2 bg-blue-500 text-white text-xs px-2 py-1 rounded-full flex items-center space-x-1">
+                  <MessageCircle className="h-3 w-3" />
+                  <span>{getCommentCount(artifact.id)}</span>
+                </div>
+              )}
               
               {/* Navigation Arrows (on hover) */}
               {index > 0 && (

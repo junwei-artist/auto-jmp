@@ -226,3 +226,42 @@ class NotificationService:
             message=f"Run '{task_name}' in project '{project.name}' has {'completed successfully' if status == 'succeeded' else 'failed'}.",
             exclude_user_id=None
         )
+    
+    @staticmethod
+    async def notify_artifact_comment_added(
+        db: AsyncSession,
+        project_id: uuid.UUID,
+        artifact_id: uuid.UUID,
+        commenter_user_id: uuid.UUID,
+        comment_content: str,
+        artifact_filename: str
+    ) -> List[Notification]:
+        """Notify project members about a new artifact comment."""
+        # Get project details
+        result = await db.execute(
+            select(Project).where(Project.id == project_id)
+        )
+        project = result.scalar_one_or_none()
+        
+        if not project:
+            return []
+        
+        # Get commenter details
+        result = await db.execute(
+            select(AppUser).where(AppUser.id == commenter_user_id)
+        )
+        commenter_user = result.scalar_one_or_none()
+        
+        commenter_name = commenter_user.display_name or commenter_user.email if commenter_user else "Unknown"
+        
+        # Truncate comment content for notification
+        truncated_content = comment_content[:100] + "..." if len(comment_content) > 100 else comment_content
+        
+        return await NotificationService.notify_project_members(
+            db=db,
+            project_id=project_id,
+            notification_type=NotificationType.ARTIFACT_COMMENT_ADDED,
+            title=f"New comment on artifact in {project.name}",
+            message=f"{commenter_name} commented on '{artifact_filename}': \"{truncated_content}\"",
+            exclude_user_id=commenter_user_id
+        )

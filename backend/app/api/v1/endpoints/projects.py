@@ -8,7 +8,8 @@ from datetime import datetime, timezone
 
 from app.core.database import get_db
 from app.core.auth import get_current_user, get_current_user_optional
-from app.models import Project, ProjectMember, AppUser, Artifact, Run, RunStatus
+from app.core.storage import local_storage
+from app.models import Project, ProjectMember, AppUser, Artifact, Run, RunStatus, ProjectAttachment
 
 router = APIRouter()
 
@@ -115,7 +116,37 @@ async def create_project(
         "project_id": str(project.id),
         "user_id": str(current_user.id)
     })
+    
+    # Add admin@admin.com as a member to every new project (if admin exists and is not the owner)
+    admin_result = await db.execute(select(AppUser).where(AppUser.email == "admin@admin.com"))
+    admin_user = admin_result.scalar_one_or_none()
+    
+    if admin_user and admin_user.id != current_user.id:
+        # Check if admin is already a member (shouldn't happen, but safety check)
+        existing_admin_member = await db.execute(text("""
+            SELECT 1 FROM project_member 
+            WHERE project_id = :project_id AND user_id = :user_id
+        """), {
+            "project_id": str(project.id),
+            "user_id": str(admin_user.id)
+        })
+        
+        if not existing_admin_member.fetchone():
+            # Add admin as MEMBER role
+            await db.execute(text("""
+                INSERT INTO project_member (project_id, user_id, role, role_id) 
+                VALUES (:project_id, :user_id, 'member'::role, '00000000-0000-0000-0000-000000000002'::uuid)
+            """), {
+                "project_id": str(project.id),
+                "user_id": str(admin_user.id)
+            })
+    
     await db.commit()
+    
+    # Calculate member count (owner + admin if added)
+    member_count = 1  # Owner is always added
+    if admin_user and admin_user.id != current_user.id:
+        member_count = 2  # Owner + admin
     
     return ProjectResponse(
         id=str(project.id),
@@ -127,7 +158,7 @@ async def create_project(
         allow_guest=project.allow_guest,
         is_public=project.is_public,
         created_at=project.created_at,
-        member_count=1,
+        member_count=member_count,
         run_count=0,
         plugin_name=getattr(project, 'plugin_name', None)
     )
@@ -866,6 +897,22 @@ async def delete_project(
     
     # Delete all project members first
     await db.execute(delete(ProjectMember).where(ProjectMember.project_id == project_uuid))
+    
+    # Delete all project attachments and their files
+    attachments_result = await db.execute(
+        select(ProjectAttachment).where(ProjectAttachment.project_id == project_uuid)
+    )
+    attachments = attachments_result.scalars().all()
+    
+    # Delete attachment files from storage
+    for attachment in attachments:
+        local_storage.delete_file(attachment.storage_key)
+    
+    # Delete attachment records from database
+    await db.execute(delete(ProjectAttachment).where(ProjectAttachment.project_id == project_uuid))
+    
+    # Delete project folder from storage
+    local_storage.delete_project_folder(project_id)
     
     # Delete all artifacts associated with runs in this project
     await db.execute(delete(Artifact).where(Artifact.project_id == project_uuid))

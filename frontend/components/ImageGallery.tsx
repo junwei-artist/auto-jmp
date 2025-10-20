@@ -6,8 +6,9 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { Download, Eye, RefreshCw, X, ChevronLeft, ChevronRight, ZoomIn, ZoomOut } from 'lucide-react'
+import { Download, Eye, RefreshCw, X, ChevronLeft, ChevronRight, ZoomIn, ZoomOut, MessageCircle } from 'lucide-react'
 import { useAuth } from '@/lib/auth'
+import ArtifactComments from './ArtifactComments'
 
 interface Artifact {
   id: string
@@ -29,6 +30,11 @@ interface Run {
   created_at: string
   started_at?: string
   finished_at?: string
+}
+
+interface ArtifactCommentCount {
+  artifact_id: string
+  comment_count: number
 }
 
 interface ImageGalleryProps {
@@ -72,6 +78,16 @@ export function ImageGallery({ runId, projectId, run, onClose }: ImageGalleryPro
     refetchIntervalInBackground: true,
   })
 
+  // Filter image artifacts and convert relative URLs to absolute
+  const imageArtifacts = artifacts?.filter(artifact => 
+    artifact.kind === 'output_image' && artifact.mime_type?.startsWith('image/')
+  ).map(artifact => ({
+    ...artifact,
+    download_url: artifact.download_url?.startsWith('/') 
+      ? `${process.env.NEXT_PUBLIC_BACKEND_URL}${artifact.download_url}`
+      : artifact.download_url
+  })) || []
+
   // Fetch ZIP download URL
   const { data: zipData } = useQuery({
     queryKey: ['run-zip', runId],
@@ -90,15 +106,33 @@ export function ImageGallery({ runId, projectId, run, onClose }: ImageGalleryPro
     enabled: run.status === 'succeeded',
   })
 
-  // Filter image artifacts and convert relative URLs to absolute
-  const imageArtifacts = artifacts?.filter(artifact => 
-    artifact.kind === 'output_image' && artifact.mime_type?.startsWith('image/')
-  ).map(artifact => ({
-    ...artifact,
-    download_url: artifact.download_url?.startsWith('/') 
-      ? `${process.env.NEXT_PUBLIC_BACKEND_URL}${artifact.download_url}`
-      : artifact.download_url
-  })) || []
+  // Fetch comment counts for all image artifacts
+  const { data: commentCounts } = useQuery({
+    queryKey: ['artifact-comment-counts', imageArtifacts.map(a => a.id)],
+    queryFn: async () => {
+      if (imageArtifacts.length === 0) return []
+      
+      const response = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/v1/artifacts/comment-counts`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${getAuthToken()}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(imageArtifacts.map(a => a.id)),
+      })
+      if (!response.ok) {
+        throw new Error('Failed to fetch comment counts')
+      }
+      return response.json() as Promise<ArtifactCommentCount[]>
+    },
+    enabled: imageArtifacts.length > 0,
+  })
+
+  // Helper function to get comment count for an artifact
+  const getCommentCount = (artifactId: string): number => {
+    const count = commentCounts?.find(cc => cc.artifact_id === artifactId)
+    return count?.comment_count || 0
+  }
 
   // Handle image download
   const handleImageDownload = useCallback(async (artifact: Artifact) => {
@@ -330,6 +364,15 @@ export function ImageGallery({ runId, projectId, run, onClose }: ImageGalleryPro
                     setIsLightboxOpen(true)
                   }}
                 />
+                
+                {/* Comment count badge */}
+                {getCommentCount(artifact.id) > 0 && (
+                  <div className="absolute top-2 right-2 bg-blue-500 text-white text-xs px-2 py-1 rounded-full flex items-center space-x-1">
+                    <MessageCircle className="h-3 w-3" />
+                    <span>{getCommentCount(artifact.id)}</span>
+                  </div>
+                )}
+                
                 <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-30 transition-all duration-200 flex items-center justify-center opacity-0 group-hover:opacity-100">
                   <div className="flex space-x-2">
                     <Button
@@ -390,7 +433,7 @@ export function ImageGallery({ runId, projectId, run, onClose }: ImageGalleryPro
 
       {/* Lightbox Modal */}
       <Dialog open={isLightboxOpen} onOpenChange={setIsLightboxOpen}>
-        <DialogContent className="max-w-4xl max-h-[90vh] p-0">
+        <DialogContent className="max-w-7xl max-h-[90vh] p-0">
           <DialogHeader className="p-6 pb-0">
             <div className="flex items-center justify-between">
               <DialogTitle>
@@ -422,44 +465,55 @@ export function ImageGallery({ runId, projectId, run, onClose }: ImageGalleryPro
               </div>
             </div>
           </DialogHeader>
-          <div className="relative flex-1 p-6">
-            <div className="relative w-full h-[60vh] flex items-center justify-center bg-black rounded-lg overflow-hidden">
-              <img
-                src={imageArtifacts[selectedImageIndex]?.download_url}
-                alt={imageArtifacts[selectedImageIndex]?.filename}
-                className="max-w-full max-h-full object-contain transition-transform duration-200"
-                style={{ transform: `scale(${zoomLevel})` }}
-              />
+          <div className="flex flex-1 p-6 pt-0">
+            {/* Image Section */}
+            <div className="flex-1 mr-6">
+              <div className="relative w-full h-[60vh] flex items-center justify-center bg-black rounded-lg overflow-hidden">
+                <img
+                  src={imageArtifacts[selectedImageIndex]?.download_url}
+                  alt={imageArtifacts[selectedImageIndex]?.filename}
+                  className="max-w-full max-h-full object-contain transition-transform duration-200"
+                  style={{ transform: `scale(${zoomLevel})` }}
+                />
+                
+                {/* Navigation buttons */}
+                {imageArtifacts.length > 1 && (
+                  <>
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      className="absolute left-4 top-1/2 -translate-y-1/2"
+                      onClick={handlePreviousImage}
+                    >
+                      <ChevronLeft className="h-4 w-4" />
+                    </Button>
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      className="absolute right-4 top-1/2 -translate-y-1/2"
+                      onClick={handleNextImage}
+                    >
+                      <ChevronRight className="h-4 w-4" />
+                    </Button>
+                  </>
+                )}
+              </div>
               
-              {/* Navigation buttons */}
+              {/* Image counter */}
               {imageArtifacts.length > 1 && (
-                <>
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    className="absolute left-4 top-1/2 -translate-y-1/2"
-                    onClick={handlePreviousImage}
-                  >
-                    <ChevronLeft className="h-4 w-4" />
-                  </Button>
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    className="absolute right-4 top-1/2 -translate-y-1/2"
-                    onClick={handleNextImage}
-                  >
-                    <ChevronRight className="h-4 w-4" />
-                  </Button>
-                </>
+                <div className="text-center mt-4 text-sm text-gray-500">
+                  {selectedImageIndex + 1} of {imageArtifacts.length}
+                </div>
               )}
             </div>
             
-            {/* Image counter */}
-            {imageArtifacts.length > 1 && (
-              <div className="text-center mt-4 text-sm text-gray-500">
-                {selectedImageIndex + 1} of {imageArtifacts.length}
-              </div>
-            )}
+            {/* Comments Section */}
+            <div className="w-96 max-h-[60vh] overflow-y-auto">
+              <ArtifactComments 
+                artifactId={imageArtifacts[selectedImageIndex]?.id || ''} 
+                currentUserRole="member" // You might want to pass the actual role from props
+              />
+            </div>
           </div>
         </DialogContent>
       </Dialog>

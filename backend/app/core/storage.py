@@ -12,21 +12,49 @@ class LocalFileStorage:
     def __init__(self, base_path: str = "uploads"):
         self.base_path = Path(base_path)
         self.base_path.mkdir(exist_ok=True)
+        # Create subdirectories
+        (self.base_path / "projects").mkdir(exist_ok=True)
+        (self.base_path / "runs").mkdir(exist_ok=True)
+        (self.base_path / "temp").mkdir(exist_ok=True)
     
-    def generate_storage_key(self, filename: str, content_type: str) -> str:
+    def generate_storage_key(self, filename: str, content_type: str, project_id: str = None) -> str:
         """Generate a unique storage key for a file."""
         timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
         file_id = str(uuid.uuid4())[:8]
         file_extension = filename.split('.')[-1] if '.' in filename else ''
         
-        if content_type == "text/csv":
-            return f"csv_{timestamp}_{file_id}.{file_extension}"
+        if project_id:
+            # For project attachments: projects/{project_id}/{filename}
+            return f"projects/{project_id}/{timestamp}_{file_id}_{filename}"
+        elif content_type == "text/csv":
+            return f"runs/csv_{timestamp}_{file_id}.{file_extension}"
         else:
-            return f"jsl_{timestamp}_{file_id}.{file_extension}"
+            return f"runs/jsl_{timestamp}_{file_id}.{file_extension}"
+    
+    def generate_project_attachment_key(self, project_id: str, filename: str) -> str:
+        """Generate storage key specifically for project attachments."""
+        timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+        file_id = str(uuid.uuid4())[:8]
+        
+        # Clean filename for filesystem safety
+        safe_filename = "".join(c for c in filename if c.isalnum() or c in (' ', '-', '_', '.')).rstrip()
+        
+        return f"projects/{project_id}/{timestamp}_{file_id}_{safe_filename}"
     
     def get_file_path(self, storage_key: str) -> Path:
         """Get the full file path for a storage key."""
         return self.base_path / storage_key
+    
+    def get_file(self, storage_key: str) -> Optional[bytes]:
+        """Get file content from storage."""
+        file_path = self.get_file_path(storage_key)
+        try:
+            if file_path.exists():
+                with open(file_path, 'rb') as f:
+                    return f.read()
+            return None
+        except Exception:
+            return None
     
     def save_file(self, file_content: bytes, storage_key: str) -> str:
         """Save file content to storage."""
@@ -53,6 +81,30 @@ class LocalFileStorage:
             return False
         except Exception:
             return False
+    
+    def delete_project_folder(self, project_id: str) -> bool:
+        """Delete entire project folder and all its contents."""
+        project_path = self.base_path / "projects" / project_id
+        try:
+            if project_path.exists():
+                shutil.rmtree(project_path)
+                return True
+            return False
+        except Exception:
+            return False
+    
+    def get_project_folder_size(self, project_id: str) -> int:
+        """Get total size of all files in project folder."""
+        project_path = self.base_path / "projects" / project_id
+        total_size = 0
+        try:
+            if project_path.exists():
+                for file_path in project_path.rglob('*'):
+                    if file_path.is_file():
+                        total_size += file_path.stat().st_size
+        except Exception:
+            pass
+        return total_size
 
 # Global storage instance
 local_storage = LocalFileStorage()

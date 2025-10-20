@@ -8,7 +8,7 @@ import { Badge } from '@/components/ui/badge'
 import { Alert, AlertDescription } from '@/components/ui/alert-simple'
 import { Switch } from '@/components/ui/switch'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { Loader2, Upload, FileText, BarChart3, Users, Share2, ArrowLeft, Download, Eye, Globe, Lock, Trash2, Settings, MessageSquare, UserPlus, ChevronDown, ChevronRight, Edit2, Check, X } from 'lucide-react'
+import { Loader2, Upload, FileText, BarChart3, Users, Share2, ArrowLeft, Download, Eye, Globe, Lock, Trash2, Settings, MessageSquare, UserPlus, ChevronDown, ChevronRight, Edit2, Check, X, Paperclip } from 'lucide-react'
 import { useAuth } from '@/lib/auth'
 import { projectApi, runApi } from '@/lib/api'
 import { useMutation, useQuery } from '@tanstack/react-query'
@@ -19,6 +19,7 @@ import { ProjectMembership } from '@/components/ProjectMembership'
 import { EnhancedProjectMembership } from '@/components/EnhancedProjectMembership'
 import { ProjectComments } from '@/components/ProjectComments'
 import RunComments from '@/components/RunComments'
+import { ProjectAttachments } from '@/components/ProjectAttachments'
 import { NotificationBell } from '@/components/NotificationCenter'
 import toast from 'react-hot-toast'
 
@@ -606,10 +607,14 @@ export default function ProjectPage() {
           {/* Main Content */}
           <div className="lg:col-span-2">
             <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-              <TabsList className="grid w-full grid-cols-4">
+              <TabsList className="grid w-full grid-cols-5">
                 <TabsTrigger value="analysis" className="flex items-center space-x-2">
                   <BarChart3 className="h-4 w-4" />
                   <span>{t('project.tabs.analysis')}</span>
+                </TabsTrigger>
+                <TabsTrigger value="attachments" className="flex items-center space-x-2">
+                  <Paperclip className="h-4 w-4" />
+                  <span>Attachments</span>
                 </TabsTrigger>
                 <TabsTrigger value="members" className="flex items-center space-x-2">
                   <Users className="h-4 w-4" />
@@ -840,6 +845,14 @@ export default function ProjectPage() {
                     )}
                   </CardContent>
                 </Card>
+              </TabsContent>
+
+              <TabsContent value="attachments">
+                <ProjectAttachments 
+                  projectId={projectId}
+                  currentUserRole={currentUserRole}
+                  currentUserId={user?.id || ''}
+                />
               </TabsContent>
 
               <TabsContent value="members">
