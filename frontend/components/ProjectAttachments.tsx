@@ -9,6 +9,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Alert, AlertDescription } from '@/components/ui/alert-simple'
 import { Loader2, Upload, Download, Trash2, FileText, Paperclip, AlertCircle } from 'lucide-react'
 import toast from 'react-hot-toast'
+import { useLanguage } from '@/lib/language'
 
 interface ProjectAttachment {
   id: string
@@ -30,6 +31,7 @@ interface ProjectAttachmentsProps {
 }
 
 export function ProjectAttachments({ projectId, currentUserRole, currentUserId }: ProjectAttachmentsProps) {
+  const { t } = useLanguage()
   const [attachments, setAttachments] = useState<ProjectAttachment[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [isUploading, setIsUploading] = useState(false)
@@ -50,9 +52,9 @@ export function ProjectAttachments({ projectId, currentUserRole, currentUserId }
 
   // Format file size
   const formatFileSize = (bytes: number): string => {
-    if (bytes === 0) return '0 Bytes'
+    if (bytes === 0) return `0 ${t('attachments.fileSizeUnits')[0]}`
     const k = 1024
-    const sizes = ['Bytes', 'KB', 'MB', 'GB']
+    const sizes = t('attachments.fileSizeUnits')
     const i = Math.floor(Math.log(bytes) / Math.log(k))
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i]
   }
@@ -69,7 +71,7 @@ export function ProjectAttachments({ projectId, currentUserRole, currentUserId }
       })
 
       if (!response.ok) {
-        throw new Error('Failed to fetch attachments')
+        throw new Error(t('attachments.fetchFailed'))
       }
 
       const data = await response.json()
@@ -85,19 +87,19 @@ export function ProjectAttachments({ projectId, currentUserRole, currentUserId }
   // Upload attachment
   const handleUpload = async () => {
     if (!selectedFile) {
-      toast.error('Please select a file')
+      toast.error(t('attachments.selectFile'))
       return
     }
 
     if (!description.trim()) {
-      toast.error('Please provide a description')
+      toast.error(t('attachments.provideDescription'))
       return
     }
 
     // Check file size (200MB max)
     const maxSize = 200 * 1024 * 1024 // 200MB
     if (selectedFile.size > maxSize) {
-      toast.error('File size must be less than 200MB')
+      toast.error(t('attachments.fileSizeExceeded'))
       return
     }
 
@@ -119,17 +121,17 @@ export function ProjectAttachments({ projectId, currentUserRole, currentUserId }
 
       if (!response.ok) {
         const errorData = await response.json()
-        throw new Error(errorData.detail || 'Failed to upload attachment')
+        throw new Error(errorData.detail || t('attachments.uploadFailed'))
       }
 
-      toast.success('Attachment uploaded successfully')
+      toast.success(t('attachments.uploadSuccess'))
       setIsUploadDialogOpen(false)
       setSelectedFile(null)
       setDescription('')
       fetchAttachments()
     } catch (error: any) {
       console.error('Error uploading attachment:', error)
-      toast.error(error.message || 'Failed to upload attachment')
+      toast.error(error.message || t('attachments.uploadFailed'))
     } finally {
       setIsUploading(false)
     }
@@ -137,7 +139,7 @@ export function ProjectAttachments({ projectId, currentUserRole, currentUserId }
 
   // Delete attachment
   const handleDelete = async (attachmentId: string) => {
-    if (!confirm('Are you sure you want to delete this attachment?')) {
+    if (!confirm(t('attachments.deleteConfirm'))) {
       return
     }
 
@@ -152,14 +154,14 @@ export function ProjectAttachments({ projectId, currentUserRole, currentUserId }
 
       if (!response.ok) {
         const errorData = await response.json()
-        throw new Error(errorData.detail || 'Failed to delete attachment')
+        throw new Error(errorData.detail || t('attachments.deleteFailed'))
       }
 
-      toast.success('Attachment deleted successfully')
+      toast.success(t('attachments.deleteSuccess'))
       fetchAttachments()
     } catch (error: any) {
       console.error('Error deleting attachment:', error)
-      toast.error(error.message || 'Failed to delete attachment')
+      toast.error(error.message || t('attachments.deleteFailed'))
     }
   }
 
@@ -196,13 +198,13 @@ export function ProjectAttachments({ projectId, currentUserRole, currentUserId }
         <CardHeader>
           <CardTitle className="flex items-center space-x-2">
             <Paperclip className="h-5 w-5" />
-            <span>Attachments</span>
+            <span>{t('attachments.title')}</span>
           </CardTitle>
         </CardHeader>
         <CardContent>
           <div className="flex items-center justify-center py-8">
             <Loader2 className="h-6 w-6 animate-spin" />
-            <span className="ml-2">Loading attachments...</span>
+            <span className="ml-2">{t('attachments.loading')}</span>
           </div>
         </CardContent>
       </Card>
@@ -215,25 +217,25 @@ export function ProjectAttachments({ projectId, currentUserRole, currentUserId }
         <div className="flex items-center justify-between">
           <div className="flex items-center space-x-2">
             <Paperclip className="h-5 w-5" />
-            <CardTitle>Attachments</CardTitle>
+            <CardTitle>{t('attachments.title')}</CardTitle>
           </div>
           <Dialog open={isUploadDialogOpen} onOpenChange={setIsUploadDialogOpen}>
             <DialogTrigger asChild>
               <Button size="sm" className="flex items-center space-x-2">
                 <Upload className="h-4 w-4" />
-                <span>Upload</span>
+                <span>{t('attachments.upload')}</span>
               </Button>
             </DialogTrigger>
             <DialogContent className="sm:max-w-md">
               <DialogHeader>
-                <DialogTitle>Upload Attachment</DialogTitle>
+                <DialogTitle>{t('attachments.uploadTitle')}</DialogTitle>
                 <DialogDescription>
-                  Upload a file to attach to this project. Maximum file size is 200MB.
+                  {t('attachments.uploadDesc')}
                 </DialogDescription>
               </DialogHeader>
               <div className="space-y-4">
                 <div>
-                  <Label htmlFor="file">File</Label>
+                  <Label htmlFor="file">{t('attachments.file')}</Label>
                   <Input
                     id="file"
                     type="file"
@@ -243,19 +245,19 @@ export function ProjectAttachments({ projectId, currentUserRole, currentUserId }
                   />
                 </div>
                 <div>
-                  <Label htmlFor="description">Description</Label>
+                  <Label htmlFor="description">{t('attachments.description')}</Label>
                   <Input
                     id="description"
                     value={description}
                     onChange={(e) => setDescription(e.target.value)}
-                    placeholder="Enter a description for this attachment"
+                    placeholder={t('attachments.descriptionPlaceholder')}
                     className="mt-1"
                   />
                 </div>
                 {selectedFile && (
                   <div className="text-sm text-gray-600">
-                    <p><strong>File:</strong> {selectedFile.name}</p>
-                    <p><strong>Size:</strong> {formatFileSize(selectedFile.size)}</p>
+                    <p><strong>{t('attachments.fileLabel')}</strong> {selectedFile.name}</p>
+                    <p><strong>{t('attachments.sizeLabel')}</strong> {formatFileSize(selectedFile.size)}</p>
                   </div>
                 )}
               </div>
@@ -265,14 +267,14 @@ export function ProjectAttachments({ projectId, currentUserRole, currentUserId }
                   onClick={() => setIsUploadDialogOpen(false)}
                   disabled={isUploading}
                 >
-                  Cancel
+                  {t('attachments.cancel')}
                 </Button>
                 <Button
                   onClick={handleUpload}
                   disabled={isUploading || !selectedFile || !description.trim()}
                 >
                   {isUploading && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
-                  Upload
+                  {t('attachments.upload')}
                 </Button>
               </DialogFooter>
             </DialogContent>
@@ -290,8 +292,8 @@ export function ProjectAttachments({ projectId, currentUserRole, currentUserId }
         {attachments.length === 0 ? (
           <div className="text-center py-8 text-gray-500">
             <Paperclip className="h-12 w-12 mx-auto mb-4 opacity-50" />
-            <p>No attachments yet</p>
-            <p className="text-sm">Upload files to share with project members</p>
+            <p>{t('attachments.noAttachments')}</p>
+            <p className="text-sm">{t('attachments.noAttachmentsDesc')}</p>
           </div>
         ) : (
           <div className="space-y-3">
@@ -310,7 +312,7 @@ export function ProjectAttachments({ projectId, currentUserRole, currentUserId }
                       <p className="text-xs text-gray-500 truncate">{attachment.description}</p>
                       <div className="flex items-center space-x-4 text-xs text-gray-400 mt-1">
                         <span>{formatFileSize(attachment.file_size)}</span>
-                        <span>by {attachment.uploader_display_name || attachment.uploader_email}</span>
+                        <span>{t('attachments.by')} {attachment.uploader_display_name || attachment.uploader_email}</span>
                         <span>{new Date(attachment.created_at).toLocaleDateString()}</span>
                       </div>
                     </div>
@@ -323,7 +325,7 @@ export function ProjectAttachments({ projectId, currentUserRole, currentUserId }
                       className="flex items-center space-x-1"
                     >
                       <Download className="h-4 w-4" />
-                      <span>Download</span>
+                      <span>{t('attachments.download')}</span>
                     </Button>
                     {canDelete && (
                       <Button

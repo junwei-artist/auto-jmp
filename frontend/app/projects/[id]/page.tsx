@@ -614,7 +614,7 @@ export default function ProjectPage() {
                 </TabsTrigger>
                 <TabsTrigger value="attachments" className="flex items-center space-x-2">
                   <Paperclip className="h-4 w-4" />
-                  <span>Attachments</span>
+                  <span>{t('project.tabs.attachments')}</span>
                 </TabsTrigger>
                 <TabsTrigger value="members" className="flex items-center space-x-2">
                   <Users className="h-4 w-4" />

@@ -10,6 +10,7 @@ import numpy as np
 from typing import Dict, List, Tuple, Optional, Any
 from pathlib import Path
 import logging
+from .standardizer import ExcelStandardizer
 
 logger = logging.getLogger(__name__)
 
@@ -27,6 +28,9 @@ class FileHandler:
         self.fai_columns: List[str] = []
         self.categorical_columns: List[str] = []
         self.selected_cat_var: Optional[str] = None
+        self.standardizer: Optional[ExcelStandardizer] = None
+        self.was_standardized: bool = False
+        self.standardized_file_path: Optional[str] = None
         
     def load_excel_file(self, excel_path: str) -> Dict[str, Any]:
         """
@@ -41,8 +45,25 @@ class FileHandler:
         try:
             self.excel_path = excel_path
             
+            # Initialize standardizer
+            self.standardizer = ExcelStandardizer()
+            
+            # Standardize file if needed
+            standardization_result = self.standardizer.standardize_file(excel_path)
+            if not standardization_result["success"]:
+                return standardization_result
+            
+            # Use standardized file path if file was standardized
+            file_to_load = standardization_result["standardized_file_path"]
+            self.was_standardized = standardization_result["was_standardized"]
+            self.standardized_file_path = standardization_result["standardized_file_path"] if self.was_standardized else None
+            
+            if self.was_standardized:
+                logger.info(f"Using standardized file: {file_to_load}")
+                logger.info(f"Standardization changes: {standardization_result['changes_applied']}")
+            
             # Read Excel file to get sheet names
-            excel_file = pd.ExcelFile(excel_path)
+            excel_file = pd.ExcelFile(file_to_load)
             self.sheets = excel_file.sheet_names
             
             logger.info(f"Found sheets: {self.sheets}")
@@ -54,17 +75,17 @@ class FileHandler:
                 raise ValueError("Excel file must contain a 'data' sheet")
             
             # Load meta sheet
-            self.df_meta = pd.read_excel(excel_path, sheet_name="meta")
+            self.df_meta = pd.read_excel(file_to_load, sheet_name="meta")
             logger.info(f"Meta sheet loaded: {self.df_meta.shape}")
             
             # Load data sheet
-            self.df_data_raw = pd.read_excel(excel_path, sheet_name="data")
+            self.df_data_raw = pd.read_excel(file_to_load, sheet_name="data")
             logger.info(f"Data sheet loaded: {self.df_data_raw.shape}")
             
             # Analyze columns
             self._analyze_columns()
             
-            return {
+            result = {
                 "success": True,
                 "sheets": self.sheets,
                 "meta_shape": self.df_meta.shape,
@@ -73,8 +94,12 @@ class FileHandler:
                 "data_columns": self.df_data_raw.columns.tolist(),
                 "fai_columns": self.fai_columns,
                 "categorical_columns": self.categorical_columns,
-                "missing_required_columns": self._get_missing_required_columns()
+                "missing_required_columns": self._get_missing_required_columns(),
+                "was_standardized": self.was_standardized,
+                "standardization_changes": standardization_result.get("changes_applied", [])
             }
+            
+            return result
             
         except Exception as e:
             logger.error(f"Error loading Excel file: {str(e)}")
@@ -187,3 +212,10 @@ class FileHandler:
             "fai_columns": self.fai_columns,
             "categorical_columns": self.categorical_columns
         }
+    
+    def cleanup(self):
+        """Clean up standardized file if it was created"""
+        if self.standardizer:
+            self.standardizer.cleanup()
+        self.was_standardized = False
+        self.standardized_file_path = None

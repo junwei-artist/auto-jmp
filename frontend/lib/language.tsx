@@ -514,6 +514,35 @@ const translations = {
     'help.illustrations.pluginWorkflow': 'Plugin Workflow',
     'help.illustrations.resultsView': 'Results View',
     'help.illustrations.pluginComparison': 'Plugin Comparison',
+
+    // Project Attachments
+    'project.tabs.attachments': 'Attachments',
+    'attachments.title': 'Attachments',
+    'attachments.loading': 'Loading attachments...',
+    'attachments.noAttachments': 'No attachments yet',
+    'attachments.noAttachmentsDesc': 'Upload files to share with project members',
+    'attachments.upload': 'Upload',
+    'attachments.uploadTitle': 'Upload Attachment',
+    'attachments.uploadDesc': 'Upload a file to attach to this project. Maximum file size is 200MB.',
+    'attachments.file': 'File',
+    'attachments.description': 'Description',
+    'attachments.descriptionPlaceholder': 'Enter a description for this attachment',
+    'attachments.fileLabel': 'File:',
+    'attachments.sizeLabel': 'Size:',
+    'attachments.cancel': 'Cancel',
+    'attachments.download': 'Download',
+    'attachments.delete': 'Delete',
+    'attachments.deleteConfirm': 'Are you sure you want to delete this attachment?',
+    'attachments.uploadSuccess': 'Attachment uploaded successfully',
+    'attachments.deleteSuccess': 'Attachment deleted successfully',
+    'attachments.uploadFailed': 'Failed to upload attachment',
+    'attachments.deleteFailed': 'Failed to delete attachment',
+    'attachments.fetchFailed': 'Failed to fetch attachments',
+    'attachments.selectFile': 'Please select a file',
+    'attachments.provideDescription': 'Please provide a description',
+    'attachments.fileSizeExceeded': 'File size must be less than 200MB',
+    'attachments.by': 'by',
+    'attachments.fileSizeUnits': ['Bytes', 'KB', 'MB', 'GB'],
   },
   zh: {
     // Plugins Listing
@@ -1013,6 +1042,35 @@ const translations = {
     'help.illustrations.pluginWorkflow': '插件工作流',
     'help.illustrations.resultsView': '结果查看',
     'help.illustrations.pluginComparison': '插件比较',
+
+    // Project Attachments
+    'project.tabs.attachments': '附件',
+    'attachments.title': '附件',
+    'attachments.loading': '正在加载附件...',
+    'attachments.noAttachments': '暂无附件',
+    'attachments.noAttachmentsDesc': '上传文件与项目成员分享',
+    'attachments.upload': '上传',
+    'attachments.uploadTitle': '上传附件',
+    'attachments.uploadDesc': '上传文件附加到此项目。最大文件大小为200MB。',
+    'attachments.file': '文件',
+    'attachments.description': '描述',
+    'attachments.descriptionPlaceholder': '为此附件输入描述',
+    'attachments.fileLabel': '文件：',
+    'attachments.sizeLabel': '大小：',
+    'attachments.cancel': '取消',
+    'attachments.download': '下载',
+    'attachments.delete': '删除',
+    'attachments.deleteConfirm': '您确定要删除此附件吗？',
+    'attachments.uploadSuccess': '附件上传成功',
+    'attachments.deleteSuccess': '附件删除成功',
+    'attachments.uploadFailed': '附件上传失败',
+    'attachments.deleteFailed': '附件删除失败',
+    'attachments.fetchFailed': '获取附件失败',
+    'attachments.selectFile': '请选择文件',
+    'attachments.provideDescription': '请提供描述',
+    'attachments.fileSizeExceeded': '文件大小必须小于200MB',
+    'attachments.by': '由',
+    'attachments.fileSizeUnits': ['字节', 'KB', 'MB', 'GB'],
   }
 }
 
@@ -1058,10 +1116,10 @@ export function LanguageProvider({ children }: { children: ReactNode }) {
     }
 
     // Fall back to hardcoded translations
-    let translation = translations[language][key as keyof typeof translations[typeof language]] || key
+    let translation: any = translations[language][key as keyof typeof translations[typeof language]] || key
     
-    // Handle parameter interpolation
-    if (params) {
+    // Handle parameter interpolation only for strings
+    if (params && typeof translation === 'string') {
       Object.keys(params).forEach(paramKey => {
         translation = translation.replace(new RegExp(`{${paramKey}}`, 'g'), params[paramKey])
       })
