@@ -30,6 +30,81 @@ A web-based platform for data analysis using JMP (Statistical Discovery Software
 - Redis (for Celery task queue)
 - JMP Software (for analysis execution)
 
+## Database Configuration
+
+### PostgreSQL Setup
+
+The platform uses PostgreSQL as the primary database. Here's how to configure it:
+
+#### 1. Install PostgreSQL
+
+**macOS (using Homebrew):**
+```bash
+brew install postgresql@16
+brew services start postgresql@16
+```
+
+**Ubuntu/Debian:**
+```bash
+sudo apt update
+sudo apt install postgresql postgresql-contrib
+sudo systemctl start postgresql
+```
+
+**Windows:**
+Download and install from [postgresql.org](https://www.postgresql.org/download/windows/)
+
+#### 2. Create Database and User
+
+```bash
+# Connect to PostgreSQL
+psql -U postgres
+
+# Create database and user
+CREATE DATABASE data_analysis;
+CREATE USER data_user WITH PASSWORD 'your_password';
+GRANT ALL PRIVILEGES ON DATABASE data_analysis TO data_user;
+\q
+```
+
+#### 3. Configure Database Connection
+
+The database configuration is specified in multiple locations:
+
+**Primary Configuration - Environment Variables:**
+- **File**: `backend/.env` (create from `backend/env.example`)
+- **Key**: `DATABASE_URL=postgresql+asyncpg://username:password@localhost/data_analysis`
+
+**Application Configuration:**
+- **File**: `backend/app/core/config.py` (lines 16-17)
+- **Default**: `postgresql+asyncpg://user:password@localhost/data_analysis`
+
+**Migration Configuration:**
+- **File**: `backend/alembic.ini` (line 59)
+- **URL**: `postgresql+asyncpg://user:password@localhost/data_analysis`
+
+#### 4. Database URL Format
+
+```
+postgresql+asyncpg://username:password@host:port/database_name
+```
+
+**Examples:**
+- Local: `postgresql+asyncpg://postgres:mypassword@localhost:5432/data_analysis`
+- Remote: `postgresql+asyncpg://user:pass@192.168.1.100:5432/data_analysis`
+- Cloud: `postgresql+asyncpg://user:pass@db.example.com:5432/data_analysis`
+
+#### 5. Redis Configuration (for Celery)
+
+**Redis URL Format:**
+```
+redis://localhost:6379
+```
+
+**Celery Configuration:**
+- **Broker**: `redis://localhost:6379/0`
+- **Result Backend**: `redis://localhost:6379/0`
+
 ## Testing the JMP Runner
 
 To test the JMP runner functionality with demo files:

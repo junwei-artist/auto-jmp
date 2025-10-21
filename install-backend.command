@@ -255,7 +255,7 @@ if [ ! -f ".env" ]; then
     
     # Update the database URL with the PostgreSQL credentials
     DATABASE_URL="postgresql+asyncpg://$PG_USERNAME:$PG_PASSWORD@localhost/data_analysis"
-    sed -i.bak "s|postgresql+asyncpg://username@localhost/data_analysis|$DATABASE_URL|g" .env
+    sed -i.bak "s|postgresql+asyncpg://username:password@localhost/data_analysis|$DATABASE_URL|g" .env
     rm .env.bak 2>/dev/null || true
     
     # Generate a random secret key
@@ -265,6 +265,7 @@ if [ ! -f ".env" ]; then
     
     print_success "Created .env file with your PostgreSQL configuration"
     print_status "Database URL: postgresql+asyncpg://$PG_USERNAME:***@localhost/data_analysis"
+    print_status "Backend will run on port 4700"
     print_warning "Please edit backend/.env if you need to customize further"
 else
     print_warning ".env file already exists"
@@ -280,11 +281,36 @@ else
     print_success "Alembic already initialized"
 fi
 
+# Run database migrations to create tables
+print_status "Running database migrations to create tables..."
+if alembic upgrade head; then
+    print_success "Database migrations completed successfully!"
+    print_status "All database tables have been created"
+else
+    print_error "Database migrations failed!"
+    print_warning "Please check your database connection and try again"
+    print_status "You can manually run: alembic upgrade head"
+    exit 1
+fi
+
+# Verify database tables were created
+print_status "Verifying database schema..."
+TABLES_COUNT=$(PGPASSWORD="$PG_PASSWORD" psql -U "$PG_USERNAME" -d data_analysis -t -c "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = 'public';" 2>/dev/null | tr -d ' ')
+if [ "$TABLES_COUNT" -gt 0 ]; then
+    print_success "Database schema verified! Found $TABLES_COUNT tables"
+else
+    print_error "No tables found in database!"
+    print_warning "Database migrations may have failed"
+    exit 1
+fi
+
 print_success "🎉 Backend installation completed successfully!"
 echo ""
 print_status "Next steps:"
 echo "1. Edit backend/.env with your configuration"
-echo "2. Run './run-backend.command' to start the backend service"
+echo "2. Run './create-admin.command' to create an admin user"
+echo "3. Run './run-backend.command' to start the backend service"
+echo "4. Backend will be available at http://localhost:4700"
 echo ""
 print_status "Virtual environment location: $(pwd)/venv"
 print_status "Python version: $($PYTHON_CMD --version)"

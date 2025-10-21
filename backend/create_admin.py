@@ -7,7 +7,6 @@ Usage: python create_admin.py
 import asyncio
 import sys
 import os
-import hashlib
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
@@ -15,13 +14,8 @@ from sqlalchemy import select
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from app.core.database import AsyncSessionLocal, engine
+from app.core.auth import get_password_hash
 from app.models import AppUser, Base
-
-def simple_password_hash(password: str) -> str:
-    """Simple password hashing for admin creation."""
-    # Use SHA-256 with salt for simplicity
-    salt = "admin_salt_2024"
-    return hashlib.sha256((password + salt).encode()).hexdigest()
 
 async def create_admin_user():
     """Create an admin user with email admin@admin.com and password admin."""
@@ -47,7 +41,7 @@ async def create_admin_user():
             # Create new admin user
             admin_user = AppUser(
                 email="admin@admin.com",
-                password_hash=simple_password_hash("admin"),
+                password_hash=get_password_hash("admin"),
                 is_admin=True,
                 is_guest=False
             )

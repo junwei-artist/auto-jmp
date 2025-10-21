@@ -71,16 +71,16 @@ elif command -v python3 &> /dev/null; then
     MAJOR_VERSION=$(echo $PYTHON_VERSION | cut -d'.' -f1)
     MINOR_VERSION=$(echo $PYTHON_VERSION | cut -d'.' -f2)
     
-    if [ "$MAJOR_VERSION" -eq 3 ] && [ "$MINOR_VERSION" -eq 11 ]; then
+    if [ "$MAJOR_VERSION" -eq 3 ] && [ "$MINOR_VERSION" -ge 8 ]; then
         print_success "Python $PYTHON_VERSION found (compatible)"
         PYTHON_CMD="python3"
     else
-        print_error "Python 3.11 is required. Found: $PYTHON_VERSION"
+        print_error "Python 3.8+ is required. Found: $PYTHON_VERSION"
         print_status "Please install Python 3.11 or run './install-backend.command' to set it up"
         exit 1
     fi
 else
-    print_error "Python 3.11 is not installed"
+    print_error "Python 3.8+ is not installed"
     print_status "Please install Python 3.11 or run './install-backend.command' to set it up"
     exit 1
 fi
@@ -97,10 +97,10 @@ VENV_PYTHON_VERSION=$(venv/bin/python --version 2>&1 | cut -d' ' -f2)
 VENV_MAJOR=$(echo $VENV_PYTHON_VERSION | cut -d'.' -f1)
 VENV_MINOR=$(echo $VENV_PYTHON_VERSION | cut -d'.' -f2)
 
-if [ "$VENV_MAJOR" -eq 3 ] && [ "$VENV_MINOR" -eq 11 ]; then
+if [ "$VENV_MAJOR" -eq 3 ] && [ "$VENV_MINOR" -ge 8 ]; then
     print_success "Virtual environment using Python $VENV_PYTHON_VERSION"
 else
-    print_error "Virtual environment is using Python $VENV_PYTHON_VERSION, but Python 3.11 is required"
+    print_error "Virtual environment is using Python $VENV_PYTHON_VERSION, but Python 3.8+ is required"
     print_status "Please run './install-backend.command' to recreate the virtual environment"
     exit 1
 fi
@@ -126,10 +126,10 @@ ACTIVATED_PYTHON_VERSION=$(python --version 2>&1 | cut -d' ' -f2)
 ACTIVATED_MAJOR=$(echo $ACTIVATED_PYTHON_VERSION | cut -d'.' -f1)
 ACTIVATED_MINOR=$(echo $ACTIVATED_PYTHON_VERSION | cut -d'.' -f2)
 
-if [ "$ACTIVATED_MAJOR" -eq 3 ] && [ "$ACTIVATED_MINOR" -eq 11 ]; then
+if [ "$ACTIVATED_MAJOR" -eq 3 ] && [ "$ACTIVATED_MINOR" -ge 8 ]; then
     print_success "Activated environment using Python $ACTIVATED_PYTHON_VERSION"
 else
-    print_error "Activated environment is using Python $ACTIVATED_PYTHON_VERSION, expected Python 3.11"
+    print_error "Activated environment is using Python $ACTIVATED_PYTHON_VERSION, expected Python 3.8+"
     print_status "Please run './install-backend.command' to recreate the virtual environment"
     exit 1
 fi

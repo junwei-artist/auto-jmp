@@ -21,8 +21,8 @@ pip install -r requirements.txt
 
 **macOS (using Homebrew):**
 ```bash
-brew install postgresql
-brew services start postgresql
+brew install postgresql@16
+brew services start postgresql@16
 ```
 
 **Ubuntu/Debian:**
@@ -48,36 +48,94 @@ GRANT ALL PRIVILEGES ON DATABASE data_analysis TO data_user;
 \q
 ```
 
+#### Database Configuration Locations
+
+The database configuration is specified in multiple locations:
+
+1. **Primary Configuration - Environment Variables:**
+   - **File**: `backend/.env` (create from `backend/env.example`)
+   - **Key**: `DATABASE_URL=postgresql+asyncpg://username:password@localhost/data_analysis`
+
+2. **Application Configuration:**
+   - **File**: `backend/app/core/config.py` (lines 16-17)
+   - **Default**: `postgresql+asyncpg://user:password@localhost/data_analysis`
+
+3. **Database Connection Setup:**
+   - **File**: `backend/app/core/database.py` (lines 6-12)
+   - **Uses**: `settings.DATABASE_URL` from config
+
+4. **Migration Configuration:**
+   - **File**: `backend/alembic.ini` (line 59)
+   - **URL**: `postgresql+asyncpg://user:password@localhost/data_analysis`
+
+#### Database URL Format
+
+```
+postgresql+asyncpg://username:password@host:port/database_name
+```
+
+**Examples:**
+- Local: `postgresql+asyncpg://postgres:mypassword@localhost:5432/data_analysis`
+- Remote: `postgresql+asyncpg://user:pass@192.168.1.100:5432/data_analysis`
+- Cloud: `postgresql+asyncpg://user:pass@db.example.com:5432/data_analysis`
+
 ### 3. Configuration
 
 #### Environment Variables
 
-Create a `.env` file in the backend directory:
+Create a `.env` file in the backend directory by copying from the example:
+
+```bash
+cp env.example .env
+```
+
+Then edit `.env` with your actual configuration:
 
 ```env
 # Database Configuration
 DATABASE_URL=postgresql+asyncpg://data_user:your_password@localhost:5432/data_analysis
 
-# Security
-SECRET_KEY=your-super-secret-key-change-this-in-production
-ALGORITHM=HS256
-ACCESS_TOKEN_EXPIRE_MINUTES=30
-
-# Application Settings
-ALLOW_GUEST_ACCESS=true
-ENVIRONMENT=development
+# Redis Configuration
+REDIS_URL=redis://localhost:6379
 
 # Celery Configuration (for background tasks)
 CELERY_BROKER_URL=redis://localhost:6379/0
 CELERY_RESULT_BACKEND=redis://localhost:6379/0
 
-# File Storage
-UPLOAD_DIR=uploads
-MAX_FILE_SIZE=10485760  # 10MB
+# Security
+SECRET_KEY=your-super-secret-key-change-this-in-production
+
+# Application Settings
+ALLOW_GUEST_ACCESS=true
+GUEST_RATE_LIMIT=10
+GUEST_MAX_FILE_SIZE=10485760  # 10MB
+
+# File Upload
+MAX_FILE_SIZE=104857600  # 100MB
+ALLOWED_FILE_TYPES=["text/csv", "application/octet-stream"]
+
+# CORS (Cross-Origin Resource Sharing)
+BACKEND_CORS_ORIGINS=["http://localhost:4800", "http://localhost:4801"]
 
 # JMP Configuration (if using JMP for analysis)
-JMP_PATH=/Applications/JMP.app/Contents/MacOS/JMP  # macOS
-# JMP_PATH=C:\Program Files\SAS\JMP\18\JMP.exe  # Windows
+JMP_TASK_DIR=/tmp/jmp_tasks
+JMP_MAX_WAIT_TIME=300
+JMP_START_DELAY=4
+
+# Object Storage (S3/MinIO) - Optional
+AWS_ACCESS_KEY_ID=your-access-key
+AWS_SECRET_ACCESS_KEY=your-secret-key
+AWS_REGION=us-east-1
+S3_BUCKET=data-analysis-platform
+S3_ENDPOINT_URL=http://localhost:9000  # For MinIO
+
+# Email Configuration - Optional
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=587
+SMTP_USER=your-email@gmail.com
+SMTP_PASSWORD=your-app-password
+EMAILS_FROM_EMAIL=your-email@gmail.com
+EMAILS_FROM_NAME=Data Analysis Platform
 ```
 
 #### Redis Setup (for Celery)

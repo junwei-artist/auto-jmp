@@ -1,25 +1,44 @@
+# Core FastAPI dependencies
 fastapi==0.104.1
 uvicorn[standard]==0.24.0
 sqlalchemy[asyncio]==2.0.23
 asyncpg==0.29.0
 alembic==1.12.1
+
+# Authentication & Security
 python-jose[cryptography]==3.3.0
 passlib[bcrypt]==1.7.4
 python-multipart==0.0.6
 python-dotenv==1.0.0
+
+# Background Tasks
 celery==5.3.4
 redis==5.0.1
+
+# Data Validation
 pydantic==2.5.0
 pydantic-settings==2.1.0
 email-validator==2.3.0
+
+# System & Utilities
 psutil==5.9.6
 requests==2.31.0
+httpx>=0.24.0
+
+# Image Processing & OCR
 pytesseract==0.3.10
 Pillow==10.1.0
+
+# Data Processing & Analysis
 pandas==2.1.4
-openpyxl==3.1.2
-xlrd==2.0.1
+numpy>=1.24.0
 scipy==1.11.4
 statsmodels==0.14.0
-numpy
-httpx
+
+# Excel File Support
+openpyxl==3.1.2
+xlrd==2.0.1
+pyxlsb>=1.0.0
+
+# Cloud Storage (S3/MinIO)
+boto3>=1.26.0

@@ -44,6 +44,8 @@ class Settings(BaseSettings):
         "http://10.5.216.11:4800",
         "http://localhost:4800",
         "http://127.0.0.1:4800",
+        "http://localhost:3000",
+        "http://localhost:3001",
     ]
     
     # File Upload

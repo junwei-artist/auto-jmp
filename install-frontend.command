@@ -105,8 +105,9 @@ fi
 if [ ! -f ".env.local" ]; then
     print_status "Creating .env.local configuration file..."
     cat > .env.local << EOF
-NEXT_PUBLIC_API_URL=http://localhost:4700
+NEXT_PUBLIC_BACKEND_URL=http://localhost:4700
 NEXT_PUBLIC_WS_URL=ws://localhost:4700
+NEXT_PUBLIC_FRONTEND_URL=http://localhost:4800
 EOF
     print_success "Created .env.local file"
     print_warning "Please edit frontend/.env.local with your configuration"
@@ -161,61 +162,13 @@ fi
 
 print_success "All key dependencies verified"
 
-# Create TypeScript config if it doesn't exist
-if [ ! -f "tsconfig.json" ]; then
-    print_status "Creating TypeScript configuration..."
-    cat > tsconfig.json << EOF
-{
-  "compilerOptions": {
-    "target": "es5",
-    "lib": ["dom", "dom.iterable", "es6"],
-    "allowJs": true,
-    "skipLibCheck": true,
-    "strict": true,
-    "noEmit": true,
-    "esModuleInterop": true,
-    "module": "esnext",
-    "moduleResolution": "bundler",
-    "resolveJsonModule": true,
-    "isolatedModules": true,
-    "jsx": "preserve",
-    "incremental": true,
-    "plugins": [
-      {
-        "name": "next"
-      }
-    ],
-    "baseUrl": ".",
-    "paths": {
-      "@/*": ["./*"]
-    }
-  },
-  "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts"],
-  "exclude": ["node_modules"]
-}
-EOF
-    print_success "Created tsconfig.json"
-fi
-
-# Create PostCSS config if it doesn't exist
-if [ ! -f "postcss.config.js" ]; then
-    print_status "Creating PostCSS configuration..."
-    cat > postcss.config.js << EOF
-module.exports = {
-  plugins: {
-    tailwindcss: {},
-    autoprefixer: {},
-  },
-}
-EOF
-    print_success "Created postcss.config.js"
-fi
-
 print_success "🎉 Frontend installation completed successfully!"
 echo ""
 print_status "Next steps:"
 echo "1. Edit frontend/.env.local with your configuration"
 echo "2. Run './run-frontend.command' to start the frontend service"
+echo "3. Frontend will be available at http://localhost:4800"
+echo "4. Backend should be running on http://localhost:4700"
 echo ""
 print_status "Node.js version: $(node --version)"
 print_status "npm version: $(npm --version)"
