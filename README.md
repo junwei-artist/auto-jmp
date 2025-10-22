@@ -12,6 +12,7 @@ A web-based platform for data analysis using JMP (Statistical Discovery Software
 - **Guest Access**: Full functionality available for guest users
 - **Admin Dashboard**: Administrative interface for platform management
 - **Image Gallery**: View and download analysis results and charts
+- **Settings Tool**: Web-based configuration management for backend and frontend settings
 
 ## Architecture
 
@@ -133,6 +134,49 @@ This script will:
 - 4 PNG images (FAI10.png, FAI38.png, FAI39.png, FAI40.png)
 - ZIP archive with all results
 - ~15-20 second execution time
+
+## Settings Tool
+
+The platform includes a dedicated settings tool for easy configuration management:
+
+### 🧰 Auto-JMP Settings Tool
+
+A local web-based configuration tool located in the `setting/` directory that provides:
+
+- **Web Interface**: Modern, responsive UI for configuration management
+- **Service Management**: Start, stop, and restart backend/frontend services
+- **Database Testing**: Test database and Redis connections
+- **Port Configuration**: Change backend and frontend ports
+- **Environment Variables**: Manage all configuration settings
+- **Admin User Creation**: Create admin users through the interface
+- **Service Status**: Real-time monitoring of running services
+
+#### Quick Start
+
+```bash
+# Navigate to settings directory
+cd setting
+
+# Run setup (creates venv and installs dependencies)
+./setup.sh
+
+# Start the settings tool
+python -m setting
+```
+
+Then open your browser to `http://localhost:4900` to access the settings interface.
+
+#### Features
+
+- **Overview Tab**: Service status and quick actions
+- **Backend Tab**: Database, Redis, and backend configuration
+- **Frontend Tab**: Port and URL configuration
+- **Database Tab**: Database connection testing and management
+- **Admin Tab**: User account management
+
+The settings tool uses its own isolated virtual environment to avoid conflicts with the main application dependencies.
+
+For detailed documentation, see [setting/README.md](setting/README.md).
 
 ## Quick Start
 

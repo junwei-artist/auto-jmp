@@ -534,26 +534,25 @@ function ExcelProcessingWizardContent() {
             {validationResults.length > 0 && (
               <div className="space-y-4">
                 {validationResults.map((result, index) => {
-                  const hasWarnings = result.details?.warnings && result.details.warnings.length > 0
                   return (
                     <div key={index} className={`flex items-start space-x-3 p-4 border rounded-lg ${
-                      hasWarnings ? 'bg-yellow-50 border-yellow-200' : 'bg-green-50 border-green-200'
+                      result.valid ? 'bg-green-50 border-green-200' : 'bg-yellow-50 border-yellow-200'
                     }`}>
-                      {hasWarnings ? (
-                        <Circle className="h-5 w-5 text-yellow-600 mt-0.5" />
-                      ) : (
+                      {result.valid ? (
                         <CheckCircle className="h-5 w-5 text-green-600 mt-0.5" />
+                      ) : (
+                        <Circle className="h-5 w-5 text-yellow-600 mt-0.5" />
                       )}
                       <div className="flex-1">
                         <h4 className="font-medium">
                           Checkpoint {result.checkpoint}: {getCheckpointTitle(result.checkpoint)}
                         </h4>
-                        <p className={`text-sm ${hasWarnings ? 'text-yellow-600' : 'text-green-600'}`}>
+                        <p className={`text-sm ${result.valid ? 'text-green-600' : 'text-yellow-600'}`}>
                           {result.message}
                         </p>
                         
                         {/* Display warnings if any */}
-                        {hasWarnings && (
+                        {result.details?.warnings && result.details.warnings.length > 0 && (
                           <div className="mt-3 space-y-2">
                             <h5 className="text-sm font-medium text-yellow-800">Warnings:</h5>
                             {result.details.warnings.map((warning: any, warnIndex: number) => (
@@ -572,7 +571,7 @@ function ExcelProcessingWizardContent() {
                           </div>
                         )}
                         
-                        {result.details && !hasWarnings && (
+                        {result.details && !(result.details?.warnings && result.details.warnings.length > 0) && (
                           <details className="mt-2">
                             <summary className="text-xs text-gray-500 cursor-pointer">{t('plugin.wizard.viewDetails')}</summary>
                             <pre className="text-xs bg-gray-100 p-2 mt-1 rounded overflow-auto">

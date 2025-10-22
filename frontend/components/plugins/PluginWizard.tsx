@@ -332,17 +332,19 @@ export default function PluginWizard({ pluginName, pluginDescription, onComplete
           <div className="space-y-6">
             <div className="space-y-4">
               {validationResults.map((result, index) => (
-                <div key={index} className="flex items-start space-x-3 p-4 border rounded-lg">
+                <div key={index} className={`flex items-start space-x-3 p-4 border rounded-lg ${
+                  result.valid ? 'bg-green-50 border-green-200' : 'bg-yellow-50 border-yellow-200'
+                }`}>
                   {result.valid ? (
                     <CheckCircle className="h-5 w-5 text-green-600 mt-0.5" />
                   ) : (
-                    <Circle className="h-5 w-5 text-red-600 mt-0.5" />
+                    <Circle className="h-5 w-5 text-yellow-600 mt-0.5" />
                   )}
                   <div className="flex-1">
                     <h4 className="font-medium">
                       Checkpoint {result.checkpoint}: {getCheckpointTitle(result.checkpoint)}
                     </h4>
-                    <p className={`text-sm ${result.valid ? 'text-green-600' : 'text-red-600'}`}>
+                    <p className={`text-sm ${result.valid ? 'text-green-600' : 'text-yellow-600'}`}>
                       {result.valid ? result.message : result.error}
                     </p>
                     {result.details && (

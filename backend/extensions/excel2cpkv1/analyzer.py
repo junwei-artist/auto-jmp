@@ -120,6 +120,153 @@ class CPKAnalyzer:
         """Convert to numeric; non-convertible → NaN."""
         return pd.to_numeric(series, errors="coerce")
     
+    def validate_checkpoint1_enhanced(self, spec_df: pd.DataFrame) -> Dict[str, Any]:
+        """
+        Enhanced Checkpoint 1 validation with row-level checks:
+        - Required columns validation
+        - Row-level validation for USL/LSL/Target values
+        """
+        results = {
+            "valid": True,
+            "checkpoint": 1,
+            "message": "",
+            "details": {},
+            "row_errors": [],
+            "row_warnings": []
+        }
+
+        # Check required columns
+        required = ["test_name", "usl", "lsl", "target"]
+        missing = [c for c in required if c not in spec_df.columns]
+        
+        if missing:
+            results["valid"] = False
+            results["message"] = f"Missing required columns: {missing}"
+            results["details"]["missing_columns"] = missing
+            results["details"]["required_columns"] = required
+            results["details"]["spec_columns"] = spec_df.columns.tolist()
+            return results
+
+        # Ensure all required columns exist (fill with NaN if missing)
+        for c in required:
+            if c not in spec_df.columns:
+                spec_df[c] = np.nan
+
+        # Coerce numeric for validation
+        usl_num = self.coerce_numeric(spec_df["usl"])
+        lsl_num = self.coerce_numeric(spec_df["lsl"])
+        tgt_num = self.coerce_numeric(spec_df["target"])
+        name_series = spec_df["test_name"].astype(str).str.strip()
+
+        row_errors = []
+        row_warnings = []
+
+        name_pattern = re.compile(r"^[A-Za-z0-9_]+$")
+
+        for idx, (name, usl, lsl, tgt) in enumerate(zip(name_series, usl_num, lsl_num, tgt_num)):
+            # Skip fully empty rows (name and limits absent)
+            if (name == "" or name.lower() == "nan") and pd.isna(usl) and pd.isna(lsl) and pd.isna(tgt):
+                continue
+
+            # Name format validation
+            if not (isinstance(name, str) and name_pattern.match(name)):
+                row_errors.append({
+                    "row": idx + 2,
+                    "issue": "Invalid test_name format",
+                    "test_name": name,
+                    "details": "Test name must contain only letters, numbers, and underscores"
+                })
+
+            # At least one limit present (USL or LSL)
+            if pd.isna(usl) and pd.isna(lsl):
+                row_errors.append({
+                    "row": idx + 2,
+                    "issue": "Both USL and LSL are empty",
+                    "test_name": name,
+                    "details": "At least one limit (USL or LSL) must have a value"
+                })
+
+            # USL must be larger than LSL (if both exist)
+            if not pd.isna(usl) and not pd.isna(lsl):
+                if float(usl) <= float(lsl):
+                    row_errors.append({
+                        "row": idx + 2,
+                        "issue": "USL must be larger than LSL",
+                        "test_name": name,
+                        "usl": usl,
+                        "lsl": lsl,
+                        "details": f"USL ({usl}) must be greater than LSL ({lsl})"
+                    })
+
+            # LSL must be smaller than Target (if both exist)
+            if not pd.isna(lsl) and not pd.isna(tgt):
+                if float(lsl) >= float(tgt):
+                    row_errors.append({
+                        "row": idx + 2,
+                        "issue": "LSL must be smaller than Target",
+                        "test_name": name,
+                        "lsl": lsl,
+                        "target": tgt,
+                        "details": f"LSL ({lsl}) must be less than Target ({tgt})"
+                    })
+
+            # USL must be larger than Target (if both exist)
+            if not pd.isna(usl) and not pd.isna(tgt):
+                if float(usl) <= float(tgt):
+                    row_errors.append({
+                        "row": idx + 2,
+                        "issue": "USL must be larger than Target",
+                        "test_name": name,
+                        "usl": usl,
+                        "target": tgt,
+                        "details": f"USL ({usl}) must be greater than Target ({tgt})"
+                    })
+
+            # Target conflicts (warning only)
+            if not pd.isna(tgt) and not pd.isna(usl) and float(tgt) == float(usl):
+                row_warnings.append({
+                    "row": idx + 2,
+                    "issue": "Target equals USL",
+                    "test_name": name,
+                    "target": tgt,
+                    "usl": usl,
+                    "details": "Target value equals USL value"
+                })
+            if not pd.isna(tgt) and not pd.isna(lsl) and float(tgt) == float(lsl):
+                row_warnings.append({
+                    "row": idx + 2,
+                    "issue": "Target equals LSL",
+                    "test_name": name,
+                    "target": tgt,
+                    "lsl": lsl,
+                    "details": "Target value equals LSL value"
+                })
+
+        # Update results based on validation findings
+        results["row_errors"] = row_errors
+        results["row_warnings"] = row_warnings
+        
+        if row_errors:
+            results["valid"] = False
+            results["message"] = f"Checkpoint 1 validation failed: {len(row_errors)} row errors found"
+        else:
+            results["message"] = "Checkpoint 1 validation passed: All required columns present and row-level validations successful"
+
+        # Extract unique row numbers with errors and warnings
+        error_rows = sorted(list(set(error["row"] for error in row_errors)))
+        warning_rows = sorted(list(set(warning["row"] for warning in row_warnings)))
+        
+        results["details"].update({
+            "required_columns": required,
+            "missing_columns": [],
+            "spec_columns": spec_df.columns.tolist(),
+            "total_rows_checked": len(spec_df),
+            "rows_with_errors": error_rows,
+            "rows_with_warnings": warning_rows
+        })
+
+        return results
+
     def validate_spec(self, spec_df: pd.DataFrame) -> Dict[str, pd.DataFrame]:
         """
         Run validation rules and return dict of result DataFrames:
@@ -211,10 +358,54 @@ class CPKAnalyzer:
         missing.rename(columns={"test_name": "missing_in_data"}, inplace=True)
         return matched, missing
     
+    def validate_jsl_spec(self, test_name: str, usl: float, lsl: float, target: float) -> Tuple[bool, List[str]]:
+        """
+        Validate specification limits for JSL generation.
+        
+        Returns:
+            Tuple of (is_valid, list_of_error_messages)
+        """
+        errors = []
+        
+        # Check if at least one limit is present
+        if pd.isna(usl) and pd.isna(lsl):
+            errors.append("Both USL and LSL are empty - at least one limit must have a value")
+        
+        # Check USL > LSL (if both exist)
+        if not pd.isna(usl) and not pd.isna(lsl):
+            if float(usl) <= float(lsl):
+                errors.append(f"USL ({usl}) must be greater than LSL ({lsl})")
+        
+        # Check LSL < Target (if both exist)
+        if not pd.isna(lsl) and not pd.isna(target):
+            if float(lsl) >= float(target):
+                errors.append(f"LSL ({lsl}) must be less than Target ({target})")
+        
+        # Check USL > Target (if both exist)
+        if not pd.isna(usl) and not pd.isna(target):
+            if float(usl) <= float(target):
+                errors.append(f"USL ({usl}) must be greater than Target ({target})")
+        
+        return len(errors) == 0, errors
+
     def make_jsl_block(self, test_name: str, usl: float, lsl: float, target: float, imgdir: str) -> str:
         """
-        Construct a JSL block for one variable, including only present spec entries.
+        Construct a JSL block for one variable, including validation checks.
+        If validation fails, returns a comment block explaining why it was bypassed.
         """
+        # Validate the specification limits
+        is_valid, errors = self.validate_jsl_spec(test_name, usl, lsl, target)
+        
+        if not is_valid:
+            # Create comment block for failed validation
+            error_reasons = "; ".join(errors)
+            return f"""// SKIPPED: {test_name} - Validation failed
+// Reason: {error_reasons}
+// USL: {usl if not pd.isna(usl) else 'Not specified'}, LSL: {lsl if not pd.isna(lsl) else 'Not specified'}, Target: {target if not pd.isna(target) else 'Not specified'}
+// This variable was bypassed due to invalid specification limits
+"""
+        
+        # If validation passes, generate normal JSL block
         entries = []
         if not pd.isna(lsl):
             entries.append(f"LSL({lsl})")
@@ -255,7 +446,8 @@ If( Is Scriptable( gb ),
     
     def generate_jsl(self, matched_spec: pd.DataFrame, imgdir: str) -> str:
         """
-        Build the full JSL content by concatenating blocks for rows that have at least one limit.
+        Build the full JSL content by concatenating blocks for all rows.
+        Valid rows get JSL blocks, invalid rows get comment blocks explaining why they were skipped.
         """
         blocks = []
         # Ensure numeric for limits
@@ -265,9 +457,8 @@ If( Is Scriptable( gb ),
         names = matched_spec["test_name"].astype(str).str.strip()
 
         for name, usl, lsl, tgt in zip(names, usl_num, lsl_num, tgt_num):
-            # Skip if both limits missing
-            if pd.isna(usl) and pd.isna(lsl):
-                continue
+            # Generate block for all rows (valid or invalid)
+            # make_jsl_block will handle validation and return appropriate block
             blocks.append(self.make_jsl_block(name, usl, lsl, tgt, imgdir))
 
         return "\n\n".join(blocks)

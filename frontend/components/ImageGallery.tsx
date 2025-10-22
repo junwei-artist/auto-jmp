@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { Download, Eye, RefreshCw, X, ChevronLeft, ChevronRight, ZoomIn, ZoomOut, MessageCircle } from 'lucide-react'
+import { Download, Eye, RefreshCw, X, ChevronLeft, ChevronRight, ZoomIn, ZoomOut, MessageCircle, Maximize2, Minimize2, RotateCw, RotateCcw, MessageSquare } from 'lucide-react'
 import { useAuth } from '@/lib/auth'
 import ArtifactComments from './ArtifactComments'
 
@@ -58,6 +58,9 @@ export function ImageGallery({ runId, projectId, run, onClose }: ImageGalleryPro
   const [isLightboxOpen, setIsLightboxOpen] = useState(false)
   const [zoomLevel, setZoomLevel] = useState(1)
   const [isDownloading, setIsDownloading] = useState(false)
+  const [isFullscreen, setIsFullscreen] = useState(false)
+  const [showComments, setShowComments] = useState(true)
+  const [rotation, setRotation] = useState(0)
 
   // Fetch artifacts with auto-refresh
   const { data: artifacts, isLoading, error, refetch } = useQuery({
@@ -207,6 +210,25 @@ export function ImageGallery({ runId, projectId, run, onClose }: ImageGalleryPro
     )
   }
 
+  // Handle fullscreen toggle
+  const toggleFullscreen = () => {
+    setIsFullscreen(!isFullscreen)
+  }
+
+  // Handle rotation
+  const rotateImage = (direction: 'left' | 'right') => {
+    setRotation(prev => {
+      const rotationStep = direction === 'left' ? -90 : 90
+      return (prev + rotationStep) % 360
+    })
+  }
+
+  // Reset zoom and rotation when changing images
+  useEffect(() => {
+    setZoomLevel(1)
+    setRotation(0)
+  }, [selectedImageIndex])
+
   // Handle keyboard navigation
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -220,7 +242,11 @@ export function ImageGallery({ runId, projectId, run, onClose }: ImageGalleryPro
           handleNextImage()
           break
         case 'Escape':
-          setIsLightboxOpen(false)
+          if (isFullscreen) {
+            setIsFullscreen(false)
+          } else {
+            setIsLightboxOpen(false)
+          }
           break
         case '+':
         case '=':
@@ -229,12 +255,28 @@ export function ImageGallery({ runId, projectId, run, onClose }: ImageGalleryPro
         case '-':
           setZoomLevel(prev => Math.max(prev - 0.2, 0.5))
           break
+        case 'f':
+        case 'F':
+          toggleFullscreen()
+          break
+        case 'r':
+        case 'R':
+          rotateImage('right')
+          break
+        case 'l':
+        case 'L':
+          rotateImage('left')
+          break
+        case 'c':
+        case 'C':
+          setShowComments(prev => !prev)
+          break
       }
     }
 
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [isLightboxOpen])
+  }, [isLightboxOpen, isFullscreen])
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -401,9 +443,6 @@ export function ImageGallery({ runId, projectId, run, onClose }: ImageGalleryPro
               </div>
               <CardContent className="p-3">
                 <div className="text-sm font-medium truncate">{artifact.filename}</div>
-                <div className="text-xs text-gray-500">
-                  {artifact.size_bytes ? `${Math.round(artifact.size_bytes / 1024)} KB` : 'Unknown size'}
-                </div>
               </CardContent>
             </Card>
           ))}
@@ -433,17 +472,37 @@ export function ImageGallery({ runId, projectId, run, onClose }: ImageGalleryPro
 
       {/* Lightbox Modal */}
       <Dialog open={isLightboxOpen} onOpenChange={setIsLightboxOpen}>
-        <DialogContent className="max-w-7xl max-h-[90vh] p-0">
+        <DialogContent className={`${isFullscreen ? 'max-w-none max-h-none w-screen h-screen' : 'max-w-7xl max-h-[90vh]'} p-0`}>
           <DialogHeader className="p-6 pb-0">
             <div className="flex items-center justify-between">
               <DialogTitle>
                 {imageArtifacts[selectedImageIndex]?.filename}
               </DialogTitle>
               <div className="flex items-center space-x-2">
+                {/* Rotation Controls */}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => rotateImage('left')}
+                  title="Rotate Left (L)"
+                >
+                  <RotateCcw className="h-4 w-4" />
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => rotateImage('right')}
+                  title="Rotate Right (R)"
+                >
+                  <RotateCw className="h-4 w-4" />
+                </Button>
+                
+                {/* Zoom Controls */}
                 <Button
                   variant="outline"
                   size="sm"
                   onClick={() => setZoomLevel(prev => Math.max(prev - 0.2, 0.5))}
+                  title="Zoom Out (-)"
                 >
                   <ZoomOut className="h-4 w-4" />
                 </Button>
@@ -452,9 +511,32 @@ export function ImageGallery({ runId, projectId, run, onClose }: ImageGalleryPro
                   variant="outline"
                   size="sm"
                   onClick={() => setZoomLevel(prev => Math.min(prev + 0.2, 3))}
+                  title="Zoom In (+)"
                 >
                   <ZoomIn className="h-4 w-4" />
                 </Button>
+                
+                {/* Fullscreen Toggle */}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={toggleFullscreen}
+                  title={`${isFullscreen ? 'Exit Fullscreen (F)' : 'Enter Fullscreen (F)'}`}
+                >
+                  {isFullscreen ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
+                </Button>
+                
+                {/* Comments Toggle */}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setShowComments(prev => !prev)}
+                  title={`${showComments ? 'Hide Comments (C)' : 'Show Comments (C)'}`}
+                >
+                  <MessageSquare className="h-4 w-4" />
+                </Button>
+                
+                {/* Download */}
                 <Button
                   variant="outline"
                   size="sm"
@@ -465,15 +547,17 @@ export function ImageGallery({ runId, projectId, run, onClose }: ImageGalleryPro
               </div>
             </div>
           </DialogHeader>
-          <div className="flex flex-1 p-6 pt-0">
+          <div className={`flex flex-1 p-6 pt-0 ${isFullscreen ? 'h-[calc(100vh-120px)]' : ''}`}>
             {/* Image Section */}
-            <div className="flex-1 mr-6">
-              <div className="relative w-full h-[60vh] flex items-center justify-center bg-black rounded-lg overflow-hidden">
+            <div className={`flex-1 ${showComments && !isFullscreen ? 'mr-6' : ''}`}>
+              <div className={`relative w-full ${isFullscreen ? 'h-full' : 'h-[60vh]'} flex items-center justify-center bg-black rounded-lg overflow-hidden`}>
                 <img
                   src={imageArtifacts[selectedImageIndex]?.download_url}
                   alt={imageArtifacts[selectedImageIndex]?.filename}
-                  className="max-w-full max-h-full object-contain transition-transform duration-200"
-                  style={{ transform: `scale(${zoomLevel})` }}
+                  className="max-w-full max-h-full object-contain transition-all duration-200"
+                  style={{ 
+                    transform: `scale(${zoomLevel}) rotate(${rotation}deg)` 
+                  }}
                 />
                 
                 {/* Navigation buttons */}
@@ -497,23 +581,49 @@ export function ImageGallery({ runId, projectId, run, onClose }: ImageGalleryPro
                     </Button>
                   </>
                 )}
-              </div>
-              
-              {/* Image counter */}
-              {imageArtifacts.length > 1 && (
-                <div className="text-center mt-4 text-sm text-gray-500">
+                
+                {/* Image info overlay */}
+                <div className="absolute bottom-4 left-4 bg-black bg-opacity-70 text-white text-sm px-3 py-2 rounded-lg">
                   {selectedImageIndex + 1} of {imageArtifacts.length}
+                  {rotation !== 0 && ` • ${rotation}°`}
                 </div>
-              )}
+              </div>
             </div>
             
             {/* Comments Section */}
-            <div className="w-96 max-h-[60vh] overflow-y-auto">
-              <ArtifactComments 
-                artifactId={imageArtifacts[selectedImageIndex]?.id || ''} 
-                currentUserRole="member" // You might want to pass the actual role from props
-              />
-            </div>
+            {showComments && !isFullscreen && (
+              <div className="w-96 max-h-[60vh] overflow-y-auto">
+                <ArtifactComments 
+                  artifactId={imageArtifacts[selectedImageIndex]?.id || ''} 
+                  currentUserRole="member" // You might want to pass the actual role from props
+                />
+              </div>
+            )}
+            
+            {/* Fullscreen Comments Overlay */}
+            {showComments && isFullscreen && (
+              <div className="absolute top-20 right-4 w-96 max-h-[calc(100vh-140px)] overflow-y-auto bg-white/20 backdrop-blur-md rounded-xl shadow-2xl border border-white/30">
+                <div className="p-4">
+                  <div className="flex items-center justify-between mb-4">
+                    <h3 className="text-lg font-semibold text-white drop-shadow-lg">Comments</h3>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setShowComments(false)}
+                      className="text-white hover:bg-white/20"
+                    >
+                      <X className="h-4 w-4" />
+                    </Button>
+                  </div>
+                  <div className="bg-white/10 backdrop-blur-sm rounded-lg p-3">
+                    <ArtifactComments 
+                      artifactId={imageArtifacts[selectedImageIndex]?.id || ''} 
+                      currentUserRole="member"
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         </DialogContent>
       </Dialog>

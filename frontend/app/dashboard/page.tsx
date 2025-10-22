@@ -8,6 +8,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { 
   Plus, 
   Upload, 
@@ -26,7 +27,13 @@ import {
   Loader2,
   Crown,
   UserCheck,
-  HelpCircle
+  HelpCircle,
+  Search,
+  Grid3X3,
+  List,
+  ArrowUpDown,
+  ChevronLeft,
+  ChevronRight
 } from 'lucide-react'
 import { 
   ProjectStatsSVG, 
@@ -84,6 +91,15 @@ export default function DashboardPage() {
   const [newProjectName, setNewProjectName] = useState('')
   const [newProjectDescription, setNewProjectDescription] = useState('')
   const [newProjectIsPublic, setNewProjectIsPublic] = useState(false)
+  
+  // Search, sort, and view state
+  const [searchQuery, setSearchQuery] = useState('')
+  const [sortBy, setSortBy] = useState('date-newest')
+  const [viewMode, setViewMode] = useState<'card' | 'list'>('card')
+  
+  // Pagination state
+  const [currentPage, setCurrentPage] = useState(1)
+  const itemsPerPage = 30
 
   // Redirect if not authenticated
   useEffect(() => {
@@ -91,6 +107,11 @@ export default function DashboardPage() {
       router.push('/')
     }
   }, [user, router])
+
+  // Reset pagination when search or sort changes
+  useEffect(() => {
+    setCurrentPage(1)
+  }, [searchQuery, sortBy])
 
   // Fetch owned projects
   const { data: ownedProjects = [], refetch: refetchOwnedProjects } = useQuery<Project[]>({
@@ -160,6 +181,80 @@ export default function DashboardPage() {
     })
   }
 
+  // Format date and time precisely
+  const formatPreciseTime = (dateString: string) => {
+    const date = new Date(dateString)
+    const now = new Date()
+    const diffInMs = now.getTime() - date.getTime()
+    const diffInDays = Math.floor(diffInMs / (1000 * 60 * 60 * 24))
+    
+    // If created today, show time
+    if (diffInDays === 0) {
+      return `Today at ${date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
+    }
+    // If created yesterday, show yesterday
+    else if (diffInDays === 1) {
+      return `Yesterday at ${date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
+    }
+    // If created within the last week, show day and time
+    else if (diffInDays < 7) {
+      return `${date.toLocaleDateString([], { weekday: 'short' })} at ${date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
+    }
+    // Otherwise show full date and time
+    else {
+      return `${date.toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })} at ${date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
+    }
+  }
+
+  // Filter, sort, and paginate projects
+  const filterSortAndPaginateProjects = (projects: Project[]) => {
+    let filtered = projects
+
+    // Apply search filter
+    if (searchQuery.trim()) {
+      const query = searchQuery.toLowerCase()
+      filtered = projects.filter(project => 
+        project.name.toLowerCase().includes(query) ||
+        (project.description && project.description.toLowerCase().includes(query))
+      )
+    }
+
+    // Apply sorting
+    filtered.sort((a, b) => {
+      switch (sortBy) {
+        case 'name-asc':
+          return a.name.localeCompare(b.name)
+        case 'name-desc':
+          return b.name.localeCompare(a.name)
+        case 'date-newest':
+          return new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+        case 'date-oldest':
+          return new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+        case 'runs-high':
+          return b.run_count - a.run_count
+        case 'runs-low':
+          return a.run_count - b.run_count
+        default:
+          return 0
+      }
+    })
+
+    // Calculate pagination
+    const totalItems = filtered.length
+    const totalPages = Math.ceil(totalItems / itemsPerPage)
+    const startIndex = (currentPage - 1) * itemsPerPage
+    const endIndex = startIndex + itemsPerPage
+    const paginatedProjects = filtered.slice(startIndex, endIndex)
+
+    return {
+      projects: paginatedProjects,
+      totalItems,
+      totalPages,
+      currentPage,
+      itemsPerPage
+    }
+  }
+
   const getStatusIcon = (status: string) => {
     switch (status) {
       case 'succeeded':
@@ -188,6 +283,107 @@ export default function DashboardPage() {
       default:
         return 'text-gray-600'
     }
+  }
+
+  // Pagination component
+  const PaginationControls = ({ 
+    currentPage, 
+    totalPages, 
+    totalItems, 
+    itemsPerPage, 
+    onPageChange 
+  }: {
+    currentPage: number
+    totalPages: number
+    totalItems: number
+    itemsPerPage: number
+    onPageChange: (page: number) => void
+  }) => {
+    if (totalPages <= 1) return null
+
+    const startItem = (currentPage - 1) * itemsPerPage + 1
+    const endItem = Math.min(currentPage * itemsPerPage, totalItems)
+
+    const getPageNumbers = () => {
+      const pages = []
+      const maxVisiblePages = 5
+      
+      if (totalPages <= maxVisiblePages) {
+        for (let i = 1; i <= totalPages; i++) {
+          pages.push(i)
+        }
+      } else {
+        if (currentPage <= 3) {
+          for (let i = 1; i <= 4; i++) {
+            pages.push(i)
+          }
+          pages.push('...')
+          pages.push(totalPages)
+        } else if (currentPage >= totalPages - 2) {
+          pages.push(1)
+          pages.push('...')
+          for (let i = totalPages - 3; i <= totalPages; i++) {
+            pages.push(i)
+          }
+        } else {
+          pages.push(1)
+          pages.push('...')
+          for (let i = currentPage - 1; i <= currentPage + 1; i++) {
+            pages.push(i)
+          }
+          pages.push('...')
+          pages.push(totalPages)
+        }
+      }
+      
+      return pages
+    }
+
+    return (
+      <div className="flex items-center justify-between mt-6">
+        <div className="text-sm text-gray-700">
+          Showing {startItem} to {endItem} of {totalItems} projects
+        </div>
+        <div className="flex items-center space-x-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => onPageChange(currentPage - 1)}
+            disabled={currentPage === 1}
+            className="flex items-center space-x-1"
+          >
+            <ChevronLeft className="h-4 w-4" />
+            <span>Previous</span>
+          </Button>
+          
+          <div className="flex items-center space-x-1">
+            {getPageNumbers().map((page, index) => (
+              <Button
+                key={index}
+                variant={page === currentPage ? "default" : "outline"}
+                size="sm"
+                onClick={() => typeof page === 'number' ? onPageChange(page) : undefined}
+                disabled={page === '...'}
+                className="w-8 h-8 p-0"
+              >
+                {page}
+              </Button>
+            ))}
+          </div>
+          
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => onPageChange(currentPage + 1)}
+            disabled={currentPage === totalPages}
+            className="flex items-center space-x-1"
+          >
+            <span>Next</span>
+            <ChevronRight className="h-4 w-4" />
+          </Button>
+        </div>
+      </div>
+    )
   }
 
   const renderProjectCard = (project: Project, showDeleteButton: boolean = true) => (
@@ -244,7 +440,7 @@ export default function DashboardPage() {
             </div>
           </div>
           <span className="text-xs">
-            {new Date(project.created_at).toLocaleDateString()}
+            {formatPreciseTime(project.created_at)}
           </span>
         </div>
         {project.owner_email && (
@@ -254,6 +450,62 @@ export default function DashboardPage() {
         )}
       </CardContent>
     </Card>
+  )
+
+  const renderProjectListItem = (project: Project, showDeleteButton: boolean = true) => (
+    <div 
+      key={project.id}
+      className="flex items-center justify-between p-4 border rounded-lg hover:bg-gray-50 cursor-pointer transition-colors"
+      onClick={() => router.push(`/projects/${project.id}`)}
+    >
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center space-x-3">
+          <h4 className="text-sm font-medium text-gray-900 truncate">{project.name}</h4>
+          {project.is_public && (
+            <span className="text-xs bg-green-100 text-green-800 px-2 py-1 rounded">
+              {t('dashboard.projects.public')}
+            </span>
+          )}
+        </div>
+        <p className="text-sm text-gray-500 truncate mt-1">
+          {project.description || 'No description'}
+        </p>
+        <div className="flex items-center space-x-4 mt-2 text-xs text-gray-500">
+          <div className="flex items-center">
+            <Users className="h-3 w-3 mr-1" />
+            {project.member_count} members
+          </div>
+          <div className="flex items-center">
+            <BarChart3 className="h-3 w-3 mr-1" />
+            {project.run_count} runs
+          </div>
+          <span>{formatPreciseTime(project.created_at)}</span>
+          {project.owner_email && (
+            <span>Owner: {project.owner_display_name || project.owner_email}</span>
+          )}
+        </div>
+      </div>
+      {showDeleteButton && (
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={(e) => {
+            e.stopPropagation()
+            if (confirm(t('project.deleteConfirm'))) {
+              deleteProjectMutation.mutate(project.id)
+            }
+          }}
+          disabled={deleteProjectMutation.isPending}
+          className="text-red-600 hover:text-red-700 hover:bg-red-50 h-8 w-8 p-0 ml-4"
+        >
+          {deleteProjectMutation.isPending ? (
+            <Loader2 className="h-4 w-4 animate-spin" />
+          ) : (
+            <Trash2 className="h-4 w-4" />
+          )}
+        </Button>
+      )}
+    </div>
   )
 
   if (!user) {
@@ -373,6 +625,56 @@ export default function DashboardPage() {
             </Button>
           </div>
 
+          {/* Search, Sort, and View Controls */}
+          <div className="flex flex-col sm:flex-row gap-4 mb-6">
+            {/* Search Input */}
+            <div className="relative flex-1">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+              <Input
+                placeholder="Search projects..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="pl-10"
+              />
+            </div>
+            
+            {/* Sort Dropdown */}
+            <Select value={sortBy} onValueChange={setSortBy}>
+              <SelectTrigger className="w-full sm:w-48">
+                <ArrowUpDown className="h-4 w-4 mr-2" />
+                <SelectValue placeholder="Sort by" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="name-asc">Name (A-Z)</SelectItem>
+                <SelectItem value="name-desc">Name (Z-A)</SelectItem>
+                <SelectItem value="date-newest">Date (Newest)</SelectItem>
+                <SelectItem value="date-oldest">Date (Oldest)</SelectItem>
+                <SelectItem value="runs-high">Runs (High to Low)</SelectItem>
+                <SelectItem value="runs-low">Runs (Low to High)</SelectItem>
+              </SelectContent>
+            </Select>
+            
+            {/* View Toggle */}
+            <div className="flex border rounded-lg">
+              <Button
+                variant={viewMode === 'card' ? 'default' : 'ghost'}
+                size="sm"
+                onClick={() => setViewMode('card')}
+                className="rounded-r-none"
+              >
+                <Grid3X3 className="h-4 w-4" />
+              </Button>
+              <Button
+                variant={viewMode === 'list' ? 'default' : 'ghost'}
+                size="sm"
+                onClick={() => setViewMode('list')}
+                className="rounded-l-none"
+              >
+                <List className="h-4 w-4" />
+              </Button>
+            </div>
+          </div>
+
           {showCreateProject && (
             <Card className="mb-6">
               <CardHeader>
@@ -447,43 +749,93 @@ export default function DashboardPage() {
             </TabsList>
             
             <TabsContent value="owned" className="mt-6">
-              {ownedProjects.length === 0 ? (
-                <Card className="bg-gradient-to-br from-blue-50 to-indigo-50 border-blue-200">
-                  <CardContent className="flex flex-col items-center justify-center py-16">
-                    <EmptyProjectsSVG className="w-24 h-24 mb-6" />
-                    <h3 className="text-xl font-semibold text-gray-900 mb-3">{t('dashboard.projects.noProjects.title')}</h3>
-                    <p className="text-gray-600 text-center mb-6 max-w-md">
-                      {t('dashboard.projects.noProjects.message')}
-                    </p>
-                    <Button onClick={() => setShowCreateProject(true)} size="lg" className="bg-blue-600 hover:bg-blue-700">
-                      <Plus className="h-5 w-5 mr-2" />
-                      {t('dashboard.projects.createFirst')}
-                    </Button>
-                  </CardContent>
-                </Card>
-              ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                  {ownedProjects.map((project: Project) => renderProjectCard(project, true))}
-                </div>
-              )}
+              {(() => {
+                const { projects: paginatedOwnedProjects, totalItems, totalPages } = filterSortAndPaginateProjects(ownedProjects)
+                return totalItems === 0 ? (
+                  <Card className="bg-gradient-to-br from-blue-50 to-indigo-50 border-blue-200">
+                    <CardContent className="flex flex-col items-center justify-center py-16">
+                      <EmptyProjectsSVG className="w-24 h-24 mb-6" />
+                      <h3 className="text-xl font-semibold text-gray-900 mb-3">
+                        {searchQuery ? 'No projects found' : t('dashboard.projects.noProjects.title')}
+                      </h3>
+                      <p className="text-gray-600 text-center mb-6 max-w-md">
+                        {searchQuery 
+                          ? 'Try adjusting your search terms or filters.'
+                          : t('dashboard.projects.noProjects.message')
+                        }
+                      </p>
+                      {!searchQuery && (
+                        <Button onClick={() => setShowCreateProject(true)} size="lg" className="bg-blue-600 hover:bg-blue-700">
+                          <Plus className="h-5 w-5 mr-2" />
+                          {t('dashboard.projects.createFirst')}
+                        </Button>
+                      )}
+                    </CardContent>
+                  </Card>
+                ) : (
+                  <>
+                    <div className={viewMode === 'card' 
+                      ? "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6" 
+                      : "space-y-3"
+                    }>
+                      {paginatedOwnedProjects.map((project: Project) => 
+                        viewMode === 'card' 
+                          ? renderProjectCard(project, true)
+                          : renderProjectListItem(project, true)
+                      )}
+                    </div>
+                    <PaginationControls
+                      currentPage={currentPage}
+                      totalPages={totalPages}
+                      totalItems={totalItems}
+                      itemsPerPage={itemsPerPage}
+                      onPageChange={setCurrentPage}
+                    />
+                  </>
+                )
+              })()}
             </TabsContent>
             
             <TabsContent value="member" className="mt-6">
-              {memberProjects.length === 0 ? (
-                <Card className="bg-gradient-to-br from-gray-50 to-slate-50 border-gray-200">
-                  <CardContent className="flex flex-col items-center justify-center py-16">
-                    <UserCheck className="w-24 h-24 mb-6 text-gray-400" />
-                    <h3 className="text-xl font-semibold text-gray-900 mb-3">No Member Projects</h3>
-                    <p className="text-gray-600 text-center mb-6 max-w-md">
-                      You haven't been added as a member to any projects yet. Ask project owners to invite you to their projects.
-                    </p>
-                  </CardContent>
-                </Card>
-              ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                  {memberProjects.map((project: Project) => renderProjectCard(project, false))}
-                </div>
-              )}
+              {(() => {
+                const { projects: paginatedMemberProjects, totalItems, totalPages } = filterSortAndPaginateProjects(memberProjects)
+                return totalItems === 0 ? (
+                  <Card className="bg-gradient-to-br from-gray-50 to-slate-50 border-gray-200">
+                    <CardContent className="flex flex-col items-center justify-center py-16">
+                      <UserCheck className="w-24 h-24 mb-6 text-gray-400" />
+                      <h3 className="text-xl font-semibold text-gray-900 mb-3">
+                        {searchQuery ? 'No member projects found' : 'No Member Projects'}
+                      </h3>
+                      <p className="text-gray-600 text-center mb-6 max-w-md">
+                        {searchQuery 
+                          ? 'Try adjusting your search terms or filters.'
+                          : "You haven't been added as a member to any projects yet. Ask project owners to invite you to their projects."
+                        }
+                      </p>
+                    </CardContent>
+                  </Card>
+                ) : (
+                  <>
+                    <div className={viewMode === 'card' 
+                      ? "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6" 
+                      : "space-y-3"
+                    }>
+                      {paginatedMemberProjects.map((project: Project) => 
+                        viewMode === 'card' 
+                          ? renderProjectCard(project, false)
+                          : renderProjectListItem(project, false)
+                      )}
+                    </div>
+                    <PaginationControls
+                      currentPage={currentPage}
+                      totalPages={totalPages}
+                      totalItems={totalItems}
+                      itemsPerPage={itemsPerPage}
+                      onPageChange={setCurrentPage}
+                    />
+                  </>
+                )
+              })()}
             </TabsContent>
           </Tabs>
         </div>

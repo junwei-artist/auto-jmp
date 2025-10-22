@@ -24,6 +24,44 @@ class ExcelToCPKProcessor:
     def __init__(self):
         self.analyzer = CPKAnalyzer()
     
+    def _create_failed_rows_summary(self, row_errors, row_warnings):
+        """Create a summary of failed rows grouped by row number"""
+        failed_rows_summary = {}
+        
+        # Process errors
+        for error in row_errors:
+            row_num = error.get("row", "unknown")
+            if row_num not in failed_rows_summary:
+                failed_rows_summary[row_num] = {
+                    "row": row_num,
+                    "test_name": error.get("test_name", "unknown"),
+                    "errors": [],
+                    "warnings": []
+                }
+            failed_rows_summary[row_num]["errors"].append({
+                "issue": error.get("issue"),
+                "details": error.get("details", ""),
+                "values": {k: v for k, v in error.items() if k in ["usl", "lsl", "target"]}
+            })
+        
+        # Process warnings
+        for warning in row_warnings:
+            row_num = warning.get("row", "unknown")
+            if row_num not in failed_rows_summary:
+                failed_rows_summary[row_num] = {
+                    "row": row_num,
+                    "test_name": warning.get("test_name", "unknown"),
+                    "errors": [],
+                    "warnings": []
+                }
+            failed_rows_summary[row_num]["warnings"].append({
+                "issue": warning.get("issue"),
+                "details": warning.get("details", ""),
+                "values": {k: v for k, v in warning.items() if k in ["usl", "lsl", "target"]}
+            })
+        
+        return list(failed_rows_summary.values())
+    
     def fix_excel_file(self, file_path: str) -> Dict[str, Any]:
         """
         Fix corrupted Excel file by repairing window position settings
@@ -144,6 +182,16 @@ class ExcelToCPKProcessor:
             # Check for required sheets
             fai_columns = self.analyzer.find_fai_columns(data_df)
             
+            # Run enhanced row-level validation
+            spec_norm = self.analyzer.normalize_spec_columns(spec_df, route)
+            enhanced_validation = self.analyzer.validate_checkpoint1_enhanced(spec_norm)
+            
+            # Create failed rows summary
+            failed_rows_summary = self._create_failed_rows_summary(
+                enhanced_validation["row_errors"], 
+                enhanced_validation["row_warnings"]
+            )
+            
             return {
                 "valid": True,
                 "checkpoint": 1,
@@ -152,7 +200,20 @@ class ExcelToCPKProcessor:
                 "details": {
                     "spec_shape": spec_df.shape,
                     "data_shape": data_df.shape,
-                    "fai_columns_found": len(fai_columns)
+                    "fai_columns_found": len(fai_columns),
+                    "enhanced_validation": enhanced_validation["details"],
+                    "failed_rows": failed_rows_summary,
+                    "failed_rows_count": len(set(error.get("row", "unknown") for error in enhanced_validation["row_errors"] + enhanced_validation["row_warnings"])),
+                    "total_errors": len(enhanced_validation["row_errors"]),
+                    "total_warnings": len(enhanced_validation["row_warnings"])
+                },
+                "enhanced_validation": {
+                    "valid": enhanced_validation["valid"],
+                    "message": enhanced_validation["message"],
+                    "row_errors": enhanced_validation["row_errors"],
+                    "row_warnings": enhanced_validation["row_warnings"],
+                    "total_errors": len(enhanced_validation["row_errors"]),
+                    "total_warnings": len(enhanced_validation["row_warnings"])
                 }
             }
             

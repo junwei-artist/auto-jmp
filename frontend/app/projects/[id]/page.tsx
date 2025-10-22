@@ -75,6 +75,13 @@ interface Artifact {
   created_at: string
 }
 
+interface RunArtifactWithComments {
+  artifact_id: string
+  filename: string
+  kind: string
+  comment_count: number
+}
+
 export default function ProjectPage() {
   const params = useParams()
   const router = useRouter()
@@ -100,6 +107,10 @@ export default function ProjectPage() {
   const [activeTab, setActiveTab] = useState('analysis')
   const [expandedComments, setExpandedComments] = useState<Set<string>>(new Set())
   const [runCommentCounts, setRunCommentCounts] = useState<Record<string, number>>({})
+  const [commentCountsLoading, setCommentCountsLoading] = useState(false)
+  const [runArtifactComments, setRunArtifactComments] = useState<Record<string, RunArtifactWithComments[]>>({})
+  const [expandedArtifacts, setExpandedArtifacts] = useState<Set<string>>(new Set())
+  const [artifactCommentsLoading, setArtifactCommentsLoading] = useState(false)
   const [isEditingProject, setIsEditingProject] = useState(false)
   const [editProjectName, setEditProjectName] = useState('')
   const [editProjectDescription, setEditProjectDescription] = useState('')
@@ -207,6 +218,113 @@ export default function ProjectPage() {
       }
     }
   }, [project, user])
+
+  // Comments are hidden by default - no auto-expansion
+
+  // Fetch comment counts for all runs
+  const fetchRunCommentCounts = async (runIds: string[]) => {
+    if (runIds.length === 0) return
+    
+    setCommentCountsLoading(true)
+    try {
+      const token = getAuthToken()
+      if (!token) return
+
+      const response = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/v1/runs/comment-counts`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(runIds),
+      })
+
+      if (response.ok) {
+        const counts = await response.json()
+        const countMap: Record<string, number> = {}
+        counts.forEach((item: { run_id: string; comment_count: number }) => {
+          countMap[item.run_id] = item.comment_count
+        })
+        setRunCommentCounts(countMap)
+      }
+    } catch (error) {
+      console.error('Failed to fetch run comment counts:', error)
+    } finally {
+      setCommentCountsLoading(false)
+    }
+  }
+
+  // Fetch artifact comment counts for a specific run
+  const fetchRunArtifactComments = async (runId: string) => {
+    try {
+      const token = getAuthToken()
+      if (!token) return
+
+      const response = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/v1/runs/${runId}/artifacts-with-comments`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+      })
+
+      if (response.ok) {
+        const artifacts = await response.json()
+        setRunArtifactComments(prev => ({
+          ...prev,
+          [runId]: artifacts
+        }))
+      }
+    } catch (error) {
+      console.error('Failed to fetch run artifact comments:', error)
+    }
+  }
+
+  // Fetch artifact comment counts for all runs
+  const fetchAllRunArtifactComments = async (runIds: string[]) => {
+    if (runIds.length === 0) return
+    
+    setArtifactCommentsLoading(true)
+    try {
+      const token = getAuthToken()
+      if (!token) return
+
+      // Fetch all runs' artifact comments in parallel
+      const promises = runIds.map(runId => 
+        fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/v1/runs/${runId}/artifacts-with-comments`, {
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+        }).then(response => response.ok ? response.json() : [])
+      )
+
+      const results = await Promise.all(promises)
+      
+      // Update state with all results
+      const newArtifactComments: Record<string, RunArtifactWithComments[]> = {}
+      runIds.forEach((runId, index) => {
+        newArtifactComments[runId] = results[index] || []
+      })
+      
+      setRunArtifactComments(prev => ({
+        ...prev,
+        ...newArtifactComments
+      }))
+    } catch (error) {
+      console.error('Failed to fetch run artifact comments:', error)
+    } finally {
+      setArtifactCommentsLoading(false)
+    }
+  }
+
+  // Auto-fetch comment counts when runs are loaded
+  useEffect(() => {
+    if (runs && runs.length > 0) {
+      const runIds = runs.map(run => run.id)
+      fetchRunCommentCounts(runIds)
+      fetchAllRunArtifactComments(runIds)
+    }
+  }, [runs])
 
   // Delete run mutation
   const deleteRunMutation = useMutation({
@@ -392,6 +510,52 @@ export default function ProjectPage() {
       }
       return newSet
     })
+  }
+
+  // Toggle all comments expansion
+  const toggleAllComments = () => {
+    if (!runs || runs.length === 0) return
+    
+    const allRunIds = runs.map(run => run.id)
+    const allExpanded = allRunIds.every(id => expandedComments.has(id))
+    
+    if (allExpanded) {
+      // Collapse all
+      setExpandedComments(new Set())
+    } else {
+      // Expand all
+      setExpandedComments(new Set(allRunIds))
+    }
+  }
+
+  // Toggle artifacts expansion for a run
+  const toggleArtifacts = (runId: string) => {
+    setExpandedArtifacts(prev => {
+      const newSet = new Set(prev)
+      if (newSet.has(runId)) {
+        newSet.delete(runId)
+      } else {
+        newSet.add(runId)
+        // Data should already be loaded from the auto-fetch, but fetch if missing
+        if (!runArtifactComments[runId]) {
+          fetchRunArtifactComments(runId)
+        }
+      }
+      return newSet
+    })
+  }
+
+  // Get artifact comment statistics for a run
+  const getArtifactCommentStats = (runId: string) => {
+    const artifacts = runArtifactComments[runId] || []
+    const artifactsWithComments = artifacts.filter(a => a.comment_count > 0)
+    const totalComments = artifacts.reduce((sum, a) => sum + a.comment_count, 0)
+    
+    return {
+      totalArtifacts: artifacts.length,
+      artifactsWithComments: artifactsWithComments.length,
+      totalComments
+    }
   }
 
   // Handle edit mode functions
@@ -706,10 +870,32 @@ export default function ProjectPage() {
                 {/* Runs Display */}
                 <Card>
                   <CardHeader>
-                    <CardTitle className="flex items-center">
-                      <BarChart3 className="mr-2 h-5 w-5" />
-                      {t('projects.analysisHistory')}
-                    </CardTitle>
+                    <div className="flex items-center justify-between">
+                      <CardTitle className="flex items-center">
+                        <BarChart3 className="mr-2 h-5 w-5" />
+                        {t('projects.analysisHistory')}
+                      </CardTitle>
+                      {runs && runs.length > 0 && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={toggleAllComments}
+                          className="flex items-center space-x-2"
+                        >
+                          {runs.every(run => expandedComments.has(run.id)) ? (
+                            <>
+                              <ChevronDown className="h-4 w-4" />
+                              <span>Hide All Comments</span>
+                            </>
+                          ) : (
+                            <>
+                              <ChevronRight className="h-4 w-4" />
+                              <span>Show All Comments</span>
+                            </>
+                          )}
+                        </Button>
+                      )}
+                    </div>
                   </CardHeader>
                   <CardContent>
                     {runsLoading ? (
@@ -818,7 +1004,7 @@ export default function ProjectPage() {
                                   <ChevronRight className="mr-2 h-4 w-4" />
                                 )}
                                 <MessageSquare className="mr-2 h-4 w-4" />
-                                Comments {runCommentCounts[run.id] > 0 && `(${runCommentCounts[run.id]})`}
+                                Comments {commentCountsLoading ? '...' : (runCommentCounts[run.id] !== undefined && runCommentCounts[run.id] > 0 && `(${runCommentCounts[run.id]})`)}
                               </Button>
                             </div>
                             
@@ -835,6 +1021,96 @@ export default function ProjectPage() {
                                     }))
                                   }}
                                 />
+                              </div>
+                            )}
+
+                            {/* Artifact Comments Section */}
+                            <div className="mt-3 pt-3 border-t border-gray-200">
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => toggleArtifacts(run.id)}
+                                className="w-full justify-start text-gray-600 hover:text-gray-800"
+                              >
+                                {expandedArtifacts.has(run.id) ? (
+                                  <ChevronDown className="mr-2 h-4 w-4" />
+                                ) : (
+                                  <ChevronRight className="mr-2 h-4 w-4" />
+                                )}
+                                <FileText className="mr-2 h-4 w-4" />
+                                Artifacts
+                                {(() => {
+                                  if (artifactCommentsLoading) {
+                                    return ' (loading...)'
+                                  }
+                                  const stats = getArtifactCommentStats(run.id)
+                                  if (stats.totalArtifacts > 0) {
+                                    return ` (${stats.artifactsWithComments}/${stats.totalArtifacts} artifacts, ${stats.totalComments} comments)`
+                                  } else if (runArtifactComments[run.id] === undefined) {
+                                    return ' (loading...)'
+                                  } else {
+                                    return ' (no artifacts)'
+                                  }
+                                })()}
+                              </Button>
+                            </div>
+
+                            {/* Artifact Comments List - Collapsible */}
+                            {expandedArtifacts.has(run.id) && (
+                              <div className="mt-3">
+                                {(() => {
+                                  const artifacts = runArtifactComments[run.id]
+                                  
+                                  if (artifacts === undefined) {
+                                    return (
+                                      <div className="text-center py-4 text-gray-500">
+                                        <FileText className="h-6 w-6 mx-auto mb-2 opacity-50" />
+                                        <p className="text-sm">Loading artifacts...</p>
+                                      </div>
+                                    )
+                                  }
+                                  
+                                  const artifactsWithComments = artifacts.filter(a => a.comment_count > 0)
+                                  
+                                  if (artifacts.length === 0) {
+                                    return (
+                                      <div className="text-center py-4 text-gray-500">
+                                        <FileText className="h-6 w-6 mx-auto mb-2 opacity-50" />
+                                        <p className="text-sm">No artifacts found for this run</p>
+                                      </div>
+                                    )
+                                  }
+                                  
+                                  if (artifactsWithComments.length === 0) {
+                                    return (
+                                      <div className="text-center py-4 text-gray-500">
+                                        <FileText className="h-6 w-6 mx-auto mb-2 opacity-50" />
+                                        <p className="text-sm">No artifacts have comments yet</p>
+                                      </div>
+                                    )
+                                  }
+                                  
+                                  return (
+                                    <div className="space-y-2">
+                                      <h5 className="text-sm font-medium text-gray-700 mb-2">
+                                        Artifacts with Comments ({artifactsWithComments.length})
+                                      </h5>
+                                      {artifactsWithComments.map((artifact) => (
+                                        <div key={artifact.artifact_id} className="flex items-center justify-between p-2 bg-gray-50 rounded-lg">
+                                          <div className="flex items-center space-x-2">
+                                            <Badge variant="outline" className="text-xs">
+                                              {artifact.kind}
+                                            </Badge>
+                                            <span className="text-sm font-medium">{artifact.filename}</span>
+                                          </div>
+                                          <Badge variant="secondary" className="text-xs">
+                                            {artifact.comment_count} comment{artifact.comment_count !== 1 ? 's' : ''}
+                                          </Badge>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  )
+                                })()}
                               </div>
                             )}
                           </div>
@@ -891,10 +1167,32 @@ export default function ProjectPage() {
                 {/* Runs History */}
                 <Card>
                   <CardHeader>
-                    <CardTitle className="flex items-center">
-                      <BarChart3 className="mr-2 h-5 w-5" />
-                      {t('projects.analysisHistory')}
-                    </CardTitle>
+                    <div className="flex items-center justify-between">
+                      <CardTitle className="flex items-center">
+                        <BarChart3 className="mr-2 h-5 w-5" />
+                        {t('projects.analysisHistory')}
+                      </CardTitle>
+                      {runs && runs.length > 0 && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={toggleAllComments}
+                          className="flex items-center space-x-2"
+                        >
+                          {runs.every(run => expandedComments.has(run.id)) ? (
+                            <>
+                              <ChevronDown className="h-4 w-4" />
+                              <span>Hide All Comments</span>
+                            </>
+                          ) : (
+                            <>
+                              <ChevronRight className="h-4 w-4" />
+                              <span>Show All Comments</span>
+                            </>
+                          )}
+                        </Button>
+                      )}
+                    </div>
                   </CardHeader>
                   <CardContent>
                     {runsLoading ? (

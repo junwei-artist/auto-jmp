@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # setup-backend.command
-# Sets up database, configuration, and runs migrations after installation
+# Activates virtual environment and sets up database, configuration, and migrations
 
 set -e
 
@@ -257,10 +257,10 @@ fi
 print_success "🎉 Backend setup completed successfully!"
 echo ""
 print_status "Next steps:"
-echo "1. Edit backend/.env with your configuration"
-echo "2. Run './create-admin.command' to create an admin user"
-echo "3. Run './run-backend.command' to start the backend service"
-echo "4. Backend will be available at http://localhost:4700"
+echo "1. Run './create-admin.command' to create an admin user"
+echo "2. Run './run-backend.command' to start the backend service"
+echo "3. Backend will be available at http://localhost:4700"
 echo ""
-print_status "Virtual environment location: $(pwd)/venv"
-print_status "Python version: $(python --version)"
+print_status "Database: data_analysis with $TABLES_COUNT tables"
+print_status "Redis: Running for Celery task queue"
+print_status "Configuration: backend/.env"

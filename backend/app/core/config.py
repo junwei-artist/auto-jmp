@@ -7,6 +7,9 @@ class Settings(BaseSettings):
     API_V1_STR: str = "/api/v1"
     PROJECT_NAME: str = "Data Analysis Platform"
     
+    # Server Configuration
+    BACKEND_PORT: int = int(os.getenv("BACKEND_PORT", "4700"))
+    
     # Security
     SECRET_KEY: str = os.getenv("SECRET_KEY", "your-secret-key-change-in-production")
     ALGORITHM: str = "HS256"
@@ -14,7 +17,7 @@ class Settings(BaseSettings):
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7
     
     # Database
-    DATABASE_URL: str = os.getenv("DATABASE_URL", "postgresql+asyncpg://user:password@localhost/data_analysis")
+    DATABASE_URL: str = os.getenv("DATABASE_URL", "postgresql+asyncpg://data_user:data_userpassword@localhost/data_analysis")
     
     # Redis
     REDIS_URL: str = os.getenv("REDIS_URL", "redis://localhost:6379")
@@ -28,7 +31,7 @@ class Settings(BaseSettings):
     AWS_SECRET_ACCESS_KEY: str = os.getenv("AWS_SECRET_ACCESS_KEY", "")
     AWS_REGION: str = os.getenv("AWS_REGION", "us-east-1")
     S3_BUCKET: str = os.getenv("S3_BUCKET", "data-analysis-platform")
-    S3_ENDPOINT_URL: Optional[str] = os.getenv("S3_ENDPOINT_URL", None)  # For MinIO
+    S3_ENDPOINT_URL: Optional[str] = os.getenv("S3_ENDPOINT_URL", "http://localhost:4901")  # For MinIO
     
     # Email
     SMTP_TLS: bool = True
@@ -41,8 +44,10 @@ class Settings(BaseSettings):
     
     # CORS - Allow specific origins for network access
     BACKEND_CORS_ORIGINS: List[str] = [
+        "http://10.5.216.11",
         "http://10.5.216.11:4800",
         "http://localhost:4800",
+        "http://localhost:4801",
         "http://127.0.0.1:4800",
         "http://localhost:3000",
         "http://localhost:3001",

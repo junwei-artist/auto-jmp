@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # install-backend.command
-# Checks Python version → creates virtual environment → installs dependencies
+# Checks Python version → creates virtual environment → installs all dependencies from requirements.txt
 
 set -e
 

@@ -22,6 +22,44 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/excel2cpkv1", tags=["excel2cpkv1"])
 
+def _create_failed_rows_summary(row_errors, row_warnings):
+    """Create a summary of failed rows grouped by row number"""
+    failed_rows_summary = {}
+    
+    # Process errors
+    for error in row_errors:
+        row_num = error.get("row", "unknown")
+        if row_num not in failed_rows_summary:
+            failed_rows_summary[row_num] = {
+                "row": row_num,
+                "test_name": error.get("test_name", "unknown"),
+                "errors": [],
+                "warnings": []
+            }
+        failed_rows_summary[row_num]["errors"].append({
+            "issue": error.get("issue"),
+            "details": error.get("details", ""),
+            "values": {k: v for k, v in error.items() if k in ["usl", "lsl", "target"]}
+        })
+    
+    # Process warnings
+    for warning in row_warnings:
+        row_num = warning.get("row", "unknown")
+        if row_num not in failed_rows_summary:
+            failed_rows_summary[row_num] = {
+                "row": row_num,
+                "test_name": warning.get("test_name", "unknown"),
+                "errors": [],
+                "warnings": []
+            }
+        failed_rows_summary[row_num]["warnings"].append({
+            "issue": warning.get("issue"),
+            "details": warning.get("details", ""),
+            "values": {k: v for k, v in warning.items() if k in ["usl", "lsl", "target"]}
+        })
+    
+    return list(failed_rows_summary.values())
+
 # Initialize processor
 try:
     processor = ExcelToCPKProcessor()
@@ -80,6 +118,32 @@ async def validate_excel_file(file: UploadFile = File(...)):
             if checkpoint1.get("fix_applied", False):
                 file_to_validate = checkpoint1["fixed_file"]
                 logger.info(f"Using fixed file: {file_to_validate}")
+            
+            # Run enhanced row-level validation for checkpoint 1
+            logger.info("Running enhanced checkpoint 1: Row-level validation")
+            spec_df, data_df, route = processor.analyzer.load_excel(file_to_validate)
+            spec_norm = processor.analyzer.normalize_spec_columns(spec_df, route)
+            enhanced_checkpoint1 = processor.analyzer.validate_checkpoint1_enhanced(spec_norm)
+            logger.info(f"Enhanced checkpoint 1 result: {enhanced_checkpoint1}")
+            
+            # Merge enhanced validation results into checkpoint1
+            checkpoint1["enhanced_validation"] = {
+                "valid": enhanced_checkpoint1["valid"],
+                "message": enhanced_checkpoint1["message"],
+                "row_errors": enhanced_checkpoint1["row_errors"],
+                "row_warnings": enhanced_checkpoint1["row_warnings"],
+                "total_errors": len(enhanced_checkpoint1["row_errors"]),
+                "total_warnings": len(enhanced_checkpoint1["row_warnings"])
+            }
+            
+            # Update checkpoint1 details with enhanced validation info
+            if "details" not in checkpoint1:
+                checkpoint1["details"] = {}
+            checkpoint1["details"].update({
+                "enhanced_validation": enhanced_checkpoint1["details"],
+                "failed_rows": _create_failed_rows_summary(enhanced_checkpoint1["row_errors"], enhanced_checkpoint1["row_warnings"]),
+                "failed_rows_count": len(set(error.get("row", "unknown") for error in enhanced_checkpoint1["row_errors"] + enhanced_checkpoint1["row_warnings"]))
+            })
             
             logger.info("Running checkpoint 2: Spec data validation")
             checkpoint2 = processor.validate_spec_data(file_to_validate)
@@ -344,19 +408,44 @@ async def run_analysis_modular(
                 else:
                     logger.info(f"Skipping ZIP attachment creation for run {run_id}")
 
-            # Clean up temp file
-            os.unlink(tmp_file.name)
+        # Clean up temp file
+        os.unlink(tmp_file.name)
 
-            return {
-                "success": True,
-                "message": "CPK run created and queued",
-                "run": run_json,
-                "storage": {"csv_key": csv_key, "jsl_key": jsl_key, "zip_key": zip_key},
-                "details": result["details"],
-                "validations": result["validations"],
-                "missing_in_data": result["missing_in_data"],
-                "zip_info": zip_result if zip_result["success"] else None
-            }
+        # Convert DataFrames to JSON-serializable format
+        try:
+            serializable_validations = {}
+            if isinstance(result["validations"], dict):
+                for key, value in result["validations"].items():
+                    if isinstance(value, pd.DataFrame):
+                        serializable_validations[key] = value.replace({np.nan: None}).to_dict('records')
+                    else:
+                        serializable_validations[key] = value
+            else:
+                serializable_validations = result["validations"]
+        except Exception as e:
+            logger.error(f"Error serializing validations: {e}")
+            serializable_validations = {"error": "Failed to serialize validations"}
+        
+        # Convert missing_in_data to JSON-serializable format
+        try:
+            if hasattr(result["missing_in_data"], 'to_dict'):
+                serializable_missing_in_data = result["missing_in_data"].replace({np.nan: None}).to_dict('records')
+            else:
+                serializable_missing_in_data = result["missing_in_data"]
+        except Exception as e:
+            logger.error(f"Error serializing missing_in_data: {e}")
+            serializable_missing_in_data = []
+
+        return {
+            "success": True,
+            "message": "CPK run created and queued",
+            "run": run_json,
+            "storage": {"csv_key": csv_key, "jsl_key": jsl_key, "zip_key": zip_key},
+            "details": result["details"],
+            "validations": serializable_validations,
+            "missing_in_data": serializable_missing_in_data,
+            "zip_info": zip_result if zip_result["success"] else None
+        }
             
     except Exception as e:
         logger.error(f"Error running CPK analysis: {str(e)}", exc_info=True)
@@ -488,13 +577,8 @@ async def validate_data_modular(
             if "target" in spec_df.columns:
                 spec_df["target"] = spec_df["target"]
             
-            # Check for required columns
-            required = ["test_name", "usl", "lsl", "target"]
-            missing = [col for col in required if col not in spec_df.columns]
-            
             # Perform additional validations
             spec_norm = processor.analyzer.normalize_spec_columns(spec_df, route)
-            validations = processor.analyzer.validate_spec(spec_norm)
             fai_cols = processor.analyzer.find_fai_columns(data_df)
             matched_spec, missing_in_data = processor.analyzer.match_spec_to_data(spec_norm, fai_cols)
             
@@ -504,18 +588,15 @@ async def validate_data_modular(
             # Prepare validation results in the format expected by frontend
             checkpoints = []
             
-            # Checkpoint 1: Required columns validation
-            checkpoint1_valid = len(missing) == 0
-            checkpoint1_message = "All required columns present" if checkpoint1_valid else f"Missing required columns: {missing}"
+            # Checkpoint 1: Enhanced validation with row-level checks
+            checkpoint1_result = processor.analyzer.validate_checkpoint1_enhanced(spec_norm)
             checkpoints.append({
-                "valid": checkpoint1_valid,
+                "valid": checkpoint1_result["valid"],
                 "checkpoint": 1,
-                "message": checkpoint1_message,
-                "details": {
-                    "required_columns": required,
-                    "missing_columns": missing,
-                    "spec_columns": spec_df.columns.tolist()
-                }
+                "message": checkpoint1_result["message"],
+                "details": checkpoint1_result["details"],
+                "row_errors": checkpoint1_result["row_errors"],
+                "row_warnings": checkpoint1_result["row_warnings"]
             })
             
             # Checkpoint 2: Column mappings validation
@@ -557,6 +638,9 @@ async def validate_data_modular(
             # Overall validation result
             overall_valid = all(checkpoint["valid"] for checkpoint in checkpoints)
             
+            # Get additional validations for compatibility
+            validations = processor.analyzer.validate_spec(spec_norm)
+            
             # Convert validations DataFrames to JSON-serializable format
             serializable_validations = {}
             for key, df in validations.items():
@@ -569,6 +653,64 @@ async def validate_data_modular(
             # Convert missing_in_data DataFrame to JSON-serializable format
             serializable_missing_in_data = missing_in_data.replace({np.nan: None}).to_dict('records') if len(missing_in_data) > 0 else []
             
+            # Count total errors and warnings from all checkpoints
+            total_errors = sum(len(cp.get("row_errors", [])) for cp in checkpoints)
+            total_warnings = sum(len(cp.get("row_warnings", [])) for cp in checkpoints)
+            
+            # Collect all failed rows from all checkpoints
+            all_failed_rows = []
+            all_warning_rows = []
+            
+            for checkpoint in checkpoints:
+                # Add errors from this checkpoint
+                for error in checkpoint.get("row_errors", []):
+                    error["checkpoint"] = checkpoint["checkpoint"]
+                    all_failed_rows.append(error)
+                
+                # Add warnings from this checkpoint
+                for warning in checkpoint.get("row_warnings", []):
+                    warning["checkpoint"] = checkpoint["checkpoint"]
+                    all_warning_rows.append(warning)
+            
+            # Sort failed rows by row number for better readability
+            all_failed_rows.sort(key=lambda x: x.get("row", 0))
+            all_warning_rows.sort(key=lambda x: x.get("row", 0))
+            
+            # Create summary of failed rows by row number
+            failed_rows_summary = {}
+            for error in all_failed_rows:
+                row_num = error.get("row", "unknown")
+                if row_num not in failed_rows_summary:
+                    failed_rows_summary[row_num] = {
+                        "row": row_num,
+                        "test_name": error.get("test_name", "unknown"),
+                        "errors": [],
+                        "warnings": []
+                    }
+                failed_rows_summary[row_num]["errors"].append({
+                    "checkpoint": error.get("checkpoint"),
+                    "issue": error.get("issue"),
+                    "details": error.get("details", ""),
+                    "values": {k: v for k, v in error.items() if k in ["usl", "lsl", "target"]}
+                })
+            
+            # Add warnings to the summary
+            for warning in all_warning_rows:
+                row_num = warning.get("row", "unknown")
+                if row_num not in failed_rows_summary:
+                    failed_rows_summary[row_num] = {
+                        "row": row_num,
+                        "test_name": warning.get("test_name", "unknown"),
+                        "errors": [],
+                        "warnings": []
+                    }
+                failed_rows_summary[row_num]["warnings"].append({
+                    "checkpoint": warning.get("checkpoint"),
+                    "issue": warning.get("issue"),
+                    "details": warning.get("details", ""),
+                    "values": {k: v for k, v in warning.items() if k in ["usl", "lsl", "target"]}
+                })
+            
             validation_results = {
                 "valid": overall_valid,
                 "message": "CPK data validation completed" if overall_valid else "CPK validation completed with issues",
@@ -577,16 +719,22 @@ async def validate_data_modular(
                 "sheets": ["spec", "data"] if route == "spec" else ["meta", "data"],
                 "spec_columns": spec_df.columns.tolist(),
                 "data_columns": data_df.columns.tolist(),
-                "required_columns": required,
-                "missing_required_columns": missing,
+                "required_columns": ["test_name", "usl", "lsl", "target"],
+                "missing_required_columns": checkpoint1_result["details"].get("missing_columns", []),
                 "column_mappings": column_mappings,
                 "fai_columns_found": len(fai_cols),
                 "matched_spec_rows": len(matched_spec),
                 "missing_in_data_rows": len(missing_in_data),
                 "missing_in_data": serializable_missing_in_data,
                 "validations": serializable_validations,
-                "has_errors": not overall_valid,
-                "has_warnings": any(k.startswith("Warning_") for k in validations.keys())
+                "has_errors": not overall_valid or total_errors > 0,
+                "has_warnings": total_warnings > 0 or any(k.startswith("Warning_") for k in validations.keys()),
+                "total_errors": total_errors,
+                "total_warnings": total_warnings,
+                "failed_rows": list(failed_rows_summary.values()),
+                "failed_rows_count": len(failed_rows_summary),
+                "all_errors": all_failed_rows,
+                "all_warnings": all_warning_rows
             }
             
             return validation_results

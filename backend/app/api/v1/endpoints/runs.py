@@ -59,6 +59,16 @@ class RunCommentCreate(BaseModel):
     content: str
     parent_id: Optional[str] = None
 
+class RunCommentCountResponse(BaseModel):
+    run_id: str
+    comment_count: int
+
+class RunArtifactWithCommentsResponse(BaseModel):
+    artifact_id: str
+    filename: str
+    kind: str
+    comment_count: int
+
 class RunCommentUpdate(BaseModel):
     content: str
 
@@ -686,3 +696,111 @@ async def delete_run_comment(
     await db.commit()
     
     return {"message": "Comment deleted successfully"}
+
+@router.post("/comment-counts", response_model=List[RunCommentCountResponse])
+async def get_run_comment_counts(
+    run_ids: List[str],
+    db: AsyncSession = Depends(get_db),
+    current_user: Optional[AppUser] = Depends(get_current_user_optional)
+):
+    """Get comment counts for multiple runs."""
+    if not run_ids:
+        return []
+    
+    # Convert string IDs to UUIDs
+    try:
+        run_uuids = [uuid.UUID(rid) for rid in run_ids]
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid run ID format")
+    
+    # Get runs and check access
+    result = await db.execute(
+        select(Run).where(Run.id.in_(run_uuids), Run.deleted_at.is_(None))
+    )
+    runs = result.scalars().all()
+    
+    if not runs:
+        return []
+    
+    # Check project access for all runs (they should be from the same project)
+    project_ids = set(str(run.project_id) for run in runs)
+    if len(project_ids) > 1:
+        raise HTTPException(status_code=400, detail="All runs must be from the same project")
+    
+    project_id = list(project_ids)[0]
+    await check_project_access(db, project_id, current_user)
+    
+    # Get comment counts for each run
+    result = await db.execute(
+        select(
+            RunComment.run_id,
+            func.count(RunComment.id).label('comment_count')
+        ).where(
+            and_(
+                RunComment.run_id.in_(run_uuids),
+                RunComment.deleted_at.is_(None)
+            )
+        ).group_by(RunComment.run_id)
+    )
+    
+    comment_counts = {str(row.run_id): row.comment_count for row in result}
+    
+    # Return counts for all requested runs (including those with 0 comments)
+    return [
+        RunCommentCountResponse(
+            run_id=rid,
+            comment_count=comment_counts.get(rid, 0)
+        )
+        for rid in run_ids
+    ]
+
+@router.get("/{run_id}/artifacts-with-comments", response_model=List[RunArtifactWithCommentsResponse])
+async def get_run_artifacts_with_comments(
+    run_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: Optional[AppUser] = Depends(get_current_user_optional)
+):
+    """Get artifacts for a run with their comment counts."""
+    # Get run and check access
+    result = await db.execute(select(Run).where(Run.id == uuid.UUID(run_id), Run.deleted_at.is_(None)))
+    run = result.scalar_one_or_none()
+    
+    if not run:
+        raise HTTPException(status_code=404, detail="Run not found")
+    
+    # Check project access
+    await check_project_access(db, run.project_id, current_user)
+    
+    # Get artifacts for this run
+    artifacts_result = await db.execute(
+        select(Artifact).where(Artifact.run_id == uuid.UUID(run_id))
+    )
+    artifacts = artifacts_result.scalars().all()
+    
+    if not artifacts:
+        return []
+    
+    # Get artifact IDs
+    artifact_ids = [str(artifact.id) for artifact in artifacts]
+    
+    # Get comment counts for these artifacts
+    from app.api.v1.endpoints.artifacts import get_artifact_comment_counts
+    comment_counts_response = await get_artifact_comment_counts(artifact_ids, db, current_user)
+    
+    # Create a map of artifact_id to comment_count
+    comment_counts_map = {item.artifact_id: item.comment_count for item in comment_counts_response}
+    
+    # Build response with artifacts and their comment counts
+    result = []
+    for artifact in artifacts:
+        artifact_id = str(artifact.id)
+        comment_count = comment_counts_map.get(artifact_id, 0)
+        
+        result.append(RunArtifactWithCommentsResponse(
+            artifact_id=artifact_id,
+            filename=artifact.filename,
+            kind=artifact.kind,
+            comment_count=comment_count
+        ))
+    
+    return result
