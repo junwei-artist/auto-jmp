@@ -18,7 +18,13 @@ class ExtensionManager:
         try:
             extension_path = self.extensions_dir / extension_name
             if not extension_path.exists():
-                logger.error(f"Extension directory not found: {extension_path}")
+                logger.warning(f"Extension directory not found: {extension_path}")
+                return False
+            
+            # Check if extension.py exists
+            extension_file = extension_path / 'extension.py'
+            if not extension_file.exists():
+                logger.warning(f"Extension file not found: {extension_file} - skipping {extension_name}")
                 return False
             
             # Add the extensions directory to Python path (not the individual extension)
@@ -44,6 +50,11 @@ class ExtensionManager:
             elif extension_name == 'excel2commonality':
                 class_name = 'Excel2CommonalityExtension'
             
+            # Check if the class exists in the module
+            if not hasattr(module, class_name):
+                logger.warning(f"Extension class {class_name} not found in {extension_name} - skipping")
+                return False
+            
             extension_class = getattr(module, class_name)
             
             # Initialize extension
@@ -59,6 +70,9 @@ class ExtensionManager:
             logger.info(f"Extension loaded: {extension_name} v{extension.version}")
             
             return True
+        except ImportError as e:
+            logger.warning(f"Failed to import extension {extension_name}: {e} - skipping")
+            return False
         except Exception as e:
             logger.error(f"Failed to load extension {extension_name}: {e}")
             import traceback
