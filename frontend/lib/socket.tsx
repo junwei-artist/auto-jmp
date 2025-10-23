@@ -19,6 +19,7 @@ export function SocketProvider({ children }: { children: ReactNode }) {
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null)
 
   const connectWebSocket = () => {
+    // For WebSocket, we still need the full URL since rewrites don't work with WS
     const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:4700'
     const wsUrl = backendUrl.replace('http', 'ws')
     

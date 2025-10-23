@@ -42,8 +42,6 @@ export function ProjectComments({ projectId, currentUserRole, onCommentChange }:
   const { ready, user } = useAuth()
   const { t } = useLanguage()
 
-  const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:4700'
-
   // Helper function to get auth token
   const getAuthToken = () => {
     if (typeof window !== 'undefined') {
@@ -55,7 +53,7 @@ export function ProjectComments({ projectId, currentUserRole, onCommentChange }:
   // Fetch comments
   const fetchComments = async () => {
     try {
-      const response = await fetch(`${backendUrl}/api/v1/members/projects/${projectId}/comments`, {
+      const response = await fetch(`/api/v1/members/projects/${projectId}/comments`, {
         headers: {
           'Authorization': `Bearer ${getAuthToken()}`,
         },
@@ -89,7 +87,7 @@ export function ProjectComments({ projectId, currentUserRole, onCommentChange }:
     }
 
     try {
-      const response = await fetch(`${backendUrl}/api/v1/members/projects/${projectId}/comments`, {
+      const response = await fetch(`/api/v1/members/projects/${projectId}/comments`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -127,7 +125,7 @@ export function ProjectComments({ projectId, currentUserRole, onCommentChange }:
     }
 
     try {
-      const response = await fetch(`${backendUrl}/api/v1/members/projects/${projectId}/comments/${editingComment.id}`, {
+      const response = await fetch(`/api/v1/members/projects/${projectId}/comments/${editingComment.id}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -158,7 +156,7 @@ export function ProjectComments({ projectId, currentUserRole, onCommentChange }:
   // Delete comment
   const handleDeleteComment = async (commentId: string) => {
     try {
-      const response = await fetch(`${backendUrl}/api/v1/members/projects/${projectId}/comments/${commentId}`, {
+      const response = await fetch(`/api/v1/members/projects/${projectId}/comments/${commentId}`, {
         method: 'DELETE',
         headers: {
           'Authorization': `Bearer ${getAuthToken()}`,

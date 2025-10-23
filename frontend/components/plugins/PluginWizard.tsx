@@ -113,7 +113,7 @@ export default function PluginWizard({ pluginName, pluginDescription, onComplete
         return
       }
 
-      const response = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/v1/projects/`, {
+      const response = await fetch('/api/v1/projects/', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -156,7 +156,7 @@ export default function PluginWizard({ pluginName, pluginDescription, onComplete
       const formData = new FormData()
       formData.append('file', excelFile)
 
-      const response = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/v1/extensions/${pluginName}/validate`, {
+      const response = await fetch(`/api/v1/extensions/${pluginName}/validate`, {
         method: 'POST',
         body: formData
       })
@@ -197,7 +197,7 @@ export default function PluginWizard({ pluginName, pluginDescription, onComplete
       formData.append('file', excelFile)
 
       // Call a new endpoint for boundary calculation
-      const response = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/v1/extensions/${pluginName}/calculate-boundaries`, {
+      const response = await fetch(`/api/v1/extensions/${pluginName}/calculate-boundaries`, {
         method: 'POST',
         body: formData
       })
@@ -225,7 +225,7 @@ export default function PluginWizard({ pluginName, pluginDescription, onComplete
       formData.append('file', excelFile)
       formData.append('project_id', projectId)
 
-      const response = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/v1/extensions/${pluginName}/process`, {
+      const response = await fetch(`/api/v1/extensions/${pluginName}/process`, {
         method: 'POST',
         body: formData
       })

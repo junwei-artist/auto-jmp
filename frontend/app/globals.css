@@ -223,6 +223,55 @@
   background: hsl(var(--primary) / 0.1);
 }
 
+/* Enhanced animations and transitions */
+@keyframes float {
+  0%, 100% { transform: translateY(0px); }
+  50% { transform: translateY(-10px); }
+}
+
+@keyframes pulse-glow {
+  0%, 100% { box-shadow: 0 0 20px rgba(59, 130, 246, 0.3); }
+  50% { box-shadow: 0 0 30px rgba(59, 130, 246, 0.6); }
+}
+
+@keyframes gradient-shift {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+.animate-float {
+  animation: float 3s ease-in-out infinite;
+}
+
+.animate-pulse-glow {
+  animation: pulse-glow 2s ease-in-out infinite;
+}
+
+.animate-gradient {
+  background-size: 200% 200%;
+  animation: gradient-shift 3s ease infinite;
+}
+
+/* Smooth scrolling */
+html {
+  scroll-behavior: smooth;
+}
+
+/* Enhanced backdrop blur support */
+.backdrop-blur-enhanced {
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+}
+
+/* Glass morphism effect */
+.glass-morphism {
+  background: rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
 /* Responsive design */
 @media (max-width: 768px) {
   .gallery-grid {
@@ -245,5 +294,47 @@
   
   .lightbox-nav.next {
     right: 0.5rem;
+  }
+  
+  /* Mobile-specific animations */
+  .animate-float {
+    animation-duration: 4s;
+  }
+  
+  /* Reduce motion on mobile for better performance */
+  @media (prefers-reduced-motion: reduce) {
+    .animate-float,
+    .animate-pulse-glow,
+    .animate-gradient {
+      animation: none;
+    }
+  }
+}
+
+/* Large screen optimizations */
+@media (min-width: 1200px) {
+  .container {
+    max-width: 1200px;
+  }
+  
+  /* Enhanced animations for larger screens */
+  .animate-float {
+    animation-duration: 2.5s;
+  }
+}
+
+/* High contrast mode support */
+@media (prefers-contrast: high) {
+  .glass-morphism {
+    background: rgba(255, 255, 255, 0.9);
+    border: 2px solid rgba(0, 0, 0, 0.8);
+  }
+}
+
+/* Dark mode support for custom animations */
+@media (prefers-color-scheme: dark) {
+  .glass-morphism {
+    background: rgba(0, 0, 0, 0.3);
+    border: 1px solid rgba(255, 255, 255, 0.1);
   }
 }

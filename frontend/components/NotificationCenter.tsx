@@ -92,13 +92,11 @@ export function NotificationCenter({ className }: NotificationCenterProps) {
   const { ready, user } = useAuth()
   const { t } = useLanguage()
 
-  const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:4700'
-
   // Fetch notifications
   const fetchNotifications = async () => {
     setIsLoading(true)
     try {
-      const response = await fetch(`${backendUrl}/api/v1/organization/notifications`, {
+      const response = await fetch('/api/v1/organization/notifications', {
         headers: {
           'Authorization': `Bearer ${getAuthToken()}`,
         },
@@ -126,7 +124,7 @@ export function NotificationCenter({ className }: NotificationCenterProps) {
   // Mark notification as read
   const markAsRead = async (notificationId: string) => {
     try {
-      const response = await fetch(`${backendUrl}/api/v1/organization/notifications/${notificationId}/read`, {
+      const response = await fetch(`/api/v1/organization/notifications/${notificationId}/read`, {
         method: 'PUT',
         headers: {
           'Authorization': `Bearer ${getAuthToken()}`,
@@ -154,7 +152,7 @@ export function NotificationCenter({ className }: NotificationCenterProps) {
   // Mark all notifications as read
   const markAllAsRead = async () => {
     try {
-      const response = await fetch(`${backendUrl}/api/v1/organization/notifications/mark-all-read`, {
+      const response = await fetch(`/api/v1/organization/notifications/mark-all-read`, {
         method: 'PUT',
         headers: {
           'Authorization': `Bearer ${getAuthToken()}`,
@@ -281,11 +279,9 @@ export function NotificationBell() {
   const [isOpen, setIsOpen] = useState(false)
   const { ready, user } = useAuth()
 
-  const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:4700'
-
   const fetchUnreadCount = async () => {
     try {
-      const response = await fetch(`${backendUrl}/api/v1/organization/notifications?unread_only=true`, {
+      const response = await fetch('/api/v1/organization/notifications?unread_only=true', {
         headers: {
           'Authorization': `Bearer ${getAuthToken()}`,
         },

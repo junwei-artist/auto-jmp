@@ -53,7 +53,7 @@ export default function RunComments({ runId, currentUserRole, onCommentCountChan
       const token = getAuthToken()
       if (!token) return
 
-      const response = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/v1/runs/${runId}/comments`, {
+      const response = await fetch(`/api/v1/runs/${runId}/comments`, {
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json',
@@ -80,7 +80,7 @@ export default function RunComments({ runId, currentUserRole, onCommentCountChan
       const token = getAuthToken()
       if (!token) return
 
-      const response = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/v1/runs/${runId}/comments`, {
+      const response = await fetch(`/api/v1/runs/${runId}/comments`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -112,7 +112,7 @@ export default function RunComments({ runId, currentUserRole, onCommentCountChan
       const token = getAuthToken()
       if (!token) return
 
-      const response = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/v1/runs/${runId}/comments`, {
+      const response = await fetch(`/api/v1/runs/${runId}/comments`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -146,7 +146,7 @@ export default function RunComments({ runId, currentUserRole, onCommentCountChan
       const token = getAuthToken()
       if (!token) return
 
-      const response = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/v1/runs/${runId}/comments/${commentId}`, {
+      const response = await fetch(`/api/v1/runs/${runId}/comments/${commentId}`, {
         method: 'PUT',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -179,7 +179,7 @@ export default function RunComments({ runId, currentUserRole, onCommentCountChan
       const token = getAuthToken()
       if (!token) return
 
-      const response = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/v1/runs/${runId}/comments/${commentId}`, {
+      const response = await fetch(`/api/v1/runs/${runId}/comments/${commentId}`, {
         method: 'DELETE',
         headers: {
           'Authorization': `Bearer ${token}`,

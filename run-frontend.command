@@ -154,7 +154,7 @@ DEFAULT_PORT=$DEFAULT_DEV_PORT
 print_status "Using development mode (default)"
 
 # Get the port to use
-PORT=$(get_port $MODE $DEFAULT_PORT)
+PORT=$(get_port $MODE $DEFAULT_PORT | tr -d '\n\r')
 
 print_status "Starting frontend service in $MODE mode on port $PORT..."
 

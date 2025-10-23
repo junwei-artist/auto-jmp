@@ -2,7 +2,8 @@
 
 import { useAuth } from './auth'
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:4700'
+// Use relative URLs for API calls (they'll be rewritten by Next.js)
+const API_BASE_URL = '/api'
 
 export class ApiClient {
   private baseURL: string
@@ -97,19 +98,19 @@ export const apiClient = new ApiClient()
 // Auth-specific API methods
 export const authApi = {
   async login(email: string, password: string): Promise<any> {
-    return apiClient.post('/api/v1/auth/login', { email, password })
+    return apiClient.post('/v1/auth/login', { email, password })
   },
 
   async register(email: string, password: string): Promise<any> {
-    return apiClient.post('/api/v1/auth/register', { email, password })
+    return apiClient.post('/v1/auth/register', { email, password })
   },
 
   async createGuestSession(): Promise<any> {
-    return apiClient.post('/api/v1/auth/guest')
+    return apiClient.post('/v1/auth/guest')
   },
 
   async getCurrentUser(): Promise<any> {
-    return apiClient.get('/api/v1/auth/me')
+    return apiClient.get('/v1/auth/me')
   },
 
   async refreshToken(): Promise<any> {
@@ -118,8 +119,8 @@ export const authApi = {
       throw new Error('No refresh token available')
     }
     
-    // Create a custom fetch request for refresh token
-    const response = await fetch(`${API_BASE_URL}/api/v1/auth/refresh`, {
+    // Use relative URL - Next.js will rewrite it
+    const response = await fetch('/api/v1/auth/refresh', {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${token}`,
@@ -150,80 +151,80 @@ export const authApi = {
 // Project-specific API methods
 export const projectApi = {
   async createProject(data: { name: string; description?: string; allow_guest?: boolean; is_public?: boolean }): Promise<any> {
-    return apiClient.post('/api/v1/projects/', data)
+    return apiClient.post('/v1/projects/', data)
   },
 
   async getProjects(): Promise<any[]> {
-    return apiClient.get('/api/v1/projects/')
+    return apiClient.get('/v1/projects/')
   },
 
   async getOwnedProjects(): Promise<any[]> {
-    return apiClient.get('/api/v1/projects/owned')
+    return apiClient.get('/v1/projects/owned')
   },
 
   async getMemberProjects(): Promise<any[]> {
-    return apiClient.get('/api/v1/projects/member')
+    return apiClient.get('/v1/projects/member')
   },
 
   async getProject(id: string): Promise<any> {
-    return apiClient.get(`/api/v1/projects/${id}`)
+    return apiClient.get(`/v1/projects/${id}`)
   },
 
   async updateProject(id: string, data: any): Promise<any> {
-    return apiClient.patch(`/api/v1/projects/${id}`, data)
+    return apiClient.patch(`/v1/projects/${id}`, data)
   },
 
   async deleteProject(id: string): Promise<any> {
-    return apiClient.delete(`/api/v1/projects/${id}`)
+    return apiClient.delete(`/v1/projects/${id}`)
   },
 
   async getProjectRuns(projectId: string): Promise<any[]> {
-    return apiClient.get(`/api/v1/projects/${projectId}/runs`)
+    return apiClient.get(`/v1/projects/${projectId}/runs`)
   },
 
   async getProjectArtifacts(projectId: string): Promise<any[]> {
-    return apiClient.get(`/api/v1/projects/${projectId}/artifacts`)
+    return apiClient.get(`/v1/projects/${projectId}/artifacts`)
   }
 }
 
 // Run-specific API methods
 export const runApi = {
   async getRuns(): Promise<any[]> {
-    return apiClient.get('/api/v1/runs/')
+    return apiClient.get('/v1/runs/')
   },
 
   async getRun(id: string): Promise<any> {
-    return apiClient.get(`/api/v1/runs/${id}`)
+    return apiClient.get(`/v1/runs/${id}`)
   },
 
   async createRun(data: any): Promise<any> {
-    return apiClient.post('/api/v1/runs/', data)
+    return apiClient.post('/v1/runs/', data)
   },
 
   async updateRun(id: string, data: any): Promise<any> {
-    return apiClient.put(`/api/v1/runs/${id}`, data)
+    return apiClient.put(`/v1/runs/${id}`, data)
   },
 
   async deleteRun(id: string): Promise<any> {
-    return apiClient.delete(`/api/v1/runs/${id}`)
+    return apiClient.delete(`/v1/runs/${id}`)
   }
 }
 
 // Profile-specific API methods
 export const profileApi = {
   async getProfile(): Promise<any> {
-    return apiClient.get('/api/v1/profile/profile')
+    return apiClient.get('/v1/profile/profile')
   },
 
   async updateProfile(data: { email?: string }): Promise<any> {
-    return apiClient.put('/api/v1/profile/profile', data)
+    return apiClient.put('/v1/profile/profile', data)
   },
 
   async changePassword(data: { current_password: string; new_password: string }): Promise<any> {
-    return apiClient.put('/api/v1/profile/password', data)
+    return apiClient.put('/v1/profile/password', data)
   },
 
   async deleteAccount(): Promise<any> {
-    return apiClient.delete('/api/v1/profile/account')
+    return apiClient.delete('/v1/profile/account')
   }
 }

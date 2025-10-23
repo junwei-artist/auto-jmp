@@ -67,7 +67,7 @@ export default function AdminPluginsPage() {
       }
 
       try {
-        const response = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/v1/auth/me`, {
+        const response = await fetch('/api/v1/auth/me', {
           headers: {
             'Authorization': `Bearer ${token}`,
           },
@@ -97,7 +97,7 @@ export default function AdminPluginsPage() {
   const fetchPlugins = async () => {
     try {
       const token = localStorage.getItem('access_token')
-      const response = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/v1/admin/plugins`, {
+      const response = await fetch('/api/v1/admin/plugins', {
         headers: {
           'Authorization': `Bearer ${token}`,
         },
@@ -116,7 +116,7 @@ export default function AdminPluginsPage() {
   const handleInstallPlugin = async (pluginId: string) => {
     try {
       const token = localStorage.getItem('access_token')
-      const response = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/v1/admin/plugins/${pluginId}/install`, {
+      const response = await fetch(`/api/v1/admin/plugins/${pluginId}/install`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -138,7 +138,7 @@ export default function AdminPluginsPage() {
   const handleUninstallPlugin = async (pluginId: string) => {
     try {
       const token = localStorage.getItem('access_token')
-      const response = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/v1/admin/plugins/${pluginId}/uninstall`, {
+      const response = await fetch(`/api/v1/admin/plugins/${pluginId}/uninstall`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -181,7 +181,7 @@ export default function AdminPluginsPage() {
 
     try {
       const token = localStorage.getItem('access_token')
-      const response = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/v1/admin/plugins/descriptions`, {
+      const response = await fetch('/api/v1/admin/plugins/descriptions', {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`,

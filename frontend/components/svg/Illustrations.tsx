@@ -84,7 +84,7 @@ export const ShareCollaborateSVG = ({ className = "w-16 h-16" }: { className?: s
   </svg>
 )
 
-export const AnalyticsDashboardSVG = ({ className = "w-20 h-20" }: { className?: string }) => (
+export const AnalyticsDashboardSVG = ({ className = "w-20 h-20", title = "Data Analysis" }: { className?: string; title?: string }) => (
   <svg className={className} viewBox="0 0 200 200" fill="none" xmlns="http://www.w3.org/2000/svg">
     {/* Background */}
     <rect x="20" y="20" width="160" height="160" rx="12" fill="#F8FAFC" stroke="#E2E8F0" strokeWidth="2"/>
@@ -100,7 +100,7 @@ export const AnalyticsDashboardSVG = ({ className = "w-20 h-20" }: { className?:
     <rect x="130" y="105" width="12" height="30" fill="#8B5CF6"/>
     
     {/* Chart title */}
-    <text x="100" y="50" textAnchor="middle" className="text-sm font-semibold fill-gray-700">Data Analysis</text>
+    <text x="100" y="50" textAnchor="middle" className="text-sm font-semibold fill-gray-700">{title}</text>
     
     {/* Sidebar */}
     <rect x="20" y="20" width="15" height="160" fill="#3B82F6" opacity="0.1"/>

@@ -40,8 +40,6 @@ export function ProjectAttachments({ projectId, currentUserRole, currentUserId }
   const [description, setDescription] = useState('')
   const [error, setError] = useState<string | null>(null)
 
-  const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:4700'
-
   // Helper function to get auth token
   const getAuthToken = () => {
     if (typeof window !== 'undefined') {
@@ -63,7 +61,7 @@ export function ProjectAttachments({ projectId, currentUserRole, currentUserId }
   const fetchAttachments = async () => {
     try {
       setIsLoading(true)
-      const response = await fetch(`${backendUrl}/api/v1/projects/${projectId}/attachments`, {
+      const response = await fetch(`/api/v1/projects/${projectId}/attachments`, {
         headers: {
           'Authorization': `Bearer ${getAuthToken()}`,
         },
@@ -110,7 +108,7 @@ export function ProjectAttachments({ projectId, currentUserRole, currentUserId }
       formData.append('file', selectedFile)
       formData.append('description', description.trim())
 
-      const response = await fetch(`${backendUrl}/api/v1/projects/${projectId}/attachments`, {
+      const response = await fetch(`/api/v1/projects/${projectId}/attachments`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${getAuthToken()}`,
@@ -144,7 +142,7 @@ export function ProjectAttachments({ projectId, currentUserRole, currentUserId }
     }
 
     try {
-      const response = await fetch(`${backendUrl}/api/v1/projects/${projectId}/attachments/${attachmentId}`, {
+      const response = await fetch(`/api/v1/projects/${projectId}/attachments/${attachmentId}`, {
         method: 'DELETE',
         headers: {
           'Authorization': `Bearer ${getAuthToken()}`,
@@ -168,7 +166,11 @@ export function ProjectAttachments({ projectId, currentUserRole, currentUserId }
   // Download attachment
   const handleDownload = (attachment: ProjectAttachment) => {
     const link = document.createElement('a')
-    link.href = `${backendUrl}${attachment.download_url}`
+    link.href = attachment.download_url.startsWith('/api') 
+      ? attachment.download_url
+      : attachment.download_url.startsWith('/') 
+        ? `/api${attachment.download_url}`
+        : attachment.download_url
     link.download = attachment.filename
     link.target = '_blank'
     document.body.appendChild(link)

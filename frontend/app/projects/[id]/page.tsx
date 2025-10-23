@@ -119,7 +119,7 @@ export default function ProjectPage() {
   useEffect(() => {
     const fetchServerInfo = async () => {
       try {
-        const response = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/v1/server/server-info`)
+        const response = await fetch('/api/v1/server/server-info')
         if (response.ok) {
           const info = await response.json()
           setServerInfo(info)
@@ -185,7 +185,7 @@ export default function ProjectPage() {
         throw new Error('No authentication token available')
       }
       
-      const response = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/v1/members/projects/${projectId}/members`, {
+      const response = await fetch(`/api/v1/members/projects/${projectId}/members`, {
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json',
@@ -230,7 +230,7 @@ export default function ProjectPage() {
       const token = getAuthToken()
       if (!token) return
 
-      const response = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/v1/runs/comment-counts`, {
+      const response = await fetch(`/api/v1/runs/comment-counts`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -260,7 +260,7 @@ export default function ProjectPage() {
       const token = getAuthToken()
       if (!token) return
 
-      const response = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/v1/runs/${runId}/artifacts-with-comments`, {
+      const response = await fetch(`/api/v1/runs/${runId}/artifacts-with-comments`, {
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json',
@@ -290,7 +290,7 @@ export default function ProjectPage() {
 
       // Fetch all runs' artifact comments in parallel
       const promises = runIds.map(runId => 
-        fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/v1/runs/${runId}/artifacts-with-comments`, {
+        fetch(`/api/v1/runs/${runId}/artifacts-with-comments`, {
           headers: {
             'Authorization': `Bearer ${token}`,
             'Content-Type': 'application/json',
@@ -390,7 +390,7 @@ export default function ProjectPage() {
       const csvContentType = csvFile.type || (csvFile.name.endsWith('.csv') ? 'text/csv' : 'text/plain')
       const jslContentType = jslFile.type || (jslFile.name.endsWith('.jsl') ? 'text/x-jmp-script' : 'text/plain')
 
-      const csvUploadResponse = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/v1/uploads/presign`, {
+      const csvUploadResponse = await fetch(`/api/v1/uploads/presign`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${getAuthToken()}`,
@@ -402,7 +402,7 @@ export default function ProjectPage() {
         }),
       })
 
-      const jslUploadResponse = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/v1/uploads/presign`, {
+      const jslUploadResponse = await fetch(`/api/v1/uploads/presign`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${getAuthToken()}`,
@@ -428,7 +428,7 @@ export default function ProjectPage() {
       const jslFormData = new FormData()
       jslFormData.append('file', jslFile)
 
-      const csvUploadResult = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}${csvUploadData.upload_url}`, {
+      const csvUploadResult = await fetch(`/api${csvUploadData.upload_url}`, {
         method: 'POST',
         body: csvFormData,
         headers: {
@@ -436,7 +436,7 @@ export default function ProjectPage() {
         },
       })
 
-      const jslUploadResult = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}${jslUploadData.upload_url}`, {
+      const jslUploadResult = await fetch(`/api${jslUploadData.upload_url}`, {
         method: 'POST',
         body: jslFormData,
         headers: {
@@ -449,7 +449,7 @@ export default function ProjectPage() {
       }
 
       // Start the run
-      const runResponse = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/v1/runs`, {
+      const runResponse = await fetch(`/api/v1/runs`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${getAuthToken()}`,
@@ -941,7 +941,7 @@ export default function ProjectPage() {
                                   onClick={async () => {
                                     try {
                                       // Download the ZIP file directly
-                                      const downloadResponse = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/v1/uploads/download-zip/${run.id}`, {
+                                      const downloadResponse = await fetch(`/api/v1/uploads/download-zip/${run.id}`, {
                                         headers: {
                                           'Authorization': `Bearer ${getAuthToken()}`,
                                         },
@@ -1237,7 +1237,7 @@ export default function ProjectPage() {
                                 onClick={async () => {
                                   try {
                                     // Download the ZIP file directly
-                                    const downloadResponse = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/v1/uploads/download-zip/${run.id}`, {
+                                    const downloadResponse = await fetch(`/api/v1/uploads/download-zip/${run.id}`, {
                                       headers: {
                                         'Authorization': `Bearer ${getAuthToken()}`,
                                       },

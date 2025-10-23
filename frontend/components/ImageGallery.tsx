@@ -66,7 +66,7 @@ export function ImageGallery({ runId, projectId, run, onClose }: ImageGalleryPro
   const { data: artifacts, isLoading, error, refetch } = useQuery({
     queryKey: ['run-artifacts', runId],
     queryFn: async () => {
-      const response = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/v1/runs/${runId}/artifacts`, {
+      const response = await fetch(`/api/v1/runs/${runId}/artifacts`, {
         headers: {
           'Authorization': `Bearer ${getAuthToken()}`,
           'Content-Type': 'application/json',
@@ -86,16 +86,18 @@ export function ImageGallery({ runId, projectId, run, onClose }: ImageGalleryPro
     artifact.kind === 'output_image' && artifact.mime_type?.startsWith('image/')
   ).map(artifact => ({
     ...artifact,
-    download_url: artifact.download_url?.startsWith('/') 
-      ? `${process.env.NEXT_PUBLIC_BACKEND_URL}${artifact.download_url}`
-      : artifact.download_url
+    download_url: artifact.download_url?.startsWith('/api') 
+      ? artifact.download_url
+      : artifact.download_url?.startsWith('/') 
+        ? `/api${artifact.download_url}`
+        : artifact.download_url
   })) || []
 
   // Fetch ZIP download URL
   const { data: zipData } = useQuery({
     queryKey: ['run-zip', runId],
     queryFn: async () => {
-      const response = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/v1/runs/${runId}/download-zip`, {
+      const response = await fetch(`/api/v1/runs/${runId}/download-zip`, {
         headers: {
           'Authorization': `Bearer ${getAuthToken()}`,
           'Content-Type': 'application/json',
@@ -115,7 +117,7 @@ export function ImageGallery({ runId, projectId, run, onClose }: ImageGalleryPro
     queryFn: async () => {
       if (imageArtifacts.length === 0) return []
       
-      const response = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/v1/artifacts/comment-counts`, {
+      const response = await fetch('/api/v1/artifacts/comment-counts', {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${getAuthToken()}`,
@@ -170,9 +172,11 @@ export function ImageGallery({ runId, projectId, run, onClose }: ImageGalleryPro
     
     setIsDownloading(true)
     try {
-      const zipUrl = zipData.zip_download_url.startsWith('/') 
-        ? `${process.env.NEXT_PUBLIC_BACKEND_URL}${zipData.zip_download_url}`
-        : zipData.zip_download_url
+      const zipUrl = zipData.zip_download_url.startsWith('/api') 
+        ? zipData.zip_download_url
+        : zipData.zip_download_url.startsWith('/') 
+          ? `/api${zipData.zip_download_url}`
+          : zipData.zip_download_url
       const response = await fetch(zipUrl, {
         headers: {
           'Authorization': `Bearer ${getAuthToken()}`,

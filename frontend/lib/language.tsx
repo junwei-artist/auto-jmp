@@ -325,12 +325,31 @@ const translations = {
     // Landing Page
     'landing.title': 'Data Analysis Platform',
     'landing.subtitle': 'Upload your CSV and JSL files to generate beautiful boxplot visualizations with JMP. Real-time processing, interactive galleries, and seamless sharing.',
+    'landing.hero.title': 'Transform Your',
+    'landing.hero.subtitle': 'Data Analysis',
+    'landing.hero.description': 'Upload, analyze, and visualize your data with powerful interactive visualizations.',
+    'landing.features.realTime.description.custom': 'Watch your data transform in real-time with interactive visualizations and instant results.',
     'landing.features.easyUpload.title': 'Easy Upload',
     'landing.features.easyUpload.description': 'Drag and drop your CSV and JSL files for instant analysis',
     'landing.features.realTime.title': 'Real-time Processing',
     'landing.features.realTime.description': 'Watch your analysis progress in real-time with live updates',
     'landing.features.share.title': 'Share & Collaborate',
     'landing.features.share.description': 'Share your results with team members or create public links',
+    
+    // Landing page additional text
+    'landing.badge': 'Real-time Data Analysis Platform',
+    'landing.cta.tryNow': 'Try It Now',
+    'landing.cta.getStarted': 'Get Started',
+    'landing.features.title': 'Powerful Features',
+    'landing.features.subtitle': 'Everything you need to analyze, visualize, and share your data insights',
+    'landing.auth.title': 'Get Started Today',
+    'landing.auth.subtitle': 'Choose how you\'d like to access the platform',
+    'landing.footer.platform': 'Advanced Data Visualization Platform',
+    
+    // SVG Text
+    'svg.dataAnalysis': 'Data Analysis',
+    'svg.liveDemo': 'Live Demo',
+    'svg.clickToUpload': 'Click to upload and process',
     
     // Help
     'help.title': 'Help',
@@ -853,12 +872,31 @@ const translations = {
     // Landing Page
     'landing.title': '数据分析平台',
     'landing.subtitle': '上传您的CSV和JSL文件，使用JMP生成美观的箱线图可视化。实时处理、交互式画廊和无缝分享。',
+    'landing.hero.title': '变革您的',
+    'landing.hero.subtitle': '数据分析',
+    'landing.hero.description': '上传、分析和可视化您的数据，提供强大的交互式可视化。',
+    'landing.features.realTime.description.custom': '通过交互式可视化和即时结果，实时观看您的数据转换。',
     'landing.features.easyUpload.title': '轻松上传',
     'landing.features.easyUpload.description': '拖放您的CSV和JSL文件进行即时分析',
     'landing.features.realTime.title': '实时处理',
     'landing.features.realTime.description': '通过实时更新观看您的分析进度',
     'landing.features.share.title': '分享与协作',
     'landing.features.share.description': '与团队成员分享您的结果或创建公开链接',
+    
+    // Landing page additional text
+    'landing.badge': '实时数据分析平台',
+    'landing.cta.tryNow': '立即试用',
+    'landing.cta.getStarted': '开始使用',
+    'landing.features.title': '强大功能',
+    'landing.features.subtitle': '分析、可视化和分享数据洞察所需的一切',
+    'landing.auth.title': '今天就开始',
+    'landing.auth.subtitle': '选择您希望如何访问平台',
+    'landing.footer.platform': '高级数据可视化平台',
+    
+    // SVG Text
+    'svg.dataAnalysis': '数据分析',
+    'svg.liveDemo': '实时演示',
+    'svg.clickToUpload': '点击上传和处理',
     
     // Help
     'help.title': '帮助',

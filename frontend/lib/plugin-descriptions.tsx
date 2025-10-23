@@ -37,7 +37,7 @@ export function usePluginDescriptions() {
       setError(null)
 
       try {
-        const response = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/v1/admin/plugins/descriptions`)
+        const response = await fetch('/api/v1/admin/plugins/descriptions')
         
         if (response.ok) {
           const data = await response.json()
@@ -71,7 +71,7 @@ export function usePluginDescriptions() {
   const refreshDescriptions = async () => {
     cachedDescriptions = null
     cacheTimestamp = 0
-    const response = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/v1/admin/plugins/descriptions`)
+    const response = await fetch('/api/v1/admin/plugins/descriptions')
     if (response.ok) {
       const data = await response.json()
       cachedDescriptions = data

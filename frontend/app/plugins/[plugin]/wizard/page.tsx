@@ -76,7 +76,7 @@ function ExcelProcessingWizardContent() {
   const fetchProjectInfo = async () => {
     try {
       const token = localStorage.getItem('access_token')
-      const response = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/v1/projects/${projectId}`, {
+      const response = await fetch(`/api/v1/projects/${projectId}`, {
         headers: {
           'Authorization': `Bearer ${token}`
         }
@@ -157,7 +157,7 @@ function ExcelProcessingWizardContent() {
       formData.append('file', excelFile)
 
       const token = localStorage.getItem('access_token')
-      const response = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/v1/extensions/${pluginName}/load-file`, {
+      const response = await fetch(`/api/v1/extensions/${pluginName}/load-file`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`
@@ -198,7 +198,7 @@ function ExcelProcessingWizardContent() {
       formData.append('cat_var', selectedCategoricalVariable)
 
       const token = localStorage.getItem('access_token')
-      const response = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/v1/extensions/${pluginName}/validate-data`, {
+      const response = await fetch(`/api/v1/extensions/${pluginName}/validate-data`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`
@@ -236,7 +236,7 @@ function ExcelProcessingWizardContent() {
       formData.append('cat_var', selectedCategoricalVariable)
 
       const token = localStorage.getItem('access_token')
-      const response = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/v1/extensions/${pluginName}/process-data`, {
+      const response = await fetch(`/api/v1/extensions/${pluginName}/process-data`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`
@@ -268,7 +268,7 @@ function ExcelProcessingWizardContent() {
       formData.append('cat_var', selectedCategoricalVariable)
 
       const token = localStorage.getItem('access_token')
-      const response = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/v1/extensions/${pluginName}/generate-files`, {
+      const response = await fetch(`/api/v1/extensions/${pluginName}/generate-files`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`
@@ -316,7 +316,7 @@ function ExcelProcessingWizardContent() {
       formData.append('project_description', projectInfo?.description || '')
 
       const token = localStorage.getItem('access_token')
-      const response = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/v1/extensions/${pluginName}/run-analysis`, {
+      const response = await fetch(`/api/v1/extensions/${pluginName}/run-analysis`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`
@@ -362,7 +362,7 @@ function ExcelProcessingWizardContent() {
     const timer = setInterval(async () => {
       attempts += 1
       try {
-        const resp = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/v1/runs/${id}`)
+        const resp = await fetch(`/api/v1/runs/${id}`)
         if (!resp.ok) return
         const run = await resp.json()
         setRunStatus(run.status)
