@@ -428,7 +428,7 @@ export default function ProjectPage() {
       const jslFormData = new FormData()
       jslFormData.append('file', jslFile)
 
-      const csvUploadResult = await fetch(`/api${csvUploadData.upload_url}`, {
+      const csvUploadResult = await fetch(csvUploadData.upload_url, {
         method: 'POST',
         body: csvFormData,
         headers: {
@@ -436,7 +436,7 @@ export default function ProjectPage() {
         },
       })
 
-      const jslUploadResult = await fetch(`/api${jslUploadData.upload_url}`, {
+      const jslUploadResult = await fetch(jslUploadData.upload_url, {
         method: 'POST',
         body: jslFormData,
         headers: {

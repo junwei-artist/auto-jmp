@@ -86,6 +86,7 @@ async def check_project_access(
     return project
 
 @router.post("/", response_model=ProjectResponse)
+@router.post("", response_model=ProjectResponse)
 async def create_project(
     project_data: ProjectCreate,
     db: AsyncSession = Depends(get_db),
@@ -164,6 +165,7 @@ async def create_project(
     )
 
 @router.get("/", response_model=List[ProjectResponse])
+@router.get("", response_model=List[ProjectResponse])
 async def list_projects(
     db: AsyncSession = Depends(get_db),
     current_user: Optional[AppUser] = Depends(get_current_user_optional)
