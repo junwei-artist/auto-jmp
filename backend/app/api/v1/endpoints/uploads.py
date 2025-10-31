@@ -148,19 +148,48 @@ async def file_serve_query(
         print(f"Base64 decode error: {e}")
         raise HTTPException(status_code=400, detail="Invalid path parameter")
     
-    # Security check - only allow files in specific directories
+    # Construct full file path using the storage system
+    from app.core.storage import local_storage
+    full_path = local_storage.get_file_path(storage_key)
+
+    # SECURITY: allow only whitelisted prefixes or absolute paths under backend/tasks
     allowed_prefixes = ["tasks/", "uploads/"]
-    if not any(storage_key.startswith(prefix) for prefix in allowed_prefixes):
-        raise HTTPException(status_code=403, detail="Access denied")
+
+    def is_within_backend_tasks(p: Path) -> bool:
+        try:
+            backend_dir = Path(__file__).resolve().parents[3]  # backend/
+            tasks_dir = backend_dir / "tasks"
+            p = p.resolve()
+            return tasks_dir in p.parents or p == tasks_dir
+        except Exception:
+            return False
+
+    if storage_key.startswith("/"):
+        # Absolute path: only allow if it points inside backend/tasks
+        if not is_within_backend_tasks(full_path):
+            raise HTTPException(status_code=403, detail="Access denied")
+    else:
+        # Relative key: must start with allowed prefixes
+        if not any(storage_key.startswith(prefix) for prefix in allowed_prefixes):
+            raise HTTPException(status_code=403, detail="Access denied")
     
-    # Construct full file path relative to backend directory
-    # Use current working directory (should be backend directory when uvicorn runs)
-    backend_dir = Path.cwd()
-    full_path = backend_dir / storage_key
+    # If relative "tasks/" but not found under uploads, look in backend/tasks directly
+    if not full_path.exists() and storage_key.startswith("tasks/"):
+        task_path = Path(storage_key)
+        # Try to anchor to backend/tasks
+        backend_dir = Path(__file__).resolve().parents[3]
+        candidate = (backend_dir / task_path).resolve()
+        if candidate.exists():
+            full_path = candidate
+        else:
+            # Explicit fallback to user-specified absolute backend path
+            fixed_backend = Path("/Users/lytech/Documents/GitHub/auto-jmp/backend")
+            fixed_candidate = (fixed_backend / task_path).resolve()
+            if fixed_candidate.exists():
+                full_path = fixed_candidate
     
     # Debug info
     print(f"DEBUG: storage_key = {storage_key}")
-    print(f"DEBUG: backend_dir = {backend_dir}")
     print(f"DEBUG: full_path = {full_path}")
     print(f"DEBUG: full_path.exists() = {full_path.exists()}")
     print(f"DEBUG: full_path.is_file() = {full_path.is_file() if full_path.exists() else False}")
@@ -171,13 +200,13 @@ async def file_serve_query(
     
     # Determine MIME type based on file extension
     mime_type = "application/octet-stream"
-    if storage_key.endswith('.png'):
+    if str(full_path).endswith('.png'):
         mime_type = "image/png"
-    elif storage_key.endswith('.jpg') or storage_key.endswith('.jpeg'):
+    elif str(full_path).endswith('.jpg') or str(full_path).endswith('.jpeg'):
         mime_type = "image/jpeg"
-    elif storage_key.endswith('.csv'):
+    elif str(full_path).endswith('.csv'):
         mime_type = "text/csv"
-    elif storage_key.endswith('.jsl'):
+    elif str(full_path).endswith('.jsl'):
         mime_type = "text/plain"
     
     return FileResponse(
@@ -213,14 +242,18 @@ async def serve_file_query(
     if not any(storage_key.startswith(prefix) for prefix in allowed_prefixes):
         raise HTTPException(status_code=403, detail="Access denied")
     
-    # Construct full file path relative to backend directory
-    # Use current working directory (should be backend directory when uvicorn runs)
-    backend_dir = Path.cwd()
-    full_path = backend_dir / storage_key
+    # Construct full file path using the storage system
+    from app.core.storage import local_storage
+    full_path = local_storage.get_file_path(storage_key)
+    
+    # If file doesn't exist in uploads, check if it's a task file in the root tasks directory
+    if not full_path.exists() and storage_key.startswith("tasks/"):
+        # For task files, look in the root tasks directory instead of uploads/tasks
+        task_path = Path(storage_key)
+        full_path = task_path
     
     # Debug info
     print(f"DEBUG: storage_key = {storage_key}")
-    print(f"DEBUG: backend_dir = {backend_dir}")
     print(f"DEBUG: full_path = {full_path}")
     print(f"DEBUG: full_path.exists() = {full_path.exists()}")
     print(f"DEBUG: full_path.is_file() = {full_path.is_file() if full_path.exists() else False}")
@@ -275,42 +308,90 @@ async def download_run_zip(
         )
         artifacts = artifacts_result.scalars().all()
         
-        # Find task directory from artifacts
-        task_dir = None
+        # Find task directory from artifacts (support multiple patterns)
+        task_dir_rel: Optional[str] = None
+        uploads_run_dir_rel: Optional[str] = None
+
+        # Helper to extract tasks/... directory from any string
+        def extract_tasks_dir(s: str) -> Optional[str]:
+            if not s:
+                return None
+            # Normalize separators
+            s2 = s.replace('\\', '/')
+            idx = s2.find('tasks/')
+            if idx >= 0:
+                parts = s2[idx:].split('/')
+                if len(parts) >= 2:
+                    return '/'.join(parts[:2])  # tasks/task_xxx
+            return None
+
         for artifact in artifacts:
-            if artifact.storage_key and artifact.storage_key.startswith("tasks/"):
-                # Extract task directory from storage key
-                # e.g., "tasks/task_20251011_231215/FAI10.png" -> "tasks/task_20251011_231215"
-                task_dir = "/".join(artifact.storage_key.split("/")[:2])
+            sk = artifact.storage_key or ""
+            # Case 1: direct tasks/ prefix
+            if sk.startswith("tasks/"):
+                task_dir_rel = '/'.join(sk.split('/')[:2])
                 break
+            # Case 2: absolute path containing backend/tasks
+            tasks_dir = extract_tasks_dir(sk)
+            if tasks_dir:
+                task_dir_rel = tasks_dir
+                break
+            # Case 3: uploads/runs/{run_id}/...
+            s2 = sk.replace('\\', '/')
+            marker = f"uploads/runs/{run_id}"
+            if marker in s2:
+                uploads_run_dir_rel = marker
+
+        # Determine backend_dir (root backend path)
+        backend_dir = Path(__file__).resolve().parents[3]
         
-        if not task_dir:
-            raise HTTPException(status_code=404, detail="No task directory found for this run")
+        full_task_dir: Optional[Path] = None
+        if task_dir_rel:
+            # Prefer tasks dir
+            candidate = (backend_dir / task_dir_rel).resolve()
+            if candidate.exists():
+                full_task_dir = candidate
+            else:
+                # Try under uploads as fallback
+                from app.core.storage import local_storage
+                candidate2 = (local_storage.base_path / task_dir_rel).resolve()
+                if candidate2.exists():
+                    full_task_dir = candidate2
+                else:
+                    # Explicit fallback to user-specified absolute backend path
+                    fixed_backend = Path("/Users/lytech/Documents/GitHub/auto-jmp/backend")
+                    candidate3 = (fixed_backend / task_dir_rel).resolve()
+                    if candidate3.exists():
+                        full_task_dir = candidate3
+        elif uploads_run_dir_rel:
+            # Try uploads/runs/{run_id}
+            from app.core.storage import local_storage
+            candidate = (local_storage.base_path / f"runs/{run_id}").resolve()
+            if candidate.exists():
+                full_task_dir = candidate
         
-        # Construct full task directory path
-        # Use current working directory (should be backend directory when uvicorn runs)
-        backend_dir = Path.cwd()
-        full_task_dir = backend_dir / task_dir
-        
-        if not full_task_dir.exists():
+        if not full_task_dir or not full_task_dir.exists():
             raise HTTPException(status_code=404, detail="Task directory not found")
         
         # Create temporary ZIP file
-        with tempfile.NamedTemporaryFile(delete=False, suffix='.zip') as temp_zip:
-            with zipfile.ZipFile(temp_zip.name, 'w', zipfile.ZIP_DEFLATED) as zipf:
-                # Add all files from the task directory
-                for file_path in full_task_dir.rglob('*'):
-                    if file_path.is_file():
-                        # Add file to ZIP with relative path
-                        arcname = file_path.relative_to(full_task_dir)
-                        zipf.write(file_path, arcname)
-            
-            # Return the ZIP file
-            return FileResponse(
-                path=temp_zip.name,
-                media_type="application/zip",
-                filename=f"run_{run_id}_results.zip"
-            )
+        temp_zip_path = tempfile.mktemp(suffix='.zip')
+        try:
+            with zipfile.ZipFile(temp_zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
+                # Add all files from the directory
+                for root, _, files in os.walk(full_task_dir):
+                    for file in files:
+                        fp = Path(root) / file
+                        # Preserve relative structure inside zip
+                        arcname = str(fp.relative_to(full_task_dir))
+                        zipf.write(str(fp), arcname)
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Failed to create ZIP file: {str(e)}")
+        
+        return FileResponse(
+            path=temp_zip_path,
+            media_type='application/zip',
+            filename=f"run_{run_id}_results.zip"
+        )
 
 @router.get("/files/{storage_key}")
 async def serve_file_direct(
@@ -329,9 +410,15 @@ async def serve_file_direct(
         logger.warning(f"Access denied for storage_key: {storage_key}")
         raise HTTPException(status_code=403, detail="Access denied")
     
-    # Construct full file path relative to backend directory
-    backend_dir = Path(__file__).parent.parent.parent.parent
-    full_path = backend_dir / storage_key
+    # Construct full file path using the storage system
+    from app.core.storage import local_storage
+    full_path = local_storage.get_file_path(storage_key)
+    
+    # If file doesn't exist in uploads, check if it's a task file in the root tasks directory
+    if not full_path.exists() and storage_key.startswith("tasks/"):
+        # For task files, look in the root tasks directory instead of uploads/tasks
+        task_path = Path(storage_key)
+        full_path = task_path
     
     logger.info(f"Serving file: {full_path}")
     

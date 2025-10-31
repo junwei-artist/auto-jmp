@@ -168,6 +168,13 @@ export default function HomePage() {
             </div>
             <div className="flex items-center space-x-4">
               <Button 
+                variant="ghost"
+                onClick={() => window.open('/community', '_self')}
+                className="flex items-center space-x-2 hover:bg-blue-50"
+              >
+                <span>Community</span>
+              </Button>
+              <Button 
                 variant="ghost" 
                 onClick={() => window.open('/help', '_blank')}
                 className="flex items-center space-x-2 hover:bg-blue-50"

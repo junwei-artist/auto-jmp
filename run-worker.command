@@ -73,6 +73,15 @@ print_status "Activating virtual environment..."
 source venv/bin/activate
 print_success "Virtual environment activated"
 
+# Force JMP application path (hardcoded as requested)
+export JMP_APP_PATH="/Applications/JMP Pro 17.app"
+print_status "Using JMP app: $JMP_APP_PATH"
+
+# Force using this project's Python and Celery module
+PY_BIN="$PROJECT_ROOT/backend/venv/bin/python"
+CELERY_BIN="$PROJECT_ROOT/backend/venv/bin/celery"
+CELERY_RUN=("$PY_BIN" -m celery)
+
 # Check for Redis
 print_status "Checking for Redis..."
 if ! command -v redis-server &> /dev/null; then
@@ -118,6 +127,26 @@ if ! python -c "import celery" &> /dev/null; then
 fi
 print_success "Celery found"
 
+# Clean up stale Celery workers and PID files
+print_status "Checking for stale Celery workers from other repos..."
+# Try to stop any existing celery workers for this app to avoid wrong CWD/venv usage
+pkill -f 'celery.*app.core.celery' || true
+sleep 1
+
+# Remove possible stale PID/log files
+rm -f /tmp/celery-service.pid 2>/dev/null || true
+
+# Verify celery binary path (should be from this venv)
+print_status "Celery binary (PATH): $(which celery)"
+print_status "Python executable (forced): $PY_BIN"
+print_status "Celery module path (forced runtime): $($PY_BIN -c 'import celery,sys; print(celery.__file__)')"
+print_status "Sys.executable (forced runtime): $($PY_BIN -c 'import sys; print(sys.executable)')"
+
+# Purge any queued tasks to avoid old tasks stuck in old workers
+print_status "Purging any queued Celery tasks..."
+PYTHONPATH="" PYTHONNOUSERSITE=1 "${CELERY_RUN[@]}" -A app.core.celery purge -f || true
+print_success "Queue purge complete"
+
 # Create output directory
 print_status "Creating output directory..."
 mkdir -p uploads/outputs
@@ -130,4 +159,7 @@ print_status "Press Ctrl+C to stop the worker"
 echo ""
 
 # Start the Celery worker
-exec celery -A app.core.celery worker --loglevel=info --queues=jmp --concurrency=1
+PYTHONPATH="" PYTHONNOUSERSITE=1 exec "${CELERY_RUN[@]}" --workdir "$PROJECT_ROOT/backend" \
+  -A app.core.celery worker \
+  -n service@%h \
+  -E --loglevel=debug --queues=jmp --concurrency=1

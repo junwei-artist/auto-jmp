@@ -779,16 +779,60 @@ async def download_public_artifact(
     if not artifact:
         raise HTTPException(status_code=404, detail="Artifact not found")
     
+    # Normalize storage key and handle different path formats
+    from app.core.storage import local_storage
+    sk = artifact.storage_key or ""
+    normalized = sk.replace('\\', '/')
+    
     # Security check - only allow files in specific directories
     allowed_prefixes = ["tasks/", "uploads/"]
-    if not any(artifact.storage_key.startswith(prefix) for prefix in allowed_prefixes):
+    has_allowed_prefix = any(normalized.startswith(prefix) for prefix in allowed_prefixes)
+    has_tasks_in_path = '/tasks/' in normalized
+    
+    if not has_allowed_prefix and not has_tasks_in_path:
         raise HTTPException(status_code=403, detail="Access denied")
     
-    # Construct full file path
-    backend_dir = Path.cwd()
-    full_path = backend_dir / artifact.storage_key
+    # Construct full file path using the storage system
+    full_path = local_storage.get_file_path(normalized)
     
-    if not full_path.exists():
+    # If relative "tasks/" but not found under uploads, look in backend/tasks directly
+    if not full_path.exists() and normalized.startswith("tasks/"):
+        task_path = Path(normalized)
+        # Try to anchor to backend/tasks
+        backend_dir = Path(__file__).resolve().parents[3]
+        candidate = (backend_dir / task_path).resolve()
+        if candidate.exists():
+            full_path = candidate
+        else:
+            # Explicit fallback to user-specified absolute backend path
+            fixed_backend = Path("/Users/lytech/Documents/GitHub/auto-jmp/backend")
+            fixed_candidate = (fixed_backend / task_path).resolve()
+            if fixed_candidate.exists():
+                full_path = fixed_candidate
+    
+    # Handle absolute paths containing /tasks/
+    if not full_path.exists() and normalized.startswith('/') and '/tasks/' in normalized:
+        # Try to extract relative tasks path from absolute path
+        idx = normalized.find('/tasks/')
+        if idx >= 0:
+            relative_tasks = normalized[idx+1:]  # Keep tasks/...
+            backend_dir = Path(__file__).resolve().parents[3]
+            candidate = (backend_dir / relative_tasks).resolve()
+            if candidate.exists():
+                full_path = candidate
+            else:
+                # Explicit fallback
+                fixed_backend = Path("/Users/lytech/Documents/GitHub/auto-jmp/backend")
+                fixed_candidate = (fixed_backend / relative_tasks).resolve()
+                if fixed_candidate.exists():
+                    full_path = fixed_candidate
+            # Also try with explicit backend path
+            service_backend = Path("/Users/lytech/Documents/service/auto-jmp/backend")
+            service_candidate = (service_backend / relative_tasks).resolve()
+            if service_candidate.exists():
+                full_path = service_candidate
+    
+    if not full_path.exists() or not full_path.is_file():
         raise HTTPException(status_code=404, detail="File not found")
     
     # Return the file
@@ -853,9 +897,9 @@ async def download_public_run_zip(
     if not task_dir:
         raise HTTPException(status_code=404, detail="No task directory found for this run")
     
-    # Construct full task directory path
-    backend_dir = Path.cwd()
-    full_task_dir = backend_dir / task_dir
+    # Construct full task directory path using the storage system
+    from app.core.storage import local_storage
+    full_task_dir = local_storage.base_path / task_dir
     
     if not full_task_dir.exists():
         raise HTTPException(status_code=404, detail="Task directory not found")

@@ -1,12 +1,12 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func
+from sqlalchemy import select, func, update
 from pydantic import BaseModel
 from typing import List, Optional
 import uuid
 
 from app.core.database import get_db
-from app.core.auth import get_current_user
+from app.core.auth import get_current_user, get_password_hash
 from app.models import AppUser, Project, Run, Artifact, AuditLog, ProjectMember, AppSetting
 from app.core.extensions import ExtensionManager
 
@@ -192,6 +192,66 @@ async def list_runs_admin(
         ))
     
     return runs
+
+class PasswordResetRequest(BaseModel):
+    user_id: str
+    new_password: Optional[str] = "123456"  # Default to 123456
+
+class PasswordResetResponse(BaseModel):
+    message: str
+    user_id: str
+    email: Optional[str]
+
+@router.post("/users/reset-password", response_model=PasswordResetResponse)
+async def reset_user_password(
+    request: PasswordResetRequest,
+    db: AsyncSession = Depends(get_db),
+    admin_user: AppUser = Depends(require_admin)
+):
+    """Reset any user's password. Defaults to '123456' if not specified."""
+    try:
+        user_uuid = uuid.UUID(request.user_id)
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid user ID"
+        )
+    
+    result = await db.execute(select(AppUser).where(AppUser.id == user_uuid))
+    user = result.scalar_one_or_none()
+    
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found"
+        )
+    
+    # Hash the new password
+    hashed_password = get_password_hash(request.new_password)
+    
+    # Update user password
+    await db.execute(
+        update(AppUser)
+        .where(AppUser.id == user_uuid)
+        .values(password_hash=hashed_password)
+    )
+    await db.commit()
+    
+    # Log the action
+    audit_log = AuditLog(
+        user_id=admin_user.id,
+        action="admin_password_reset",
+        target=f"user:{user.id}",
+        meta=f'{{"target_email": "{user.email}", "reset_by": "{admin_user.email}"}}'
+    )
+    db.add(audit_log)
+    await db.commit()
+    
+    return PasswordResetResponse(
+        message=f"Password reset successfully. New password: {request.new_password}",
+        user_id=request.user_id,
+        email=user.email
+    )
 
 @router.delete("/users/{user_id}")
 async def delete_user(

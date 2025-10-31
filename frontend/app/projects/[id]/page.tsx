@@ -87,7 +87,7 @@ export default function ProjectPage() {
   const router = useRouter()
   const { user, ready } = useAuth()
   const { t } = useLanguage()
-  const projectId = params.id as string
+  const projectId = (params as any)?.id as string
 
   // Helper function to get auth token
   const getAuthToken = () => {
@@ -114,6 +114,7 @@ export default function ProjectPage() {
   const [isEditingProject, setIsEditingProject] = useState(false)
   const [editProjectName, setEditProjectName] = useState('')
   const [editProjectDescription, setEditProjectDescription] = useState('')
+  const [expandedRuns, setExpandedRuns] = useState<Set<string>>(new Set())
 
   // Fetch server info for public sharing
   useEffect(() => {
@@ -585,6 +586,36 @@ export default function ProjectPage() {
     })
   }
 
+  const toggleRun = (id: string) => {
+    setExpandedRuns(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) {
+        next.delete(id)
+      } else {
+        next.add(id)
+      }
+      return next
+    })
+  }
+
+  const ModernCommentIcon = ({ className = "w-8 h-8", primary = "#2563eb", secondary = "#e0e7ff" }) => (
+    <svg viewBox="0 0 32 32" fill="none" className={className} xmlns="http://www.w3.org/2000/svg">
+      <defs><linearGradient id="cmtg" x1="8" y1="6" x2="28" y2="28" gradientUnits="userSpaceOnUse"><stop stopColor={secondary}/><stop offset="1" stopColor={primary} stopOpacity="0.22"/></linearGradient></defs>
+      <path d="M6 14c0-4 3.6-7 8-7h4c4.4 0 8 3 8 7s-3.6 7-8 7h-2l-5 4v-4.5C8.72 19.73 6 17.14 6 14Z" fill="url(#cmtg)"/>
+      <g stroke={primary} strokeWidth="1.6" strokeLinecap="round"><path d="M11.5 14.5h9"/><path d="M13.5 18h5"/></g>
+      <filter id="blur1" x="0" y="0" width="32" height="36"><feGaussianBlur stdDeviation="1.5"/></filter>
+    </svg>
+  )
+  const ModernArtifactIcon = ({ className = "w-8 h-8", primary = "#a21caf", secondary = "#f3e8ff" }) => (
+    <svg viewBox="0 0 32 32" fill="none" className={className} xmlns="http://www.w3.org/2000/svg">
+      <rect x="7" y="8" width="18" height="16" rx="4" fill="url(#afg)" stroke={primary} strokeWidth="1.8"/>
+      <defs><linearGradient id="afg" x1="7" y1="8" x2="25" y2="24" gradientUnits="userSpaceOnUse"><stop stopColor={secondary}/><stop offset="1" stopColor={primary} stopOpacity="0.13"/></linearGradient></defs>
+      <rect x="11" y="13" width="10" height="2" rx="1" fill={primary} opacity="0.23"/>
+      <rect x="11" y="17" width="8" height="1.8" rx="0.9" fill={primary} opacity="0.12"/>
+      <rect x="11" y="20" width="7" height="1.2" rx="0.6" fill={primary} opacity="0.09"/>
+    </svg>
+  )
+
   if (projectLoading) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
@@ -907,8 +938,13 @@ export default function ProjectPage() {
                       <div className="space-y-4">
                         {runs.map((run) => (
                           <div key={run.id} className="border rounded-lg p-4">
-                            <div className="flex items-center justify-between mb-3">
-                              <div className="flex items-center space-x-3">
+                            <div className="flex items-center justify-between mb-3 cursor-pointer" onClick={() => toggleRun(run.id)}>
+                              <div className="flex items-center space-x-2">
+                                {expandedRuns.has(run.id) ? (
+                                  <ChevronDown className="h-4 w-4" />
+                                ) : (
+                                  <ChevronRight className="h-4 w-4" />
+                                )}
                                 <Badge className={getStatusColor(run.status)}>
                                   {run.status}
                                 </Badge>
@@ -924,193 +960,207 @@ export default function ProjectPage() {
                                   )}
                                 </div>
                               </div>
-                              <div className="flex items-center space-x-2">
-                                <Button 
-                                  variant="outline" 
-                                  size="sm"
-                                  onClick={() => {
-                                    setSelectedRun(run)
-                                    setShowGallery(true)
-                                  }}
-                                >
-                                  <Eye className="h-4 w-4" />
-                                </Button>
-                                <Button 
-                                  variant="outline" 
-                                  size="sm"
-                                  onClick={async () => {
-                                    try {
-                                      // Download the ZIP file directly
-                                      const downloadResponse = await fetch(`/api/v1/uploads/download-zip/${run.id}`, {
-                                        headers: {
-                                          'Authorization': `Bearer ${getAuthToken()}`,
-                                        },
-                                      })
-                                      
-                                      if (!downloadResponse.ok) throw new Error('Download failed')
-                                      
-                                      const blob = await downloadResponse.blob()
-                                      const url = window.URL.createObjectURL(blob)
-                                      const a = document.createElement('a')
-                                      a.href = url
-                                      a.download = `run_${run.id}_results.zip`
-                                      document.body.appendChild(a)
-                                      a.click()
-                                      window.URL.revokeObjectURL(url)
-                                      document.body.removeChild(a)
-                                      
-                                      toast.success('ZIP file downloaded successfully!')
-                                    } catch (error) {
-                                      console.error('Download error:', error)
-                                      toast.error('Failed to download ZIP file')
-                                    }
-                                  }}
-                                >
-                                  <Download className="h-4 w-4" />
-                                </Button>
-                                {currentUserRole === 'owner' && (
-                                  <Button 
-                                    variant="outline" 
+                              <div className="flex items-center space-x-6">
+                                {/* Big icons for comments and artifacts, vertical layout */}
+                                <div className="flex flex-col items-center">
+                                  <div className="flex items-center space-x-2">
+                                    <ModernCommentIcon />
+                                    <span className="text-sm text-gray-700 font-semibold">{runCommentCounts[run.id] ?? 0}</span>
+                                  </div>
+                                </div>
+                                <div className="flex flex-col items-center">
+                                  <div className="flex items-center space-x-2">
+                                    <ModernArtifactIcon />
+                                    <span className="text-sm text-gray-700 font-semibold">{(runArtifactComments[run.id]?.reduce((sum, art) => sum + (art.comment_count || 0), 0) ?? 0)}</span>
+                                  </div>
+                                </div>
+                                {/* Action Buttons */}
+                                <div className="flex items-center space-x-2">
+                                  <Button
+                                    variant="outline"
                                     size="sm"
-                                    onClick={() => {
-                                      if (confirm('Are you sure you want to delete this run? This action cannot be undone.')) {
-                                        deleteRunMutation.mutate(run.id)
+                                    onClick={e => { e.stopPropagation(); setSelectedRun(run); setShowGallery(true); }}
+                                  >
+                                    <Eye className="h-4 w-4" />
+                                  </Button>
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={async e => {
+                                      e.stopPropagation();
+                                      try {
+                                        const downloadResponse = await fetch(`/api/v1/uploads/download-zip/${run.id}`, {
+                                          headers: {
+                                            'Authorization': `Bearer ${getAuthToken()}`,
+                                          },
+                                        })
+                                        if (!downloadResponse.ok) throw new Error('Download failed')
+                                        const blob = await downloadResponse.blob()
+                                        const url = window.URL.createObjectURL(blob)
+                                        const a = document.createElement('a')
+                                        a.href = url
+                                        a.download = `run_${run.id}_results.zip`
+                                        document.body.appendChild(a)
+                                        a.click()
+                                        window.URL.revokeObjectURL(url)
+                                        document.body.removeChild(a)
+                                        toast.success('ZIP file downloaded successfully!')
+                                      } catch (error) {
+                                        console.error('Download error:', error)
+                                        toast.error('Failed to download ZIP file')
                                       }
                                     }}
-                                    disabled={deleteRunMutation.isPending}
-                                    className="text-red-600 hover:text-red-700 hover:bg-red-50"
                                   >
-                                    {deleteRunMutation.isPending ? (
-                                      <Loader2 className="h-4 w-4 animate-spin" />
-                                    ) : (
-                                      <Trash2 className="h-4 w-4" />
-                                    )}
+                                    <Download className="h-4 w-4" />
                                   </Button>
-                                )}
+                                  {currentUserRole === 'owner' && (
+                                    <Button
+                                      variant="outline"
+                                      size="sm"
+                                      onClick={e => {
+                                        e.stopPropagation();
+                                        if (confirm('Are you sure you want to delete this run? This action cannot be undone.')) {
+                                          deleteRunMutation.mutate(run.id)
+                                        }
+                                      }}
+                                      disabled={deleteRunMutation.isPending}
+                                      className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                                    >
+                                      {deleteRunMutation.isPending ? (
+                                        <Loader2 className="h-4 w-4 animate-spin" />
+                                      ) : (
+                                        <Trash2 className="h-4 w-4" />
+                                      )}
+                                    </Button>
+                                  )}
+                                </div>
                               </div>
                             </div>
-                            
-                            {/* Comments Toggle Button */}
-                            <div className="mt-3 pt-3 border-t border-gray-200">
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => toggleComments(run.id)}
-                                className="w-full justify-start text-gray-600 hover:text-gray-800"
-                              >
-                                {expandedComments.has(run.id) ? (
-                                  <ChevronDown className="mr-2 h-4 w-4" />
-                                ) : (
-                                  <ChevronRight className="mr-2 h-4 w-4" />
+                            {/* Collapsible section */}
+                            {expandedRuns.has(run.id) && (
+                              <div>
+                                {/* Put all details currently in the run card below this line for when expanded */}
+                                {/* Comments Toggle Button */}
+                                <div className="mt-3 pt-3 border-t border-gray-200">
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={e => { e.stopPropagation(); toggleComments(run.id) }}
+                                    className="w-full justify-start text-gray-600 hover:text-gray-800"
+                                  >
+                                    {expandedComments.has(run.id) ? (
+                                      <ChevronDown className="mr-2 h-4 w-4" />
+                                    ) : (
+                                      <ChevronRight className="mr-2 h-4 w-4" />
+                                    )}
+                                    <MessageSquare className="mr-2 h-4 w-4" />
+                                    Comments {commentCountsLoading ? '...' : (runCommentCounts[run.id] !== undefined && runCommentCounts[run.id] > 0 && `(${runCommentCounts[run.id]})`)}
+                                  </Button>
+                                </div>
+                                {/* Run Comments - Collapsible */}
+                                {expandedComments.has(run.id) && (
+                                  <div className="mt-3">
+                                    <RunComments 
+                                      runId={run.id}
+                                      currentUserRole={currentUserRole}
+                                      onCommentCountChange={(count) => {
+                                        setRunCommentCounts(prev => ({
+                                          ...prev,
+                                          [run.id]: count
+                                        }))
+                                      }}
+                                    />
+                                  </div>
                                 )}
-                                <MessageSquare className="mr-2 h-4 w-4" />
-                                Comments {commentCountsLoading ? '...' : (runCommentCounts[run.id] !== undefined && runCommentCounts[run.id] > 0 && `(${runCommentCounts[run.id]})`)}
-                              </Button>
-                            </div>
-                            
-                            {/* Run Comments - Collapsible */}
-                            {expandedComments.has(run.id) && (
-                              <div className="mt-3">
-                                <RunComments 
-                                  runId={run.id}
-                                  currentUserRole={currentUserRole}
-                                  onCommentCountChange={(count) => {
-                                    setRunCommentCounts(prev => ({
-                                      ...prev,
-                                      [run.id]: count
-                                    }))
-                                  }}
-                                />
-                              </div>
-                            )}
+                                {/* Artifact Comments Section */}
+                                <div className="mt-3 pt-3 border-t border-gray-200">
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => toggleArtifacts(run.id)}
+                                    className="w-full justify-start text-gray-600 hover:text-gray-800"
+                                  >
+                                    {expandedArtifacts.has(run.id) ? (
+                                      <ChevronDown className="mr-2 h-4 w-4" />
+                                    ) : (
+                                      <ChevronRight className="mr-2 h-4 w-4" />
+                                    )}
+                                    <FileText className="mr-2 h-4 w-4" />
+                                    Artifacts
+                                    {(() => {
+                                      if (artifactCommentsLoading) {
+                                        return ' (loading...)'
+                                      }
+                                      const stats = getArtifactCommentStats(run.id)
+                                      if (stats.totalArtifacts > 0) {
+                                        return ` (${stats.artifactsWithComments}/${stats.totalArtifacts} artifacts, ${stats.totalComments} comments)`
+                                      } else if (runArtifactComments[run.id] === undefined) {
+                                        return ' (loading...)'
+                                      } else {
+                                        return ' (no artifacts)'
+                                      }
+                                    })()}
+                                  </Button>
+                                </div>
 
-                            {/* Artifact Comments Section */}
-                            <div className="mt-3 pt-3 border-t border-gray-200">
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => toggleArtifacts(run.id)}
-                                className="w-full justify-start text-gray-600 hover:text-gray-800"
-                              >
-                                {expandedArtifacts.has(run.id) ? (
-                                  <ChevronDown className="mr-2 h-4 w-4" />
-                                ) : (
-                                  <ChevronRight className="mr-2 h-4 w-4" />
-                                )}
-                                <FileText className="mr-2 h-4 w-4" />
-                                Artifacts
-                                {(() => {
-                                  if (artifactCommentsLoading) {
-                                    return ' (loading...)'
-                                  }
-                                  const stats = getArtifactCommentStats(run.id)
-                                  if (stats.totalArtifacts > 0) {
-                                    return ` (${stats.artifactsWithComments}/${stats.totalArtifacts} artifacts, ${stats.totalComments} comments)`
-                                  } else if (runArtifactComments[run.id] === undefined) {
-                                    return ' (loading...)'
-                                  } else {
-                                    return ' (no artifacts)'
-                                  }
-                                })()}
-                              </Button>
-                            </div>
-
-                            {/* Artifact Comments List - Collapsible */}
-                            {expandedArtifacts.has(run.id) && (
-                              <div className="mt-3">
-                                {(() => {
-                                  const artifacts = runArtifactComments[run.id]
-                                  
-                                  if (artifacts === undefined) {
-                                    return (
-                                      <div className="text-center py-4 text-gray-500">
-                                        <FileText className="h-6 w-6 mx-auto mb-2 opacity-50" />
-                                        <p className="text-sm">Loading artifacts...</p>
-                                      </div>
-                                    )
-                                  }
-                                  
-                                  const artifactsWithComments = artifacts.filter(a => a.comment_count > 0)
-                                  
-                                  if (artifacts.length === 0) {
-                                    return (
-                                      <div className="text-center py-4 text-gray-500">
-                                        <FileText className="h-6 w-6 mx-auto mb-2 opacity-50" />
-                                        <p className="text-sm">No artifacts found for this run</p>
-                                      </div>
-                                    )
-                                  }
-                                  
-                                  if (artifactsWithComments.length === 0) {
-                                    return (
-                                      <div className="text-center py-4 text-gray-500">
-                                        <FileText className="h-6 w-6 mx-auto mb-2 opacity-50" />
-                                        <p className="text-sm">No artifacts have comments yet</p>
-                                      </div>
-                                    )
-                                  }
-                                  
-                                  return (
-                                    <div className="space-y-2">
-                                      <h5 className="text-sm font-medium text-gray-700 mb-2">
-                                        Artifacts with Comments ({artifactsWithComments.length})
-                                      </h5>
-                                      {artifactsWithComments.map((artifact) => (
-                                        <div key={artifact.artifact_id} className="flex items-center justify-between p-2 bg-gray-50 rounded-lg">
-                                          <div className="flex items-center space-x-2">
-                                            <Badge variant="outline" className="text-xs">
-                                              {artifact.kind}
-                                            </Badge>
-                                            <span className="text-sm font-medium">{artifact.filename}</span>
+                                {/* Artifact Comments List - Collapsible */}
+                                {expandedArtifacts.has(run.id) && (
+                                  <div className="mt-3">
+                                    {(() => {
+                                      const artifacts = runArtifactComments[run.id]
+                                      
+                                      if (artifacts === undefined) {
+                                        return (
+                                          <div className="text-center py-4 text-gray-500">
+                                            <FileText className="h-6 w-6 mx-auto mb-2 opacity-50" />
+                                            <p className="text-sm">Loading artifacts...</p>
                                           </div>
-                                          <Badge variant="secondary" className="text-xs">
-                                            {artifact.comment_count} comment{artifact.comment_count !== 1 ? 's' : ''}
-                                          </Badge>
+                                        )
+                                      }
+                                      
+                                      const artifactsWithComments = artifacts.filter(a => a.comment_count > 0)
+                                      
+                                      if (artifacts.length === 0) {
+                                        return (
+                                          <div className="text-center py-4 text-gray-500">
+                                            <FileText className="h-6 w-6 mx-auto mb-2 opacity-50" />
+                                            <p className="text-sm">No artifacts found for this run</p>
+                                          </div>
+                                        )
+                                      }
+                                      
+                                      if (artifactsWithComments.length === 0) {
+                                        return (
+                                          <div className="text-center py-4 text-gray-500">
+                                            <FileText className="h-6 w-6 mx-auto mb-2 opacity-50" />
+                                            <p className="text-sm">No artifacts have comments yet</p>
+                                          </div>
+                                        )
+                                      }
+                                      
+                                      return (
+                                        <div className="space-y-2">
+                                          <h5 className="text-sm font-medium text-gray-700 mb-2">
+                                            Artifacts with Comments ({artifactsWithComments.length})
+                                          </h5>
+                                          {artifactsWithComments.map((artifact) => (
+                                            <div key={artifact.artifact_id} className="flex items-center justify-between p-2 bg-gray-50 rounded-lg">
+                                              <div className="flex items-center space-x-2">
+                                                <Badge variant="outline" className="text-xs">
+                                                  {artifact.kind}
+                                                </Badge>
+                                                <span className="text-sm font-medium">{artifact.filename}</span>
+                                              </div>
+                                              <Badge variant="secondary" className="text-xs">
+                                                {artifact.comment_count} comment{artifact.comment_count !== 1 ? 's' : ''}
+                                              </Badge>
+                                            </div>
+                                          ))}
                                         </div>
-                                      ))}
-                                    </div>
-                                  )
-                                })()}
+                                      )
+                                    })()}
+                                  </div>
+                                )}
                               </div>
                             )}
                           </div>

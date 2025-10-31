@@ -111,7 +111,7 @@ function PluginSelectionContent() {
 
   // Handle URL parameter for pre-selected plugin
   useEffect(() => {
-    const pluginParam = searchParams.get('plugin')
+    const pluginParam = searchParams?.get('plugin')
     if (pluginParam) {
       const plugin = plugins.find(p => p.id === pluginParam)
       if (plugin && !selectedPlugin) {

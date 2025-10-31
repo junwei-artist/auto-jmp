@@ -19,6 +19,7 @@ import {
   Loader2
 } from 'lucide-react'
 import { useLanguage } from '@/lib/language'
+import { useSocket } from '@/lib/socket'
 
 interface WizardStep {
   id: string
@@ -37,8 +38,8 @@ function ExcelProcessingWizardContent() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const { t } = useLanguage()
-  const projectId = searchParams.get('projectId')
-  const pluginName = searchParams.get('plugin') || 'excel2boxplotv1'
+  const projectId = searchParams?.get('projectId') || ''
+  const pluginName = searchParams?.get('plugin') || 'excel2boxplotv1'
   
   const [currentStep, setCurrentStep] = useState(0)
   const [excelFile, setExcelFile] = useState<File | null>(null)
@@ -52,7 +53,9 @@ function ExcelProcessingWizardContent() {
   const [analysisSteps, setAnalysisSteps] = useState<Array<{ label: string; done: boolean; error?: string }>>([])
   const [runId, setRunId] = useState<string | null>(null)
   const [runStatus, setRunStatus] = useState<string | null>(null)
+  const [runMessage, setRunMessage] = useState<string | null>(null)
   const [isStartingAnalysis, setIsStartingAnalysis] = useState(false)
+  const { subscribeToRun, unsubscribeFromRun } = useSocket()
 
   // Check authentication and project ID on component mount
   useEffect(() => {
@@ -154,7 +157,19 @@ function ExcelProcessingWizardContent() {
 
     try {
       const formData = new FormData()
-      formData.append('file', excelFile)
+      // Stamp excel filename with timestamp + uuid
+      const ts = new Date()
+        .toISOString()
+        .replace(/[-:]/g, '')
+        .replace('T', '_')
+        .slice(0, 15)
+      const uid = (globalThis.crypto?.randomUUID?.() || Math.random().toString(36).slice(2, 10))
+      const dot = excelFile.name.lastIndexOf('.')
+      const base = dot > -1 ? excelFile.name.slice(0, dot) : excelFile.name
+      const ext = dot > -1 ? excelFile.name.slice(dot) : ''
+      const stampedName = `${base}_${ts}_${uid}${ext}`
+      const stampedFile = new File([excelFile], stampedName, { type: excelFile.type })
+      formData.append('file', stampedFile)
 
       const token = localStorage.getItem('access_token')
       const response = await fetch(`/api/v1/extensions/${pluginName}/load-file`, {
@@ -194,7 +209,15 @@ function ExcelProcessingWizardContent() {
 
     try {
       const formData = new FormData()
-      formData.append('file', excelFile)
+      {
+        const ts = new Date().toISOString().replace(/[-:]/g, '').replace('T', '_').slice(0, 15)
+        const uid = (globalThis.crypto?.randomUUID?.() || Math.random().toString(36).slice(2, 10))
+        const dot = excelFile.name.lastIndexOf('.')
+        const base = dot > -1 ? excelFile.name.slice(0, dot) : excelFile.name
+        const ext = dot > -1 ? excelFile.name.slice(dot) : ''
+        const stamped = new File([excelFile], `${base}_${ts}_${uid}${ext}`, { type: excelFile.type })
+        formData.append('file', stamped)
+      }
       formData.append('cat_var', selectedCategoricalVariable)
 
       const token = localStorage.getItem('access_token')
@@ -232,7 +255,15 @@ function ExcelProcessingWizardContent() {
 
     try {
       const formData = new FormData()
-      formData.append('file', excelFile)
+      {
+        const ts = new Date().toISOString().replace(/[-:]/g, '').replace('T', '_').slice(0, 15)
+        const uid = (globalThis.crypto?.randomUUID?.() || Math.random().toString(36).slice(2, 10))
+        const dot = excelFile.name.lastIndexOf('.')
+        const base = dot > -1 ? excelFile.name.slice(0, dot) : excelFile.name
+        const ext = dot > -1 ? excelFile.name.slice(dot) : ''
+        const stamped = new File([excelFile], `${base}_${ts}_${uid}${ext}`, { type: excelFile.type })
+        formData.append('file', stamped)
+      }
       formData.append('cat_var', selectedCategoricalVariable)
 
       const token = localStorage.getItem('access_token')
@@ -264,7 +295,15 @@ function ExcelProcessingWizardContent() {
     setIsProcessing(true)
     try {
       const formData = new FormData()
-      formData.append('file', excelFile)
+      {
+        const ts = new Date().toISOString().replace(/[-:]/g, '').replace('T', '_').slice(0, 15)
+        const uid = (globalThis.crypto?.randomUUID?.() || Math.random().toString(36).slice(2, 10))
+        const dot = excelFile.name.lastIndexOf('.')
+        const base = dot > -1 ? excelFile.name.slice(0, dot) : excelFile.name
+        const ext = dot > -1 ? excelFile.name.slice(dot) : ''
+        const stamped = new File([excelFile], `${base}_${ts}_${uid}${ext}`, { type: excelFile.type })
+        formData.append('file', stamped)
+      }
       formData.append('cat_var', selectedCategoricalVariable)
 
       const token = localStorage.getItem('access_token')
@@ -309,27 +348,49 @@ function ExcelProcessingWizardContent() {
 
     try {
       const formData = new FormData()
-      formData.append('file', excelFile)
+      {
+        const ts = new Date().toISOString().replace(/[-:]/g, '').replace('T', '_').slice(0, 15)
+        const uid = (globalThis.crypto?.randomUUID?.() || Math.random().toString(36).slice(2, 10))
+        const dot = excelFile.name.lastIndexOf('.')
+        const base = dot > -1 ? excelFile.name.slice(0, dot) : excelFile.name
+        const ext = dot > -1 ? excelFile.name.slice(dot) : ''
+        const stamped = new File([excelFile], `${base}_${ts}_${uid}${ext}`, { type: excelFile.type })
+        formData.append('file', stamped)
+      }
       formData.append('cat_var', selectedCategoricalVariable)
       formData.append('project_id', String(projectId))
       formData.append('project_name', projectInfo?.name || 'Analysis')
       formData.append('project_description', projectInfo?.description || '')
 
       const token = localStorage.getItem('access_token')
-      const response = await fetch(`/api/v1/extensions/${pluginName}/run-analysis`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`
-        },
-        body: formData
-      })
+      let result: any = null
+      let lastError: string | null = null
+      for (let attempt = 1; attempt <= 3; attempt++) {
+        const response = await fetch(`/api/v1/extensions/${pluginName}/run-analysis`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`
+          },
+          body: formData
+        })
 
-      if (!response.ok) {
-        const err = await response.json().catch(() => ({}))
-        throw new Error(err?.error || err?.detail || 'Failed to start analysis')
+        if (response.ok) {
+          result = await response.json()
+          if (result?.run?.id) break
+          lastError = 'Run ID missing from response'
+        } else {
+          const err = await response.json().catch(() => ({}))
+          lastError = err?.error || err?.detail || 'Failed to start analysis'
+        }
+
+        if (attempt < 3) {
+          await new Promise(res => setTimeout(res, 3000))
+        }
       }
 
-      const result = await response.json()
+      if (!result?.run?.id) {
+        throw new Error(lastError || 'Failed to start analysis')
+      }
 
       // Mark generation and save steps as done (backend does both before run creation)
       setAnalysisSteps(prev => prev.map((s, i) => ({ ...s, done: i <= 1 ? true : s.done })))
@@ -340,7 +401,14 @@ function ExcelProcessingWizardContent() {
         setRunId(createdRunId)
         setAnalysisSteps(prev => prev.map((s, i) => ({ ...s, done: i <= 2 ? true : s.done })))
         setRunStatus(result?.run?.status || 'queued')
-        // Begin polling
+        setRunMessage(result?.run?.message || null)
+        // Prefer WebSocket live updates; keep polling as fallback
+        try {
+          subscribeToRun(createdRunId, (data: any) => {
+            if (data?.status) setRunStatus(data.status)
+            if (data?.message) setRunMessage(data.message)
+          })
+        } catch {}
         pollRunStatus(createdRunId)
       } else {
         throw new Error('Run ID missing from response')
@@ -366,6 +434,7 @@ function ExcelProcessingWizardContent() {
         if (!resp.ok) return
         const run = await resp.json()
         setRunStatus(run.status)
+        if (run.message) setRunMessage(run.message)
 
         if (run.status === 'succeeded' || run.status === 'failed' || run.status === 'cancelled') {
           clearInterval(timer)
@@ -375,6 +444,15 @@ function ExcelProcessingWizardContent() {
       if (attempts >= maxAttempts) clearInterval(timer)
     }, interval)
   }
+
+  // Cleanup subscription on unmount or when runId changes
+  useEffect(() => {
+    return () => {
+      if (runId) {
+        try { unsubscribeFromRun(runId) } catch {}
+      }
+    }
+  }, [runId, unsubscribeFromRun])
 
   const handleCancel = () => {
     router.push('/plugins/create-project')
@@ -746,6 +824,11 @@ function ExcelProcessingWizardContent() {
                     <span className="text-blue-900 font-medium">{t('plugin.wizard.runStatus')}</span>
                     <span className="text-blue-800">{runStatus || 'queued'}</span>
                   </div>
+                  {runMessage && (
+                    <div className="mt-2 text-left text-xs text-blue-700 break-words">
+                      {runMessage}
+                    </div>
+                  )}
                 </div>
               )}
             </div>

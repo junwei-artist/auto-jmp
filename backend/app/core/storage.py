@@ -10,12 +10,29 @@ class LocalFileStorage:
     """Simple local file storage implementation."""
     
     def __init__(self, base_path: str = "uploads"):
-        self.base_path = Path(base_path)
-        self.base_path.mkdir(exist_ok=True)
-        # Create subdirectories
-        (self.base_path / "projects").mkdir(exist_ok=True)
-        (self.base_path / "runs").mkdir(exist_ok=True)
-        (self.base_path / "temp").mkdir(exist_ok=True)
+        """Initialize storage root as an absolute path.
+
+        If ``base_path`` is relative, anchor it to the backend directory
+        so storage never depends on the process working directory.
+        Optionally respect the UPLOADS_DIR environment variable.
+        """
+        # Determine base path source: env var has precedence
+        env_base = os.getenv("UPLOADS_DIR")
+        configured_base = Path(env_base) if env_base else Path(base_path)
+
+        # backend/ directory (this file is backend/app/core/storage.py)
+        backend_dir = Path(__file__).resolve().parents[2]
+
+        # Anchor relative paths to backend dir; keep absolute as-is
+        absolute_base = configured_base if configured_base.is_absolute() else (backend_dir / configured_base)
+
+        self.base_path = absolute_base.resolve()
+
+        # Ensure directories exist
+        self.base_path.mkdir(parents=True, exist_ok=True)
+        (self.base_path / "projects").mkdir(parents=True, exist_ok=True)
+        (self.base_path / "runs").mkdir(parents=True, exist_ok=True)
+        (self.base_path / "temp").mkdir(parents=True, exist_ok=True)
     
     def generate_storage_key(self, filename: str, content_type: str, project_id: str = None) -> str:
         """Generate a unique storage key for a file."""
@@ -43,6 +60,9 @@ class LocalFileStorage:
     
     def get_file_path(self, storage_key: str) -> Path:
         """Get the full file path for a storage key."""
+        key_path = Path(storage_key)
+        if key_path.is_absolute():
+            return key_path
         return self.base_path / storage_key
     
     def get_file(self, storage_key: str) -> Optional[bytes]:

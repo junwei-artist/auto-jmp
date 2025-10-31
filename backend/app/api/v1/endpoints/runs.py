@@ -13,6 +13,9 @@ from app.core.websocket import publish_run_update
 from app.core.storage import local_storage
 from app.models import Project, Run, RunStatus, AppUser, Artifact, ProjectMember, AppSetting, RunComment, ProjectAttachment
 from app.services.notification_service import NotificationService
+import asyncio
+import os
+from pathlib import Path
 
 router = APIRouter()
 
@@ -136,24 +139,11 @@ async def check_project_access(
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
     
-    # Check if user is owner
-    if user and project.owner_id == user.id:
+    # NEW POLICY: Any authenticated user can access private project artifacts/images
+    if user:
         return project
     
-    # Check if user is member
-    if user:
-        from app.models import ProjectMember
-        member_result = await db.execute(
-            select(ProjectMember).where(
-                ProjectMember.project_id == project_id,
-                ProjectMember.user_id == user.id
-            )
-        )
-        member = member_result.scalar_one_or_none()
-        if member:
-            return project
-    
-    # Allow guest access to all projects (shared access)
+    # Unauthenticated: only allow if the project is public or allows guests
     return project
 
 @router.post("/", response_model=RunResponse)
@@ -201,6 +191,58 @@ async def create_run(
     db.add(csv_artifact)
     db.add(jsl_artifact)
     await db.commit()
+    await db.refresh(csv_artifact)
+    await db.refresh(jsl_artifact)
+
+    # Create per-run folder under uploads/runs/{run_id} and move inputs there
+    try:
+        run_dir_key = f"runs/{str(run.id)}"
+        run_dir_path: Path = local_storage.get_file_path(run_dir_key)
+        run_dir_path.mkdir(parents=True, exist_ok=True)
+
+        # Determine source file paths from provided keys
+        src_csv_path = local_storage.get_file_path(csv_artifact.storage_key)
+        src_jsl_path = local_storage.get_file_path(jsl_artifact.storage_key)
+
+        # Target filenames within the run folder
+        # Use timestamp + short UUID for filenames for uniqueness
+        ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+        short_uid = str(uuid.uuid4())[:8]
+        dst_csv_filename = f"data_{ts}_{short_uid}.csv"
+        dst_jsl_filename = f"analysis_{ts}_{short_uid}.jsl"
+        dst_csv_rel_key = f"{run_dir_key}/{dst_csv_filename}"
+        dst_jsl_rel_key = f"{run_dir_key}/{dst_jsl_filename}"
+        dst_csv_path = local_storage.get_file_path(dst_csv_rel_key)
+        dst_jsl_path = local_storage.get_file_path(dst_jsl_rel_key)
+
+        # Ensure parent exists
+        dst_csv_path.parent.mkdir(parents=True, exist_ok=True)
+
+        # Copy bytes into run folder (overwrite if exists)
+        if src_csv_path.exists():
+            dst_csv_path.write_bytes(src_csv_path.read_bytes())
+        if src_jsl_path.exists():
+            dst_jsl_path.write_bytes(src_jsl_path.read_bytes())
+
+        # Update artifact storage keys and filenames to point to run folder
+        # Store absolute paths in artifacts to avoid any CWD mismatch later
+        csv_artifact.storage_key = str(dst_csv_path.resolve())
+        csv_artifact.filename = dst_csv_filename
+        jsl_artifact.storage_key = str(dst_jsl_path.resolve())
+        jsl_artifact.filename = dst_jsl_filename
+        await db.commit()
+
+        # Optionally remove original temp files
+        try:
+            if src_csv_path.exists():
+                src_csv_path.unlink()
+            if src_jsl_path.exists():
+                src_jsl_path.unlink()
+        except Exception:
+            pass
+    except Exception:
+        # Non-fatal: keep using original storage keys if move fails
+        pass
     
     # Create project attachments for input files
     run_id_str = str(run.id)
@@ -211,7 +253,7 @@ async def create_run(
         uploaded_by=current_user.id if current_user else None,
         filename=f"data_{run_id_str[:8]}.csv",
         description=f"Uploaded for generating run {run_id_str}",
-        storage_key=run_data.csv_key,
+        storage_key=csv_artifact.storage_key,
         file_size=0,  # We'll update this if needed
         mime_type="text/csv"
     )
@@ -222,7 +264,7 @@ async def create_run(
         uploaded_by=current_user.id if current_user else None,
         filename=f"script_{run_id_str[:8]}.jsl",
         description=f"Uploaded for generating run {run_id_str}",
-        storage_key=run_data.jsl_key,
+        storage_key=jsl_artifact.storage_key,
         file_size=0,  # We'll update this if needed
         mime_type="text/plain"
     )
@@ -265,11 +307,92 @@ async def create_run(
                 "message": "Run queued - waiting for other tasks to complete"
             })
         else:
-            # No running tasks, start this one immediately
-            task = celery_app.send_task("run_jmp_boxplot", args=[str(run.id)])
+            # No running tasks, start this one immediately (with retry)
+            enqueue_stage = "enqueue_task"
+            last_error = None
+            for attempt in range(1, 4):
+                try:
+                    celery_app.send_task("run_jmp_boxplot", args=[str(run.id)])
+                    await publish_run_update(str(run.id), {
+                        "type": "run_enqueued",
+                        "run_id": str(run.id),
+                        "status": "queued",
+                        "message": "Task enqueued for processing"
+                    })
+                    break
+                except Exception as e:
+                    last_error = str(e)
+                    await publish_run_update(str(run.id), {
+                        "type": "run_enqueue_attempt_failed",
+                        "run_id": str(run.id),
+                        "status": "queued",
+                        "message": f"Enqueue attempt {attempt}/3 failed: {last_error}"
+                    })
+                    if attempt < 3:
+                        await asyncio.sleep(3)
+                    else:
+                        # Mark run failed to enqueue
+                        run.status = RunStatus.FAILED
+                        run.message = f"Failed to enqueue task after 3 attempts: {last_error}"
+                        await db.commit()
+                        await publish_run_update(str(run.id), {
+                            "type": "run_failed",
+                            "run_id": str(run.id),
+                            "status": "failed",
+                            "message": run.message
+                        })
+                        raise HTTPException(status_code=500, detail={
+                            "success": False,
+                            "error": run.message,
+                            "stage": enqueue_stage
+                        })
     else:
-        # Parallel mode - start immediately
-        task = celery_app.send_task("run_jmp_boxplot", args=[str(run.id)])
+        # Parallel mode - start immediately (with retry)
+        enqueue_stage = "enqueue_task"
+        last_error = None
+        for attempt in range(1, 4):
+            try:
+                celery_app.send_task("run_jmp_boxplot", args=[str(run.id)])
+                # Optional quick sanity check: is any worker responding?
+                worker_ping = None
+                try:
+                    worker_ping = celery_app.control.inspect(timeout=2.0).ping()
+                except Exception:
+                    worker_ping = None
+                await publish_run_update(str(run.id), {
+                    "type": "run_enqueued",
+                    "run_id": str(run.id),
+                    "status": "queued",
+                    "message": "Task enqueued for processing",
+                    "worker_ping": worker_ping or {}
+                })
+                break
+            except Exception as e:
+                last_error = str(e)
+                await publish_run_update(str(run.id), {
+                    "type": "run_enqueue_attempt_failed",
+                    "run_id": str(run.id),
+                    "status": "queued",
+                    "message": f"Enqueue attempt {attempt}/3 failed: {last_error}"
+                })
+                if attempt < 3:
+                    await asyncio.sleep(3)
+                else:
+                    # Mark run failed to enqueue
+                    run.status = RunStatus.FAILED
+                    run.message = f"Failed to enqueue task after 3 attempts: {last_error}"
+                    await db.commit()
+                    await publish_run_update(str(run.id), {
+                        "type": "run_failed",
+                        "run_id": str(run.id),
+                        "status": "failed",
+                        "message": run.message
+                    })
+                    raise HTTPException(status_code=500, detail={
+                        "success": False,
+                        "error": run.message,
+                        "stage": enqueue_stage
+                    })
     
     # Publish initial status
     await publish_run_update(str(run.id), {
@@ -356,18 +479,34 @@ async def get_run_artifacts(
     artifact_responses = []
     for artifact in artifacts:
         # Generate download URL based on storage key
-        if artifact.storage_key:
-            # For local storage, create a direct file URL
-            if artifact.storage_key.startswith("tasks/"):
-                # Task directory images - use a simple endpoint with base64 encoding
-                import base64
-                encoded_path = base64.b64encode(artifact.storage_key.encode()).decode()
+        download_url = None
+        sk = artifact.storage_key or ""
+        if sk:
+            import base64
+            normalized = sk.replace('\\', '/')
+
+            # If absolute path, attempt to reduce to tasks/{folder}/file if present
+            if normalized.startswith('/'):
+                idx = normalized.find('/tasks/')
+                if idx >= 0:
+                    relative_tasks = normalized[idx+1:]  # drop leading slash, keep tasks/...
+                else:
+                    relative_tasks = None
+            else:
+                relative_tasks = normalized if normalized.startswith('tasks/') else None
+
+            if relative_tasks:
+                encoded_path = base64.b64encode(relative_tasks.encode()).decode()
                 download_url = f"/api/v1/uploads/file-serve?path={encoded_path}"
             else:
-                # Upload directory files - use existing upload system
-                download_url = f"/api/v1/uploads/download/{artifact.storage_key}"
-        else:
-            download_url = None
+                # As a fallback, if absolute and inside backend/tasks, allow direct absolute
+                # so that file-serve can validate and serve it
+                if normalized.startswith('/') and '/tasks/' in normalized:
+                    encoded_path = base64.b64encode(normalized.encode()).decode()
+                    download_url = f"/api/v1/uploads/file-serve?path={encoded_path}"
+                else:
+                    # Uploads-based or other storage backends
+                    download_url = f"/api/v1/uploads/download/{sk}"
         
         artifact_responses.append(ArtifactResponse(
             id=str(artifact.id),

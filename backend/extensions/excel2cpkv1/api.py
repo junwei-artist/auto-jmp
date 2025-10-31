@@ -10,6 +10,7 @@ import logging
 from .processor import ExcelToCPKProcessor
 import httpx
 import os
+import asyncio
 from app.core.storage import local_storage
 from ..base.zip_utils import ZipFileGenerator
 from app.core.database import get_db
@@ -17,6 +18,7 @@ from app.core.auth import get_current_user_optional
 from app.models import ProjectAttachment, AppUser
 from sqlalchemy.ext.asyncio import AsyncSession
 import uuid
+from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
@@ -312,6 +314,7 @@ async def run_analysis_modular(
     """Run complete CPK analysis using modular approach"""
     try:
         logger.info(f"Running CPK analysis for project: {project_name}")
+        stage = "init"
         
         # Save uploaded file temporarily
         with tempfile.NamedTemporaryFile(delete=False, suffix='.xlsx') as tmp_file:
@@ -320,6 +323,7 @@ async def run_analysis_modular(
             tmp_file.flush()
             
             # Process the file
+            stage = "process_excel"
             result = processor.process_excel_file(
                 tmp_file.name, 
                 project_name, 
@@ -332,11 +336,14 @@ async def run_analysis_modular(
                     status_code=400,
                     content={
                         "success": False,
-                        "error": result["error"]
+                        "error": result.get("error", "Processing failed"),
+                        "stage": stage,
+                        "details": result
                     }
                 )
             
             # Persist files to storage and create a run via standard API
+            stage = "persist_files"
             csv_bytes = result["files"]["csv_content"].encode("utf-8")
             jsl_bytes = result["files"]["jsl_content"].encode("utf-8")
 
@@ -347,6 +354,7 @@ async def run_analysis_modular(
             local_storage.save_file(jsl_bytes, jsl_key)
             
             # Create ZIP file with original Excel, CSV, and JSL
+            stage = "create_zip"
             zip_result = ZipFileGenerator.create_analysis_zip(
                 excel_content=content,
                 excel_filename=file.filename,
@@ -372,18 +380,40 @@ async def run_analysis_modular(
 
             backend_base = os.getenv("NEXT_PUBLIC_BACKEND_URL", "http://localhost:4700")
             async with httpx.AsyncClient(timeout=30.0) as client:
-                run_resp = await client.post(
-                    f"{backend_base}/api/v1/runs/",
-                    json={
-                        "project_id": project_id,
-                        "csv_key": csv_key,
-                        "jsl_key": jsl_key
-                    }
-                )
-                run_resp.raise_for_status()
-                run_json = run_resp.json()
+                stage = "create_run"
+                run_json = None
+                last_error = None
+                for attempt in range(1, 4):
+                    try:
+                        run_resp = await client.post(
+                            f"{backend_base}/api/v1/runs/",
+                            json={
+                                "project_id": project_id,
+                                "csv_key": csv_key,
+                                "jsl_key": jsl_key
+                            }
+                        )
+                        run_resp.raise_for_status()
+                        run_json = run_resp.json()
+                        break
+                    except Exception as e:
+                        last_error = str(e)
+                        logger.warning(f"Create run attempt {attempt}/3 failed: {e}")
+                        if attempt < 3:
+                            await asyncio.sleep(3)
+                        else:
+                            os.unlink(tmp_file.name)
+                            return JSONResponse(
+                                status_code=400,
+                                content={
+                                    "success": False,
+                                    "error": f"Failed to create run after 3 attempts: {last_error}",
+                                    "stage": stage
+                                },
+                            )
                 
                 # Add ZIP file as project attachment directly to database
+                stage = "add_attachment"
                 run_id = run_json.get("id")
                 if run_id and zip_key:
                     try:
@@ -407,6 +437,24 @@ async def run_analysis_modular(
                         await db.rollback()
                 else:
                     logger.info(f"Skipping ZIP attachment creation for run {run_id}")
+
+                # Save original Excel into per-run folder for traceability
+                try:
+                    if run_id:
+                        run_dir_key = f"runs/{run_id}"
+                        run_dir_path = local_storage.get_file_path(run_dir_key)
+                        run_dir_path.mkdir(parents=True, exist_ok=True)
+                        original_name = file.filename or "original.xlsx"
+                        base = Path(original_name).stem or "original"
+                        ext = Path(original_name).suffix or ".xlsx"
+                        ts = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+                        uid = str(uuid.uuid4())[:8]
+                        stamped_name = f"{base}_{ts}_{uid}{ext}"
+                        dst_excel_path = run_dir_path / stamped_name
+                        # 'content' contains uploaded excel bytes from earlier
+                        dst_excel_path.write_bytes(content)
+                except Exception:
+                    pass
 
         # Clean up temp file
         os.unlink(tmp_file.name)
@@ -436,6 +484,7 @@ async def run_analysis_modular(
             logger.error(f"Error serializing missing_in_data: {e}")
             serializable_missing_in_data = []
 
+        stage = "cleanup"
         return {
             "success": True,
             "message": "CPK run created and queued",
@@ -453,7 +502,8 @@ async def run_analysis_modular(
             status_code=400,
             content={
                 "success": False,
-                "error": str(e)
+                "error": str(e),
+                "stage": locals().get("stage", "unknown")
             }
         )
 

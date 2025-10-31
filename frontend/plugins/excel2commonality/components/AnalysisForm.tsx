@@ -35,7 +35,13 @@ export function AnalysisForm({ onComplete }: AnalysisFormProps) {
 
     try {
       const formData = new FormData()
-      formData.append('file', excelFile)
+      const ts = new Date().toISOString().replace(/[-:]/g, '').replace('T', '_').slice(0, 15)
+      const uid = (globalThis.crypto?.randomUUID?.() || Math.random().toString(36).slice(2, 10))
+      const dot = excelFile.name.lastIndexOf('.')
+      const base = dot > -1 ? excelFile.name.slice(0, dot) : excelFile.name
+      const ext = dot > -1 ? excelFile.name.slice(dot) : ''
+      const stamped = new File([excelFile], `${base}_${ts}_${uid}${ext}`, { type: excelFile.type })
+      formData.append('file', stamped)
 
       const response = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/v1/extensions/excel2commonality/validate`, {
         method: 'POST',

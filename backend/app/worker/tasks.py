@@ -5,6 +5,7 @@ import uuid
 import logging
 from datetime import datetime
 from typing import Dict, Any
+from pathlib import Path
 
 from celery import current_task
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -17,6 +18,7 @@ sys.path.insert(0, backend_dir)
 from app.core.celery import celery_app
 from app.core.database import AsyncSessionLocal
 from app.core.websocket import publish_run_update
+from app.core.storage import local_storage
 from app.models import Run, RunStatus, Artifact, AppSetting
 
 logger = logging.getLogger(__name__)
@@ -43,6 +45,7 @@ def run_jmp_boxplot(self, run_id: str) -> Dict[str, Any]:
         Dict with task result information
     """
     task_id = self.request.id
+    logger.info("[Worker] run_jmp_boxplot received: task_id=%s run_id=%s", task_id, run_id)
     
     async def process_run():
         """Async function to process the run."""
@@ -105,11 +108,18 @@ def run_jmp_boxplot(self, run_id: str) -> Dict[str, Any]:
                 })
                 
                 # Run JMP analysis with reasonable timeout
-                jmp_runner = JMPRunner(max_wait_time=300)  # 5 minutes
+                jmp_runner = JMPRunner(max_wait_time=300, jmp_start_delay=6)  # allow JMP window to focus
                 
-                # Get file paths from storage - use absolute paths
-                csv_path = os.path.join(backend_dir, "uploads", csv_artifact.storage_key)
-                jsl_path = os.path.join(backend_dir, "uploads", jsl_artifact.storage_key)
+                # Get file paths from storage using the storage system
+                csv_path = local_storage.get_file_path(csv_artifact.storage_key)
+                jsl_path = local_storage.get_file_path(jsl_artifact.storage_key)
+
+                # Guard against legacy absolute paths from older runs
+                legacy_prefix = "/Users/lytech/Documents/GitHub/auto-jmp/backend/uploads/"
+                if str(csv_path).startswith(legacy_prefix):
+                    csv_path = local_storage.get_file_path(csv_artifact.storage_key)
+                if str(jsl_path).startswith(legacy_prefix):
+                    jsl_path = local_storage.get_file_path(jsl_artifact.storage_key)
                 
                 # Debug logging
                 print(f"Celery worker - CSV path: {csv_path}")
@@ -118,11 +128,34 @@ def run_jmp_boxplot(self, run_id: str) -> Dict[str, Any]:
                 print(f"Celery worker - JSL exists: {os.path.exists(jsl_path)}")
                 print(f"Celery worker - Current working directory: {os.getcwd()}")
                 
-                # Run the analysis
-                result = jmp_runner.run_csv_jsl(
-                    csv_path=csv_path,
-                    jsl_path=jsl_path
-                )
+                # Ensure files exist with simple retry (3 attempts, 3s interval)
+                for attempt in range(3):
+                    csv_exists = os.path.exists(csv_path)
+                    jsl_exists = os.path.exists(jsl_path)
+                    if csv_exists and jsl_exists:
+                        break
+                    if attempt < 2:
+                        print(f"Retry {attempt+1}/3: waiting for files to be available...")
+                        await asyncio.sleep(3)
+                
+                # Run the analysis with retry on transient 'file not found' failures
+                last_result = None
+                for attempt in range(3):
+                    result = jmp_runner.run_csv_jsl(
+                        csv_path=str(csv_path),
+                        jsl_path=str(jsl_path)
+                    )
+                    last_result = result
+                    err = (result or {}).get("error", "")
+                    # If success or non-file-not-found error, stop retrying
+                    if (result or {}).get("status") == "completed":
+                        break
+                    if "file not found" not in err.lower():
+                        break
+                    if attempt < 2:
+                        print(f"Retry {attempt+1}/3: file not found, retrying in 3s...")
+                        await asyncio.sleep(3)
+                result = last_result or {"status": "failed", "error": "Unknown error"}
                 
                 if result.get("status") == "completed":
                     # Update run status to SUCCEEDED
@@ -158,21 +191,24 @@ def run_jmp_boxplot(self, run_id: str) -> Dict[str, Any]:
                             
                             # Use the actual task directory path as storage key
                             task_dir = result.get("task_dir", "")
-                            
-                            # Check if image_file is already a full path or just a filename
-                            if "/" in image_file or "\\" in image_file:
-                                # Image file is already a full path
-                                actual_image_path = image_file
-                            else:
-                                # Image file is just a filename, prepend task directory
-                                actual_image_path = f"{task_dir}/{image_file}" if task_dir else image_file
-                            
+                            filename = os.path.basename(image_file)
+                            # Normalize task_dir by stripping absolute path parts if present
+                            if os.path.isabs(task_dir):
+                                # Remove root up to 'tasks/'
+                                tasks_index = task_dir.find('tasks')
+                                if tasks_index >= 0:
+                                    task_dir = task_dir[tasks_index:]
+                                else:
+                                    # fallback to just the last part
+                                    task_dir = os.path.basename(task_dir)
+                            storage_key = f"{task_dir}/{filename}" if task_dir else filename
+                            storage_key = storage_key.lstrip('/') # no leading slash
                             artifact = Artifact(
                                 project_id=run.project_id,
                                 run_id=run.id,
                                 kind="output_image",
-                                storage_key=actual_image_path,
-                                filename=image_file,
+                                storage_key=storage_key,
+                                filename=filename,
                                 mime_type="image/png"
                             )
                             db.add(artifact)
@@ -194,6 +230,8 @@ def run_jmp_boxplot(self, run_id: str) -> Dict[str, Any]:
                     })
                     
                     # Check if queue mode is enabled and process next queued task
+                    # Small delay to ensure all I/O and logging completes before starting next
+                    await asyncio.sleep(1)
                     await _process_next_queued_task(db)
                     
                     return {
@@ -214,6 +252,32 @@ def run_jmp_boxplot(self, run_id: str) -> Dict[str, Any]:
                             jmp_task_id=result.get("task_id", "")
                         )
                     )
+                    # If a failure image was generated, register it as an artifact
+                    try:
+                        images = result.get("images", []) or []
+                        task_dir = result.get("task_dir", "")
+                        for image_file in images:
+                            # Only register the explicit failure image
+                            if image_file.endswith("failure_error.png"):
+                                # Determine actual path and filename
+                                if "/" in image_file or "\\" in image_file:
+                                    actual_image_path = image_file
+                                    filename = Path(image_file).name
+                                else:
+                                    actual_image_path = f"{task_dir}/{image_file}" if task_dir else image_file
+                                    filename = image_file
+                                failure_artifact = Artifact(
+                                    project_id=run.project_id,
+                                    run_id=run.id,
+                                    kind="output_image",
+                                    storage_key=actual_image_path,
+                                    filename=filename,
+                                    mime_type="image/png"
+                                )
+                                db.add(failure_artifact)
+                                logger.info("Registered failure image artifact: %s", filename)
+                    except Exception as artifact_err:
+                        logger.error("Failed to register failure image artifact: %s", artifact_err)
                     await db.commit()
                     
                     # Publish failure update
@@ -225,6 +289,7 @@ def run_jmp_boxplot(self, run_id: str) -> Dict[str, Any]:
                     })
                     
                     # Check if queue mode is enabled and process next queued task
+                    await asyncio.sleep(1)
                     await _process_next_queued_task(db)
                     
                     return {
@@ -256,6 +321,7 @@ def run_jmp_boxplot(self, run_id: str) -> Dict[str, Any]:
                 })
                 
                 # Check if queue mode is enabled and process next queued task
+                await asyncio.sleep(1)
                 await _process_next_queued_task(db)
                 
                 raise e
@@ -409,11 +475,16 @@ async def _process_next_queued_task(db: AsyncSession):
             next_task = next_task_result.scalar_one_or_none()
             
             if next_task:
-                # Start the next queued task
+                # Start the next queued task after a short delay to avoid race conditions
                 from app.core.celery import celery_app
-                celery_app.send_task("run_jmp_boxplot", args=[str(next_task.id)])
-                
-                logger.info(f"Started next queued task: {next_task.id}")
+                try:
+                    # Small pre-delay before scheduling, give DB and filesystem time to settle
+                    await asyncio.sleep(2)
+                    # Schedule with additional countdown to avoid immediate overlap
+                    celery_app.send_task("run_jmp_boxplot", args=[str(next_task.id)], countdown=5)
+                    logger.info(f"Scheduled next queued task in 5s: {next_task.id}")
+                except Exception as e:
+                    logger.error(f"Failed to schedule next queued task {next_task.id}: {e}")
             else:
                 logger.info("No queued tasks found to process")
             

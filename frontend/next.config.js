@@ -22,9 +22,9 @@ const nextConfig = {
     ],
   },
   env: {
-    NEXT_PUBLIC_BACKEND_URL: process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:4750',
-    NEXT_PUBLIC_WS_URL: process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:4750',
-    NEXT_PUBLIC_FRONTEND_URL: process.env.NEXT_PUBLIC_FRONTEND_URL || 'http://localhost:4850',
+    NEXT_PUBLIC_BACKEND_URL: process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:4700',
+    NEXT_PUBLIC_WS_URL: process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:4700',
+    NEXT_PUBLIC_FRONTEND_URL: process.env.NEXT_PUBLIC_FRONTEND_URL || 'http://localhost:4800',
   },
   
   // Add rewrites for API proxying with proper header forwarding
@@ -32,7 +32,7 @@ const nextConfig = {
     return [
       {
         source: '/api/:path*',
-        destination: `${process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:4750'}/api/:path*`,
+        destination: `${process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:4700'}/api/:path*`,
         basePath: false,
       },
     ]

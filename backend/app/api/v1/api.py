@@ -1,5 +1,5 @@
 from fastapi import APIRouter
-from app.api.v1.endpoints import auth, projects, runs, uploads, admin, setup, server, profile, members, organization, roles, artifacts, attachments
+from app.api.v1.endpoints import auth, projects, runs, uploads, admin, setup, server, profile, members, organization, roles, artifacts, attachments, oauth, community
 
 api_router = APIRouter()
 
@@ -17,3 +17,5 @@ api_router.include_router(members.router, prefix="/members", tags=["members"])
 api_router.include_router(organization.router, prefix="/organization", tags=["organization"])
 api_router.include_router(roles.router, prefix="/roles", tags=["roles"])
 api_router.include_router(artifacts.router, prefix="/artifacts", tags=["artifacts"])
+api_router.include_router(oauth.router, prefix="/oauth", tags=["oauth2"])
+api_router.include_router(community.router, prefix="/community", tags=["community"])

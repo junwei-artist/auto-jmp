@@ -56,7 +56,7 @@ class JMPRunner:
     def __init__(self, 
                  base_task_dir: Optional[Union[str, Path]] = None,
                  max_wait_time: int = 300,
-                 jmp_start_delay: int = 4):
+                 jmp_start_delay: int = 6):
         """
         Initialize JMP Runner.
         
@@ -65,7 +65,7 @@ class JMPRunner:
             max_wait_time: Maximum time to wait for JMP completion (seconds)
             jmp_start_delay: Delay after opening JMP before running script (seconds)
         """
-        self.base_task_dir = Path(base_task_dir) if base_task_dir else Path("./tasks")
+        self.base_task_dir = Path(base_task_dir) if base_task_dir else Path("/Users/lytech/Documents/service/auto-jmp/backend/tasks")
         self.max_wait_time = max_wait_time
         self.jmp_start_delay = jmp_start_delay
         
@@ -75,6 +75,39 @@ class JMPRunner:
         logger.info(f"JMPRunner initialized with task directory: {self.base_task_dir}")
         if not APPLESCRIPT_AVAILABLE:
             logger.warning("AppleScript not available - JMP automation may not work properly")
+
+    def _candidate_jmp_apps(self) -> List[str]:
+        """Return ordered list of JMP application names/paths to try with `open -a`.
+        Allows override via env vars: JMP_APP_PATH (full path) or JMP_APP_NAME.
+        """
+        candidates: List[str] = []
+        env_path = os.getenv("JMP_APP_PATH")
+        env_name = os.getenv("JMP_APP_NAME")
+        if env_path:
+            candidates.append(env_path)
+        if env_name:
+            candidates.append(env_name)
+        # Common app bundle names
+        candidates.extend([
+            "JMP Pro 18",
+            "JMP Pro 17",
+            "JMP Pro 16",
+            "JMP 18",
+            "JMP 17",
+            "JMP 16",
+            "JMP",
+        ])
+        # Full default installation paths (if user provides env, those are tried first)
+        candidates.extend([
+            "/Applications/JMP Pro 18.app",
+            "/Applications/JMP Pro 17.app",
+            "/Applications/JMP Pro 16.app",
+            "/Applications/JMP 18.app",
+            "/Applications/JMP 17.app",
+            "/Applications/JMP 16.app",
+            "/Applications/JMP.app",
+        ])
+        return candidates
     
     def convert_jsl_paths(self, jsl_content: str, task_dir: Path) -> str:
         """
@@ -447,6 +480,7 @@ class JMPRunner:
         # Use shorter sleep intervals for faster timeout
         sleep_interval = 1 if self.max_wait_time <= 30 else 2
         
+        min_runtime = 10  # enforce a short minimum wait before early-exit logic
         while time.time() - start_time < self.max_wait_time:
             # Check CPU usage of JMP processes
             jmp_processes = self.find_jmp_processes()
@@ -465,13 +499,13 @@ class JMPRunner:
                 stable_count += 1
             
             # Check if JMP is done (low CPU and stable file count)
-            if cpu_usage < 5.0 and stable_count >= required_stable_count:
+            if (time.time() - start_time) >= min_runtime and cpu_usage < 5.0 and stable_count >= required_stable_count:
                 logger.info(f"JMP completed successfully. Generated {current_count} images.")
                 return True, f"Completed successfully. Generated {current_count} images."
             
             # Early failure detection: if no images after reasonable time and no JMP processes
             elapsed = time.time() - start_time
-            if elapsed > 10 and current_count == 0 and len(jmp_processes) == 0:
+            if elapsed > min_runtime and current_count == 0 and len(jmp_processes) == 0:
                 logger.warning("No JMP processes found and no images generated after 10 seconds")
                 return False, "JMP process not running and no images generated"
             
@@ -619,7 +653,23 @@ class JMPRunner:
             
             # Open JSL file with JMP
             logger.info("Opening JSL file with JMP")
-            subprocess.run(["open", str(jsl_dst)], check=True)
+            # Explicitly open with JMP (try multiple known names/paths)
+            last_err: Optional[Exception] = None
+            opened = False
+            for app in self._candidate_jmp_apps():
+                try:
+                    subprocess.run(["open", "-a", app, str(jsl_dst)], check=True, capture_output=True)
+                    logger.info(f"Opened JSL with application: {app}")
+                    opened = True
+                    break
+                except subprocess.CalledProcessError as e:
+                    last_err = e
+                    logger.warning(f"Failed to open with '{app}': {e}")
+                    continue
+            if not opened:
+                # Fallback: try default opener (may still fail)
+                logger.warning("Falling back to default opener for JSL")
+                subprocess.run(["open", str(jsl_dst)], check=True)
             time.sleep(self.jmp_start_delay)
             
             

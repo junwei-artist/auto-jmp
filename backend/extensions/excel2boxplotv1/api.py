@@ -14,7 +14,10 @@ from .file_processor import FileProcessor
 from .analysis_runner import AnalysisRunner
 import httpx
 import os
+import asyncio
 from app.core.storage import local_storage
+from datetime import datetime
+import uuid
 
 logger = logging.getLogger(__name__)
 
@@ -666,6 +669,7 @@ async def run_analysis_modular(
     """Run complete analysis using modular approach"""
     try:
         logger.info(f"Running analysis with categorical variable: {cat_var}")
+        stage = "init"
         
         # Save uploaded file temporarily
         with tempfile.NamedTemporaryFile(delete=False, suffix='.xlsx') as tmp_file:
@@ -674,9 +678,11 @@ async def run_analysis_modular(
             tmp_file.flush()
             
             # Load file
+            stage = "load_file"
             load_result = file_handler.load_excel_file(tmp_file.name)
             if not load_result["success"]:
-                return load_result
+                os.unlink(tmp_file.name)
+                return JSONResponse(status_code=400, content={"success": False, "error": load_result.get("error", "Load failed"), "stage": stage, "details": load_result})
             
             # Get data
             df_meta = file_handler.df_meta
@@ -684,11 +690,14 @@ async def run_analysis_modular(
             fai_columns = file_handler.fai_columns
             
             # Process data
+            stage = "process_data"
             process_result = data_processor.process_data(df_meta, df_data, fai_columns, cat_var)
             if not process_result["success"]:
-                return process_result
+                os.unlink(tmp_file.name)
+                return JSONResponse(status_code=400, content={"success": False, "error": process_result.get("error", "Process failed"), "stage": stage, "details": process_result})
             
             # Generate files
+            stage = "generate_files"
             file_result = file_processor.generate_files(
                 df_meta,
                 process_result["processed_data"],
@@ -698,9 +707,11 @@ async def run_analysis_modular(
                 color_by
             )
             if not file_result["success"]:
-                return file_result
+                os.unlink(tmp_file.name)
+                return JSONResponse(status_code=400, content={"success": False, "error": file_result.get("error", "File generation failed"), "stage": stage, "details": file_result})
             
             # Persist files to storage and create a run via standard API
+            stage = "persist_files"
             csv_bytes = file_result["files"]["csv_content"].encode("utf-8")
             jsl_bytes = file_result["files"]["jsl_content"].encode("utf-8")
 
@@ -712,18 +723,60 @@ async def run_analysis_modular(
 
             backend_base = os.getenv("NEXT_PUBLIC_BACKEND_URL", "http://localhost:4700")
             async with httpx.AsyncClient(timeout=30.0) as client:
-                run_resp = await client.post(
-                    f"{backend_base}/api/v1/runs/",
-                    json={
-                        "project_id": project_id,
-                        "csv_key": csv_key,
-                        "jsl_key": jsl_key
-                    }
-                )
-                run_resp.raise_for_status()
-                run_json = run_resp.json()
+                stage = "create_run"
+                run_json = None
+                last_error = None
+                for attempt in range(1, 4):
+                    try:
+                        run_resp = await client.post(
+                            f"{backend_base}/api/v1/runs/",
+                            json={
+                                "project_id": project_id,
+                                "csv_key": csv_key,
+                                "jsl_key": jsl_key
+                            }
+                        )
+                        run_resp.raise_for_status()
+                        run_json = run_resp.json()
+                        break
+                    except Exception as e:
+                        last_error = str(e)
+                        logger.warning(f"Create run attempt {attempt}/3 failed: {e}")
+                        if attempt < 3:
+                            await asyncio.sleep(3)
+                        else:
+                            os.unlink(tmp_file.name)
+                            return JSONResponse(
+                                status_code=400,
+                                content={
+                                    "success": False,
+                                    "error": f"Failed to create run after 3 attempts: {last_error}",
+                                    "stage": stage
+                                },
+                            )
+
+            # Save original Excel into the per-run folder for traceability
+            try:
+                if run_json and run_json.get("id"):
+                    run_id = run_json["id"]
+                    run_dir_key = f"runs/{run_id}"
+                    run_dir_path = local_storage.get_file_path(run_dir_key)
+                    run_dir_path.mkdir(parents=True, exist_ok=True)
+                    # Timestamp+UUID filename
+                    original_name = file.filename or "original.xlsx"
+                    base = Path(original_name).stem or "original"
+                    ext = Path(original_name).suffix or ".xlsx"
+                    ts = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+                    uid = str(uuid.uuid4())[:8]
+                    stamped_name = f"{base}_{ts}_{uid}{ext}"
+                    dst_excel_path = run_dir_path / stamped_name
+                    # 'content' holds the uploaded bytes
+                    dst_excel_path.write_bytes(content)
+            except Exception:
+                pass
 
             # Clean up temp file
+            stage = "cleanup"
             os.unlink(tmp_file.name)
 
             return {
@@ -739,6 +792,7 @@ async def run_analysis_modular(
             status_code=400,
             content={
                 "success": False,
-                "error": str(e)
+                "error": str(e),
+                "stage": locals().get("stage", "unknown")
             }
         )

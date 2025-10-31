@@ -53,8 +53,8 @@ fi
 CONFIG_FILE="frontend/.frontend-config"
 
 # Default ports
-DEFAULT_DEV_PORT=4850
-DEFAULT_PROD_PORT=4851
+DEFAULT_DEV_PORT=4800
+DEFAULT_PROD_PORT=4801
 
 # Function to check if port is in use
 check_port() {
@@ -179,28 +179,12 @@ if [ -z "$SERVER_IP" ]; then
     SERVER_IP="localhost"
 fi
 
-# Load .env.local file if it exists
-if [ -f ".env.local" ]; then
-    print_status "Loading environment variables from .env.local..."
-    # Load environment variables safely, handling URLs with colons
-    while IFS= read -r line; do
-        # Skip comments and empty lines
-        if [[ ! "$line" =~ ^[[:space:]]*# ]] && [[ -n "$line" ]]; then
-            # Export the variable safely
-            export "$line" 2>/dev/null || true
-        fi
-    done < .env.local
-    print_success "Environment variables loaded from .env.local"
-else
-    print_warning ".env.local not found - will create one"
-fi
-
 # Check if .env.local exists
 if [ ! -f ".env.local" ]; then
     print_warning ".env.local not found. Creating configuration with server IP: $SERVER_IP"
     cat > .env.local << EOF
-NEXT_PUBLIC_BACKEND_URL=http://$SERVER_IP:4750
-NEXT_PUBLIC_WS_URL=ws://$SERVER_IP:4750
+NEXT_PUBLIC_BACKEND_URL=http://$SERVER_IP:4700
+NEXT_PUBLIC_WS_URL=ws://$SERVER_IP:4700
 NEXT_PUBLIC_FRONTEND_URL=http://$SERVER_IP:$PORT
 EOF
     print_warning "Created configuration with server IP: $SERVER_IP"
@@ -210,16 +194,16 @@ else
     
     # Update or add NEXT_PUBLIC_BACKEND_URL
     if grep -q "^NEXT_PUBLIC_BACKEND_URL=" .env.local; then
-        sed -i '' "s|^NEXT_PUBLIC_BACKEND_URL=.*|NEXT_PUBLIC_BACKEND_URL=http://$SERVER_IP:4750|" .env.local
+        sed -i '' "s|^NEXT_PUBLIC_BACKEND_URL=.*|NEXT_PUBLIC_BACKEND_URL=http://$SERVER_IP:4700|" .env.local
     else
-        echo "NEXT_PUBLIC_BACKEND_URL=http://$SERVER_IP:4750" >> .env.local
+        echo "NEXT_PUBLIC_BACKEND_URL=http://$SERVER_IP:4700" >> .env.local
     fi
     
     # Update or add NEXT_PUBLIC_WS_URL
     if grep -q "^NEXT_PUBLIC_WS_URL=" .env.local; then
-        sed -i '' "s|^NEXT_PUBLIC_WS_URL=.*|NEXT_PUBLIC_WS_URL=ws://$SERVER_IP:4750|" .env.local
+        sed -i '' "s|^NEXT_PUBLIC_WS_URL=.*|NEXT_PUBLIC_WS_URL=ws://$SERVER_IP:4700|" .env.local
     else
-        echo "NEXT_PUBLIC_WS_URL=ws://$SERVER_IP:4750" >> .env.local
+        echo "NEXT_PUBLIC_WS_URL=ws://$SERVER_IP:4700" >> .env.local
     fi
     
     # Update or add NEXT_PUBLIC_FRONTEND_URL

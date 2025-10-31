@@ -9,6 +9,7 @@ import PluginCard from '@/components/plugins/PluginCard'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Plus, BarChart3, ArrowLeft, AlertCircle } from 'lucide-react'
+import { LanguageSelector } from '@/components/LanguageSelector'
 
 export default function PluginsPage() {
   const router = useRouter()
@@ -166,6 +167,7 @@ export default function PluginsPage() {
             </div>
             <div className="flex items-center space-x-2">
               <span className="text-sm text-gray-500">{t('plugins.list.subtitle')}</span>
+              <LanguageSelector />
             </div>
           </div>
         </div>

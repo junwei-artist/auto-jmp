@@ -60,7 +60,8 @@ export function SocketProvider({ children }: { children: ReactNode }) {
           console.log('WebSocket message received:', data)
           
           // Handle different message types
-          if (data.type === 'run_update' && data.run_id) {
+          if (data.run_id) {
+            // Route any run-scoped messages to the subscriber (run_created, run_started, run_progress, run_completed, run_failed, run_canceled, run_update)
             const callback = updateCallbacks.current.get(data.run_id)
             if (callback) {
               callback(data)

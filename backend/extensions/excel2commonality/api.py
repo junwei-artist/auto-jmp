@@ -9,6 +9,7 @@ import logging
 from .processor import ExcelToCommonalityProcessor
 import httpx
 import os
+import asyncio
 from app.core.storage import local_storage
 from ..base.zip_utils import ZipFileGenerator
 from app.core.database import get_db
@@ -16,6 +17,7 @@ from app.core.auth import get_current_user_optional
 from app.models import ProjectAttachment, AppUser
 from sqlalchemy.ext.asyncio import AsyncSession
 import uuid
+from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
@@ -529,6 +531,7 @@ async def run_analysis(
     """Run complete commonality analysis using JMP runner"""
     try:
         logger.info(f"Running commonality analysis for project: {project_name}")
+        stage = "init"
         
         # Get the original file extension
         file_ext = Path(file.filename).suffix.lower()
@@ -542,6 +545,7 @@ async def run_analysis(
             tmp_file.flush()
             
             # Run analysis to generate CSV and JSL
+            stage = "analyze_excel"
             result = processor.analyzer.analyze_excel_file(tmp_file.name)
             
             # Clean up temp file
@@ -552,7 +556,9 @@ async def run_analysis(
                     status_code=400,
                     content={
                         "success": False,
-                        "error": result.get("error", "Analysis failed")
+                        "error": result.get("error", "Analysis failed"),
+                        "stage": stage,
+                        "details": result
                     }
                 )
             
@@ -566,6 +572,7 @@ async def run_analysis(
                 jsl_bytes = f.read()
             
             # Generate storage keys
+            stage = "persist_files"
             csv_key = local_storage.generate_storage_key("data.csv", "text/csv")
             jsl_key = local_storage.generate_storage_key("analysis.jsl", "text/plain")
             
@@ -574,6 +581,7 @@ async def run_analysis(
             local_storage.save_file(jsl_bytes, jsl_key)
             
             # Create ZIP file with original Excel, CSV, and JSL
+            stage = "create_zip"
             zip_result = ZipFileGenerator.create_analysis_zip(
                 excel_content=content,
                 excel_filename=file.filename,
@@ -597,21 +605,45 @@ async def run_analysis(
                 logger.error(f"Failed to create ZIP file: {zip_result.get('error')}")
                 zip_key = None
             
-            # Create run via standard API
+            # Create run via standard API with retry
+            stage = "create_run"
             backend_base = os.getenv("NEXT_PUBLIC_BACKEND_URL", "http://localhost:4700")
             async with httpx.AsyncClient(timeout=30.0) as client:
-                run_resp = await client.post(
-                    f"{backend_base}/api/v1/runs/",
-                    json={
-                        "project_id": project_id,
-                        "csv_key": csv_key,
-                        "jsl_key": jsl_key
-                    }
-                )
-                run_resp.raise_for_status()
-                run_json = run_resp.json()
+                run_json = None
+                last_error = None
+                for attempt in range(1, 4):
+                    try:
+                        run_resp = await client.post(
+                            f"{backend_base}/api/v1/runs/",
+                            json={
+                                "project_id": project_id,
+                                "csv_key": csv_key,
+                                "jsl_key": jsl_key
+                            }
+                        )
+                        run_resp.raise_for_status()
+                        run_json = run_resp.json()
+                        break
+                    except Exception as e:
+                        last_error = str(e)
+                        logger.warning(f"Create run attempt {attempt}/3 failed: {e}")
+                        if attempt < 3:
+                            await asyncio.sleep(3)
+                        else:
+                            # Clean up generated files before returning error
+                            os.unlink(csv_path)
+                            os.unlink(jsl_path)
+                            return JSONResponse(
+                                status_code=400,
+                                content={
+                                    "success": False,
+                                    "error": f"Failed to create run after 3 attempts: {last_error}",
+                                    "stage": stage
+                                },
+                            )
                 
                 # Add ZIP file as project attachment directly to database
+                stage = "add_attachment"
                 run_id = run_json.get("id")
                 if run_id and zip_key:
                     try:
@@ -635,11 +667,29 @@ async def run_analysis(
                         await db.rollback()
                 else:
                     logger.info(f"Skipping ZIP attachment creation for run {run_id}")
+
+                # Save original Excel into per-run folder for traceability
+                try:
+                    if run_id:
+                        run_dir_key = f"runs/{run_id}"
+                        run_dir_path = local_storage.get_file_path(run_dir_key)
+                        run_dir_path.mkdir(parents=True, exist_ok=True)
+                        original_name = file.filename or f"original{file_ext}"
+                        base = Path(original_name).stem or "original"
+                        ext = Path(original_name).suffix or file_ext or ".xlsx"
+                        ts = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+                        uid = str(uuid.uuid4())[:8]
+                        stamped_name = f"{base}_{ts}_{uid}{ext}"
+                        dst_excel_path = run_dir_path / stamped_name
+                        dst_excel_path.write_bytes(content)
+                except Exception:
+                    pass
             
             # Clean up generated files
             os.unlink(csv_path)
             os.unlink(jsl_path)
             
+            stage = "cleanup"
             return {
                 "success": True,
                 "message": "Run created and queued",
@@ -654,7 +704,8 @@ async def run_analysis(
             status_code=500,
             content={
                 "success": False,
-                "error": f"Analysis failed: {str(e)}"
+                "error": f"Analysis failed: {str(e)}",
+                "stage": locals().get("stage", "unknown")
             }
         )
 
