@@ -26,6 +26,18 @@ class LocalFileStorage:
         # Anchor relative paths to backend dir; keep absolute as-is
         absolute_base = configured_base if configured_base.is_absolute() else (backend_dir / configured_base)
 
+        # If no explicit env override, prefer the external service backend uploads path
+        # requested by deployment: /Users/lytech/Documents/service/auto-jmp/backend/uploads
+        if not env_base:
+            external_backend_uploads = Path("/Users/lytech/Documents/service/auto-jmp/backend/uploads")
+            try:
+                # Use the external path if it exists or if its parent exists (we will create it)
+                if external_backend_uploads.parent.exists():
+                    absolute_base = external_backend_uploads
+            except Exception:
+                # Fall back to computed absolute_base on any exception
+                pass
+
         self.base_path = absolute_base.resolve()
 
         # Ensure directories exist

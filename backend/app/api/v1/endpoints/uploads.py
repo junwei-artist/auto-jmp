@@ -183,7 +183,7 @@ async def file_serve_query(
             full_path = candidate
         else:
             # Explicit fallback to user-specified absolute backend path
-            fixed_backend = Path("/Users/lytech/Documents/GitHub/auto-jmp/backend")
+            fixed_backend = Path("/Users/lytech/Documents/service/auto-jmp/backend")
             fixed_candidate = (fixed_backend / task_path).resolve()
             if fixed_candidate.exists():
                 full_path = fixed_candidate
@@ -359,7 +359,7 @@ async def download_run_zip(
                     full_task_dir = candidate2
                 else:
                     # Explicit fallback to user-specified absolute backend path
-                    fixed_backend = Path("/Users/lytech/Documents/GitHub/auto-jmp/backend")
+                    fixed_backend = Path("/Users/lytech/Documents/service/auto-jmp/backend")
                     candidate3 = (fixed_backend / task_dir_rel).resolve()
                     if candidate3.exists():
                         full_task_dir = candidate3
