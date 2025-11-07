@@ -113,5 +113,10 @@ print_success "Port configuration updated successfully!"
 print_status "All services will use the new ports on next restart"
 echo ""
 print_status "To apply changes, restart your services:"
+<<<<<<< HEAD
 echo "  ./run-backend-dev.command"
 echo "  ./run-frontend-dev.command"
+=======
+echo "  ./run-backend.command"
+echo "  ./run-frontend.command"
+>>>>>>> 56ea885ad47f7789cea960cdbf2866b511e3957f

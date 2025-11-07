@@ -13,8 +13,6 @@ dist/
 
 # Virtual environments
 venv*/
-.env
-.env.*
 
 # === Node / Next.js ===
 node_modules/

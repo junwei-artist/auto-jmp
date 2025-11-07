@@ -479,7 +479,69 @@ export default function ProjectPage() {
       formData.append('csv_file', csvFile)
       formData.append('jsl_file', jslFile)
 
+<<<<<<< HEAD
       // Start the run with files uploaded directly
+=======
+      const csvUploadResponse = await fetch(`/api/v1/uploads/presign`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${getAuthToken()}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          filename: csvFile.name,
+          content_type: csvContentType,
+        }),
+      })
+
+      const jslUploadResponse = await fetch(`/api/v1/uploads/presign`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${getAuthToken()}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          filename: jslFile.name,
+          content_type: jslContentType,
+        }),
+      })
+
+      if (!csvUploadResponse.ok || !jslUploadResponse.ok) {
+        throw new Error('Failed to get upload URLs')
+      }
+
+      const csvUploadData = await csvUploadResponse.json()
+      const jslUploadData = await jslUploadResponse.json()
+
+      // Upload files to storage using FormData
+      const csvFormData = new FormData()
+      csvFormData.append('file', csvFile)
+      
+      const jslFormData = new FormData()
+      jslFormData.append('file', jslFile)
+
+      const csvUploadResult = await fetch(csvUploadData.upload_url, {
+        method: 'POST',
+        body: csvFormData,
+        headers: {
+          'Authorization': `Bearer ${getAuthToken()}`,
+        },
+      })
+
+      const jslUploadResult = await fetch(jslUploadData.upload_url, {
+        method: 'POST',
+        body: jslFormData,
+        headers: {
+          'Authorization': `Bearer ${getAuthToken()}`,
+        },
+      })
+
+      if (!csvUploadResult.ok || !jslUploadResult.ok) {
+        throw new Error('Failed to upload files')
+      }
+
+      // Start the run
+>>>>>>> 56ea885ad47f7789cea960cdbf2866b511e3957f
       const runResponse = await fetch(`/api/v1/runs`, {
         method: 'POST',
         headers: {

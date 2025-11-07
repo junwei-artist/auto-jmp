@@ -53,8 +53,8 @@ fi
 CONFIG_FILE="frontend/.frontend-config"
 
 # Default ports
-DEFAULT_DEV_PORT=4800
-DEFAULT_PROD_PORT=4801
+DEFAULT_DEV_PORT=4850
+DEFAULT_PROD_PORT=4851
 
 # Function to check if port is in use
 check_port() {
@@ -194,6 +194,7 @@ if [ -z "$SERVER_IP" ]; then
     SERVER_IP="localhost"
 fi
 
+<<<<<<< HEAD
 # Load backend port from config if available (for initial .env.local creation)
 backend_port_for_init=4700
 if [ -f "../backend/.backend-config" ]; then
@@ -201,18 +202,40 @@ if [ -f "../backend/.backend-config" ]; then
     if [ ! -z "$config_backend_port_init" ] && [ "$config_backend_port_init" -gt 0 ] 2>/dev/null; then
         backend_port_for_init=$config_backend_port_init
     fi
+=======
+# Load .env.local file if it exists
+if [ -f ".env.local" ]; then
+    print_status "Loading environment variables from .env.local..."
+    # Load environment variables safely, handling URLs with colons
+    while IFS= read -r line; do
+        # Skip comments and empty lines
+        if [[ ! "$line" =~ ^[[:space:]]*# ]] && [[ -n "$line" ]]; then
+            # Export the variable safely
+            export "$line" 2>/dev/null || true
+        fi
+    done < .env.local
+    print_success "Environment variables loaded from .env.local"
+else
+    print_warning ".env.local not found - will create one"
+>>>>>>> 56ea885ad47f7789cea960cdbf2866b511e3957f
 fi
 
 # Check if .env.local exists
 if [ ! -f ".env.local" ]; then
     print_warning ".env.local not found. Creating configuration with server IP: $SERVER_IP"
     cat > .env.local << EOF
+<<<<<<< HEAD
 NEXT_PUBLIC_BACKEND_URL=http://$SERVER_IP:$backend_port_for_init
 NEXT_PUBLIC_WS_URL=ws://$SERVER_IP:$backend_port_for_init
+=======
+NEXT_PUBLIC_BACKEND_URL=http://$SERVER_IP:4750
+NEXT_PUBLIC_WS_URL=ws://$SERVER_IP:4750
+>>>>>>> 56ea885ad47f7789cea960cdbf2866b511e3957f
 NEXT_PUBLIC_FRONTEND_URL=http://$SERVER_IP:$PORT
 EOF
     print_warning "Created configuration with server IP: $SERVER_IP"
 else
+<<<<<<< HEAD
     # Load backend port from config if available, otherwise use default
     backend_port=4700
     if [ -f "../backend/.backend-config" ]; then
@@ -239,6 +262,23 @@ else
             sed -i '' "s|^NEXT_PUBLIC_BACKEND_URL=.*|NEXT_PUBLIC_BACKEND_URL=http://$SERVER_IP:$backend_port|" .env.local
             needs_update=true
         fi
+=======
+    # Update existing .env.local with server IP
+    print_status "Updating .env.local with server IP: $SERVER_IP"
+    
+    # Update or add NEXT_PUBLIC_BACKEND_URL
+    if grep -q "^NEXT_PUBLIC_BACKEND_URL=" .env.local; then
+        sed -i '' "s|^NEXT_PUBLIC_BACKEND_URL=.*|NEXT_PUBLIC_BACKEND_URL=http://$SERVER_IP:4750|" .env.local
+    else
+        echo "NEXT_PUBLIC_BACKEND_URL=http://$SERVER_IP:4750" >> .env.local
+    fi
+    
+    # Update or add NEXT_PUBLIC_WS_URL
+    if grep -q "^NEXT_PUBLIC_WS_URL=" .env.local; then
+        sed -i '' "s|^NEXT_PUBLIC_WS_URL=.*|NEXT_PUBLIC_WS_URL=ws://$SERVER_IP:4750|" .env.local
+    else
+        echo "NEXT_PUBLIC_WS_URL=ws://$SERVER_IP:4750" >> .env.local
+>>>>>>> 56ea885ad47f7789cea960cdbf2866b511e3957f
     fi
     
     # Check and update NEXT_PUBLIC_WS_URL (only if missing or server IP changed)
