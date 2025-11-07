@@ -62,6 +62,7 @@ class AppUser(Base):
     notifications = relationship("Notification", back_populates="user")
     oauth_clients = relationship("OAuthClient", back_populates="owner")
     authorization_codes = relationship("AuthorizationCode", back_populates="user")
+    workspaces = relationship("Workspace", back_populates="owner")
 
 class Project(Base):
     __tablename__ = "project"
@@ -474,3 +475,10 @@ class DrawingImage(Base):
     # Relationships
     folder = relationship("DrawingFolder", back_populates="images")
     uploader = relationship("AppUser")
+
+# Import workspace models
+from app.models.workspace import (
+    Workspace, Workflow, WorkflowNode, WorkflowConnection,
+    WorkflowExecution, WorkflowExecutionStatus, WorkflowArtifact,
+    WorkflowStatus, WorkspaceMember, WorkspaceAccessLevel
+)

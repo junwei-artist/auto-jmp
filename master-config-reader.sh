@@ -81,7 +81,7 @@ generate_ws_url() {
 
 generate_frontend_url() {
     local server_ip=$(get_server_ip)
-    local frontend_port=$(get_config_value "FRONTEND_DEV_PORT" "4850")
+    local frontend_port=$(get_config_value "FRONTEND_DEV_PORT" "4800")
     echo "http://$server_ip:$frontend_port"
 }
 
@@ -91,8 +91,8 @@ update_all_configs() {
     
     local server_ip=$(get_server_ip)
     local backend_port=$(get_config_value "BACKEND_PORT" "4750")
-    local frontend_dev_port=$(get_config_value "FRONTEND_DEV_PORT" "4850")
-    local frontend_prod_port=$(get_config_value "FRONTEND_PROD_PORT" "4851")
+    local frontend_dev_port=$(get_config_value "FRONTEND_DEV_PORT" "4800")
+    local frontend_prod_port=$(get_config_value "FRONTEND_PROD_PORT" "4801")
     
     # Update backend config
     if [ -f "backend/.backend-config" ]; then

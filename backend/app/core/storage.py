@@ -33,6 +33,56 @@ class LocalFileStorage:
         (self.base_path / "projects").mkdir(parents=True, exist_ok=True)
         (self.base_path / "runs").mkdir(parents=True, exist_ok=True)
         (self.base_path / "temp").mkdir(parents=True, exist_ok=True)
+        (self.base_path / "workspaces").mkdir(parents=True, exist_ok=True)
+        (self.base_path / "workflows").mkdir(parents=True, exist_ok=True)
+    
+    def get_workspace_path(self, workspace_id: str) -> Path:
+        """Get the workspace folder path"""
+        return self.base_path / "workspaces" / workspace_id
+    
+    def get_workflow_path(self, workflow_id: str) -> Path:
+        """Get the workflow folder path (top-level, not nested in workspace)"""
+        return self.base_path / "workflows" / workflow_id
+    
+    def get_task_path(self, workflow_id: str, task_id: str) -> Path:
+        """Get the task (execution) folder path"""
+        return self.get_workflow_path(workflow_id) / "tasks" / task_id
+    
+    def get_node_path(self, workflow_id: str, task_id: str, node_id: str) -> Path:
+        """Get the node folder path with input and output subfolders (for task execution)"""
+        node_path = self.get_task_path(workflow_id, task_id) / "nodes" / node_id
+        (node_path / "input").mkdir(parents=True, exist_ok=True)
+        (node_path / "output").mkdir(parents=True, exist_ok=True)
+        return node_path
+    
+    def get_workflow_node_path(self, workflow_id: str, node_id: str) -> Path:
+        """Get the node folder path in workflow (not in task) with input, wip, and output subfolders"""
+        node_path = self.get_workflow_path(workflow_id) / "nodes" / node_id
+        (node_path / "input").mkdir(parents=True, exist_ok=True)
+        (node_path / "wip").mkdir(parents=True, exist_ok=True)
+        (node_path / "output").mkdir(parents=True, exist_ok=True)
+        return node_path
+    
+    def ensure_workspace_structure(self, workspace_id: str):
+        """Ensure the workspace folder structure exists"""
+        workspace_path = self.get_workspace_path(workspace_id)
+        workspace_path.mkdir(parents=True, exist_ok=True)
+    
+    def ensure_workflow_structure(self, workflow_id: str, task_id: str = None, node_id: str = None):
+        """Ensure the workflow folder structure exists"""
+        workflow_path = self.get_workflow_path(workflow_id)
+        workflow_path.mkdir(parents=True, exist_ok=True)
+        
+        if task_id:
+            task_path = self.get_task_path(workflow_id, task_id)
+            task_path.mkdir(parents=True, exist_ok=True)
+            
+            if node_id:
+                self.get_node_path(workflow_id, task_id, node_id)
+    
+    def ensure_workflow_node_structure(self, workflow_id: str, node_id: str):
+        """Ensure the workflow node folder structure exists (input, wip, output)"""
+        self.get_workflow_node_path(workflow_id, node_id)
     
     def generate_storage_key(self, filename: str, content_type: str, project_id: str = None) -> str:
         """Generate a unique storage key for a file."""
@@ -125,6 +175,32 @@ class LocalFileStorage:
         except Exception:
             pass
         return total_size
+    
+    def save_workflow_json(self, workflow_id: str, workflow_data: dict) -> Path:
+        """Save workflow data as JSON file in the workflow folder."""
+        import json
+        workflow_path = self.get_workflow_path(workflow_id)
+        workflow_path.mkdir(parents=True, exist_ok=True)
+        
+        json_file = workflow_path / "workflow.json"
+        with open(json_file, 'w', encoding='utf-8') as f:
+            json.dump(workflow_data, f, indent=2, ensure_ascii=False)
+        
+        return json_file
+    
+    def load_workflow_json(self, workflow_id: str) -> Optional[dict]:
+        """Load workflow data from JSON file."""
+        import json
+        workflow_path = self.get_workflow_path(workflow_id)
+        json_file = workflow_path / "workflow.json"
+        
+        try:
+            if json_file.exists():
+                with open(json_file, 'r', encoding='utf-8') as f:
+                    return json.load(f)
+        except Exception:
+            pass
+        return None
 
 # Global storage instance
 local_storage = LocalFileStorage()

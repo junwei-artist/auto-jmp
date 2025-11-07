@@ -103,7 +103,14 @@ get_port() {
         local config_key="${mode}_PORT"
         local config_port=$(grep "^$config_key=" "$CONFIG_FILE" | cut -d'=' -f2)
         if [ ! -z "$config_port" ]; then
-            port=$config_port
+            # If config port differs from default, update config to use default
+            if [ "$config_port" != "$default_port" ]; then
+                print_status "Config port ($config_port) differs from default ($default_port). Updating config..." >&2
+                sed -i '' "s/^$config_key=.*/$config_key=$default_port/" "$CONFIG_FILE"
+                port=$default_port
+            else
+                port=$config_port
+            fi
             print_status "Using port from config: $port" >&2
         fi
     fi
@@ -195,7 +202,7 @@ if [ -z "$SERVER_IP" ]; then
 fi
 
 # Load backend port from config if available (for initial .env.local creation)
-backend_port_for_init=4700
+backend_port_for_init=4750
 if [ -f "../backend/.backend-config" ]; then
     config_backend_port_init=$(grep "^BACKEND_PORT=" ../backend/.backend-config | cut -d'=' -f2)
     if [ ! -z "$config_backend_port_init" ] && [ "$config_backend_port_init" -gt 0 ] 2>/dev/null; then
@@ -214,7 +221,7 @@ EOF
     print_warning "Created configuration with server IP: $SERVER_IP"
 else
     # Load backend port from config if available, otherwise use default
-    backend_port=4700
+    backend_port=4750
     if [ -f "../backend/.backend-config" ]; then
         config_backend_port=$(grep "^BACKEND_PORT=" ../backend/.backend-config | cut -d'=' -f2)
         if [ ! -z "$config_backend_port" ] && [ "$config_backend_port" -gt 0 ] 2>/dev/null; then

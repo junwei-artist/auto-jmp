@@ -88,63 +88,89 @@ class ConnectionManager:
     
     async def handle_subscription(self, websocket: WebSocket, message: dict):
         """Handle subscription/unsubscription messages."""
-        if message.get("type") == "subscribe" and "run_id" in message:
-            run_id = message["run_id"]
-            if run_id not in self.subscriptions:
-                self.subscriptions[run_id] = []
-            if websocket not in self.subscriptions[run_id]:
-                self.subscriptions[run_id].append(websocket)
-            print(f"WebSocket subscribed to run: {run_id}")
+        if message.get("type") == "subscribe":
+            if "run_id" in message:
+                run_id = message["run_id"]
+                if run_id not in self.subscriptions:
+                    self.subscriptions[run_id] = []
+                if websocket not in self.subscriptions[run_id]:
+                    self.subscriptions[run_id].append(websocket)
+                print(f"WebSocket subscribed to run: {run_id}")
+                
+                # Start Redis subscription if not already started
+                if run_id not in self.redis_subscriptions:
+                    task = asyncio.create_task(self._subscribe_to_redis(run_id))
+                    self.redis_subscriptions[run_id] = task
+            elif "workflow_id" in message:
+                workflow_id = message["workflow_id"]
+                if workflow_id not in self.subscriptions:
+                    self.subscriptions[workflow_id] = []
+                if websocket not in self.subscriptions[workflow_id]:
+                    self.subscriptions[workflow_id].append(websocket)
+                print(f"WebSocket subscribed to workflow: {workflow_id}")
+                
+                # Start Redis subscription if not already started
+                if workflow_id not in self.redis_subscriptions:
+                    task = asyncio.create_task(self._subscribe_to_redis(workflow_id, prefix="workflow:"))
+                    self.redis_subscriptions[workflow_id] = task
             
-            # Start Redis subscription if not already started
-            if run_id not in self.redis_subscriptions:
-                task = asyncio.create_task(self._subscribe_to_redis(run_id))
-                self.redis_subscriptions[run_id] = task
-            
-        elif message.get("type") == "unsubscribe" and "run_id" in message:
-            run_id = message["run_id"]
-            if run_id in self.subscriptions and websocket in self.subscriptions[run_id]:
-                self.subscriptions[run_id].remove(websocket)
-            print(f"WebSocket unsubscribed from run: {run_id}")
-            
-            # Clean up Redis subscription if no more subscribers
-            if run_id in self.subscriptions and not self.subscriptions[run_id]:
-                if run_id in self.redis_subscriptions:
-                    self.redis_subscriptions[run_id].cancel()
-                    del self.redis_subscriptions[run_id]
+        elif message.get("type") == "unsubscribe":
+            if "run_id" in message:
+                run_id = message["run_id"]
+                if run_id in self.subscriptions and websocket in self.subscriptions[run_id]:
+                    self.subscriptions[run_id].remove(websocket)
+                print(f"WebSocket unsubscribed from run: {run_id}")
+                
+                # Clean up Redis subscription if no more subscribers
+                if run_id in self.subscriptions and not self.subscriptions[run_id]:
+                    if run_id in self.redis_subscriptions:
+                        self.redis_subscriptions[run_id].cancel()
+                        del self.redis_subscriptions[run_id]
+            elif "workflow_id" in message:
+                workflow_id = message["workflow_id"]
+                if workflow_id in self.subscriptions and websocket in self.subscriptions[workflow_id]:
+                    self.subscriptions[workflow_id].remove(websocket)
+                print(f"WebSocket unsubscribed from workflow: {workflow_id}")
+                
+                # Clean up Redis subscription if no more subscribers
+                if workflow_id in self.subscriptions and not self.subscriptions[workflow_id]:
+                    if workflow_id in self.redis_subscriptions:
+                        self.redis_subscriptions[workflow_id].cancel()
+                        del self.redis_subscriptions[workflow_id]
     
-    async def _subscribe_to_redis(self, run_id: str):
-        """Subscribe to Redis updates for a run and forward to WebSocket subscribers."""
+    async def _subscribe_to_redis(self, entity_id: str, prefix: str = "run:"):
+        """Subscribe to Redis updates for a run/workflow and forward to WebSocket subscribers."""
         pubsub = None
+        channel = f"{prefix}{entity_id}"
         try:
             redis_client = await get_redis()
             pubsub = redis_client.pubsub()
-            await pubsub.subscribe(f"run:{run_id}")
-            print(f"Subscribed to Redis channel: run:{run_id}")
+            await pubsub.subscribe(channel)
+            print(f"Subscribed to Redis channel: {channel}")
             
             async for message in pubsub.listen():
                 if message["type"] == "message":
                     try:
                         data = json.loads(message["data"])
                         # Forward to all subscribers
-                        await self.send_to_subscribers(run_id, data)
+                        await self.send_to_subscribers(entity_id, data)
                     except json.JSONDecodeError:
                         continue
                     except asyncio.CancelledError:
                         break
                 elif message["type"] == "subscribe":
-                    print(f"Redis subscription confirmed for run:{run_id}")
+                    print(f"Redis subscription confirmed for {channel}")
         except asyncio.CancelledError:
-            print(f"Redis subscription cancelled for run: {run_id}")
+            print(f"Redis subscription cancelled for {channel}")
         except Exception as e:
-            print(f"Error in Redis subscription for run {run_id}: {e}")
+            print(f"Error in Redis subscription for {channel}: {e}")
         finally:
             if pubsub:
                 try:
-                    await pubsub.unsubscribe(f"run:{run_id}")
+                    await pubsub.unsubscribe(channel)
                     await pubsub.close()
                 except Exception as e:
-                    print(f"Error closing Redis pubsub for run {run_id}: {e}")
+                    print(f"Error closing Redis pubsub for {channel}: {e}")
 
 manager = ConnectionManager()
 
@@ -163,6 +189,21 @@ async def publish_run_update(run_id: str, message: dict):
         print(f"Failed to publish to Redis: {e}")
     
     print(f"Published update to run:{run_id}: {message}")
+
+async def publish_workflow_update(workflow_id: str, message: dict):
+    """Publish workflow update to WebSocket subscribers and Redis pub/sub."""
+    # Send to all subscribers
+    await manager.send_to_subscribers(workflow_id, message)
+    
+    # Also publish to Redis for real-time transient updates
+    try:
+        redis_client = await get_redis()
+        await redis_client.publish(f"workflow:{workflow_id}", json.dumps(message))
+        print(f"Published update to Redis workflow:{workflow_id}: {message}")
+    except Exception as e:
+        print(f"Failed to publish to Redis: {e}")
+    
+    print(f"Published update to workflow:{workflow_id}: {message}")
 
 async def subscribe_to_run_updates(run_id: str):
     """Subscribe to run updates from Redis and forward to WebSocket."""

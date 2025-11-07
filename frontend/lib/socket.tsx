@@ -8,6 +8,8 @@ interface SocketContextType {
   isConnected: boolean
   subscribeToRun: (runId: string, callback: (data: any) => void) => void
   unsubscribeFromRun: (runId: string) => void
+  subscribeToWorkflow: (workflowId: string, callback: (data: any) => void) => void
+  unsubscribeFromWorkflow: (workflowId: string) => void
 }
 
 const SocketContext = createContext<SocketContextType | undefined>(undefined)
@@ -17,6 +19,7 @@ export function SocketProvider({ children }: { children: ReactNode }) {
   const [isConnected, setIsConnected] = useState(false)
   const updateCallbacks = useRef<Map<string, (data: any) => void>>(new Map())
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+  const subscriptionsRef = useRef<Set<string>>(new Set()) // Track subscriptions for reconnection
 
   const connectWebSocket = () => {
     // For WebSocket, we still need the full URL since rewrites don't work with WS
@@ -34,6 +37,17 @@ export function SocketProvider({ children }: { children: ReactNode }) {
           clearTimeout(reconnectTimeoutRef.current)
           reconnectTimeoutRef.current = null
         }
+        
+        // Re-subscribe to all previous subscriptions
+        subscriptionsRef.current.forEach((id) => {
+          const callback = updateCallbacks.current.get(id)
+          if (callback) {
+            // Try to determine if it's a run_id or workflow_id by checking the callback
+            // For now, we'll try both - the backend will handle it correctly
+            newSocket.send(JSON.stringify({ type: 'subscribe', run_id: id }))
+            newSocket.send(JSON.stringify({ type: 'subscribe', workflow_id: id }))
+          }
+        })
       }
 
       newSocket.onclose = (event) => {
@@ -63,6 +77,12 @@ export function SocketProvider({ children }: { children: ReactNode }) {
           if (data.run_id) {
             // Route any run-scoped messages to the subscriber (run_created, run_started, run_progress, run_completed, run_failed, run_canceled, run_update)
             const callback = updateCallbacks.current.get(data.run_id)
+            if (callback) {
+              callback(data)
+            }
+          } else if (data.workflow_id) {
+            // Route workflow-scoped messages to the subscriber (node_created, node_updated, node_deleted, connection_created, connection_deleted)
+            const callback = updateCallbacks.current.get(data.workflow_id)
             if (callback) {
               callback(data)
             }
@@ -97,6 +117,7 @@ export function SocketProvider({ children }: { children: ReactNode }) {
 
   const subscribeToRun = (runId: string, callback: (data: any) => void) => {
     updateCallbacks.current.set(runId, callback)
+    subscriptionsRef.current.add(runId)
     
     if (socket && socket.readyState === WebSocket.OPEN) {
       socket.send(JSON.stringify({ type: 'subscribe', run_id: runId }))
@@ -105,14 +126,33 @@ export function SocketProvider({ children }: { children: ReactNode }) {
 
   const unsubscribeFromRun = (runId: string) => {
     updateCallbacks.current.delete(runId)
+    subscriptionsRef.current.delete(runId)
     
     if (socket && socket.readyState === WebSocket.OPEN) {
       socket.send(JSON.stringify({ type: 'unsubscribe', run_id: runId }))
     }
   }
 
+  const subscribeToWorkflow = (workflowId: string, callback: (data: any) => void) => {
+    updateCallbacks.current.set(workflowId, callback)
+    subscriptionsRef.current.add(workflowId)
+    
+    if (socket && socket.readyState === WebSocket.OPEN) {
+      socket.send(JSON.stringify({ type: 'subscribe', workflow_id: workflowId }))
+    }
+  }
+
+  const unsubscribeFromWorkflow = (workflowId: string) => {
+    updateCallbacks.current.delete(workflowId)
+    subscriptionsRef.current.delete(workflowId)
+    
+    if (socket && socket.readyState === WebSocket.OPEN) {
+      socket.send(JSON.stringify({ type: 'unsubscribe', workflow_id: workflowId }))
+    }
+  }
+
   return (
-    <SocketContext.Provider value={{ socket, isConnected, subscribeToRun, unsubscribeFromRun }}>
+    <SocketContext.Provider value={{ socket, isConnected, subscribeToRun, unsubscribeFromRun, subscribeToWorkflow, unsubscribeFromWorkflow }}>
       {children}
     </SocketContext.Provider>
   )

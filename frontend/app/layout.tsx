@@ -5,6 +5,7 @@ import { AuthProvider } from '@/lib/auth'
 import { QueryProvider } from '@/lib/query-provider'
 import { SocketProvider } from '@/lib/socket'
 import { LanguageProvider } from '@/lib/language'
+import Navbar from '@/components/Navbar'
 
 const inter = Inter({ subsets: ['latin'] })
 
@@ -25,7 +26,10 @@ export default function RootLayout({
           <LanguageProvider>
             <AuthProvider>
               <SocketProvider>
-                {children}
+                <Navbar />
+                <main className="min-h-screen bg-gray-50">
+                  {children}
+                </main>
                 <Toaster
                   position="top-right"
                   toastOptions={{

@@ -47,8 +47,8 @@ source "$SCRIPT_DIR/master-config-reader.sh"
 
 # Get current configuration
 CURRENT_BACKEND_PORT=$(get_config_value "BACKEND_PORT" "4750")
-CURRENT_FRONTEND_DEV_PORT=$(get_config_value "FRONTEND_DEV_PORT" "4850")
-CURRENT_FRONTEND_PROD_PORT=$(get_config_value "FRONTEND_PROD_PORT" "4851")
+CURRENT_FRONTEND_DEV_PORT=$(get_config_value "FRONTEND_DEV_PORT" "4800")
+CURRENT_FRONTEND_PROD_PORT=$(get_config_value "FRONTEND_PROD_PORT" "4801")
 
 print_status "Current Configuration:"
 echo "  Backend Port: $CURRENT_BACKEND_PORT"
@@ -113,10 +113,5 @@ print_success "Port configuration updated successfully!"
 print_status "All services will use the new ports on next restart"
 echo ""
 print_status "To apply changes, restart your services:"
-<<<<<<< HEAD
-echo "  ./run-backend-dev.command"
-echo "  ./run-frontend-dev.command"
-=======
 echo "  ./run-backend.command"
 echo "  ./run-frontend.command"
->>>>>>> 56ea885ad47f7789cea960cdbf2866b511e3957f

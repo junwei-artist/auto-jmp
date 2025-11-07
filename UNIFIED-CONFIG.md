@@ -28,7 +28,7 @@ All port settings are defined in one place and automatically synchronized across
 ./change-ports.command [backend-port] [frontend-dev-port] [frontend-prod-port]
 
 # Examples:
-./change-ports.command 4750 4850 4851    # Set specific ports
+./change-ports.command 4750 4800 4801    # Set specific ports
 ./change-ports.command                    # Show current config
 ```
 
@@ -66,8 +66,8 @@ cat .master-config
 | Key | Description | Default |
 |-----|-------------|---------|
 | `BACKEND_PORT` | Backend API port | 4750 |
-| `FRONTEND_DEV_PORT` | Frontend development port | 4850 |
-| `FRONTEND_PROD_PORT` | Frontend production port | 4851 |
+| `FRONTEND_DEV_PORT` | Frontend development port | 4800 |
+| `FRONTEND_PROD_PORT` | Frontend production port | 4801 |
 | `BACKEND_HOST` | Backend host binding | 0.0.0.0 |
 | `FRONTEND_HOST` | Frontend host binding | 0.0.0.0 |
 | `SERVER_IP` | Server IP (auto-detected if not set) | Auto |

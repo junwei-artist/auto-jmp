@@ -1,5 +1,5 @@
 from fastapi import APIRouter
-from app.api.v1.endpoints import auth, projects, runs, uploads, admin, setup, server, profile, members, organization, roles, artifacts, attachments, oauth, community, drawings, powerpoint
+from app.api.v1.endpoints import auth, projects, runs, uploads, admin, setup, server, profile, members, organization, roles, artifacts, attachments, oauth, community, drawings, powerpoint, workspaces
 
 api_router = APIRouter()
 
@@ -21,3 +21,4 @@ api_router.include_router(artifacts.router, prefix="/artifacts", tags=["artifact
 api_router.include_router(oauth.router, prefix="/oauth", tags=["oauth2"])
 api_router.include_router(community.router, prefix="/community", tags=["community"])
 api_router.include_router(powerpoint.router, prefix="/powerpoint", tags=["powerpoint"])
+api_router.include_router(workspaces.router, prefix="", tags=["workspaces"])

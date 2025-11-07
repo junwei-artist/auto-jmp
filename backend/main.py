@@ -20,6 +20,12 @@ from extensions.excel2cpkv1.api import router as excel2cpkv1_router
 from extensions.excel2commonality.api import router as excel2commonality_router
 from extensions.excel2commonality_generic.api import router as excel2commonality_generic_router
 
+# Import workspace modules to register them
+import app.workspaces.modules
+
+# Import all models to ensure they're registered with Base.metadata
+from app.models import *  # This includes workspace models
+
 # Load environment variables
 load_dotenv()
 
