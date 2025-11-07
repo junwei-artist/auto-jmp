@@ -60,6 +60,8 @@ class AppUser(Base):
     department = relationship("Department", back_populates="users")
     business_group = relationship("BusinessGroup", back_populates="users")
     notifications = relationship("Notification", back_populates="user")
+    oauth_clients = relationship("OAuthClient", back_populates="owner")
+    authorization_codes = relationship("AuthorizationCode", back_populates="user")
 
 class Project(Base):
     __tablename__ = "project"
@@ -81,7 +83,9 @@ class Project(Base):
     runs = relationship("Run", back_populates="project")
     share_links = relationship("ShareLink", back_populates="project")
     attachments = relationship("ProjectAttachment", back_populates="project")
+    drawing_folders = relationship("DrawingFolder", back_populates="project")
     comments = relationship("ProjectComment")
+    history_logs = relationship("ProjectHistoryLog", back_populates="project", cascade="all, delete-orphan")
 
 class ProjectMember(Base):
     __tablename__ = "project_member"
@@ -95,6 +99,21 @@ class ProjectMember(Base):
     project = relationship("Project", back_populates="members")
     user = relationship("AppUser", back_populates="project_memberships")
     role_obj = relationship("Role", back_populates="project_members")
+
+class ProjectHistoryLog(Base):
+    __tablename__ = "project_history_log"
+    
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    project_id = Column(UUID(as_uuid=True), ForeignKey("project.id", ondelete="CASCADE"), nullable=False)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("app_user.id", ondelete="SET NULL"), nullable=True)
+    action_type = Column(String, nullable=False)  # e.g., 'run_created', 'run_task_name_updated', 'member_added', 'member_removed', 'project_updated', etc.
+    description = Column(Text, nullable=False)  # Human-readable description
+    extra_data = Column(JSON, nullable=True)  # Additional data like old_value, new_value, run_id, etc.
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    
+    # Relationships
+    project = relationship("Project", back_populates="history_logs")
+    user = relationship("AppUser")
 
 class Artifact(Base):
     __tablename__ = "artifact"
@@ -254,6 +273,10 @@ class NotificationType(str, enum.Enum):
     ARTIFACT_COMMENT_ADDED = "ARTIFACT_COMMENT_ADDED"
     RUN_COMPLETED = "RUN_COMPLETED"
     RUN_FAILED = "RUN_FAILED"
+    COMMUNITY_POST_CREATED = "COMMUNITY_POST_CREATED"
+    COMMUNITY_POST_UPDATED = "COMMUNITY_POST_UPDATED"
+    COMMUNITY_POST_LIKED = "COMMUNITY_POST_LIKED"
+    COMMUNITY_POST_COMMENTED = "COMMUNITY_POST_COMMENTED"
 
 class ProjectAttachment(Base):
     __tablename__ = "project_attachment"
@@ -287,3 +310,167 @@ class Notification(Base):
     # Relationships
     user = relationship("AppUser", back_populates="notifications")
     project = relationship("Project")
+
+class OAuthClient(Base):
+    """OAuth2 client for external applications"""
+    __tablename__ = "oauth_client"
+    
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    client_id = Column(String, unique=True, nullable=False)  # Public identifier
+    client_secret_hash = Column(String, nullable=False)  # Hashed secret
+    client_name = Column(String, nullable=False)  # Application name
+    description = Column(Text, nullable=True)
+    redirect_uris = Column(JSON)  # List of allowed redirect URIs
+    owner_id = Column(UUID(as_uuid=True), ForeignKey("app_user.id", ondelete="CASCADE"))  # User who created it
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    last_used_at = Column(DateTime(timezone=True), nullable=True)
+    
+    # Relationships
+    owner = relationship("AppUser", back_populates="oauth_clients")
+    authorization_codes = relationship("AuthorizationCode", back_populates="client", cascade="all, delete")
+
+class AuthorizationCode(Base):
+    """OAuth2 authorization codes (short-lived)"""
+    __tablename__ = "authorization_code"
+    
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    code = Column(String, unique=True, nullable=False)  # Authorization code
+    user_id = Column(UUID(as_uuid=True), ForeignKey("app_user.id", ondelete="CASCADE"))
+    client_id = Column(UUID(as_uuid=True), ForeignKey("oauth_client.id", ondelete="CASCADE"))
+    redirect_uri = Column(String, nullable=False)
+    code_challenge = Column(String, nullable=True)  # For PKCE
+    code_challenge_method = Column(String, nullable=True)  # 'plain' or 'S256'
+    expires_at = Column(DateTime(timezone=True), nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    used = Column(Boolean, default=False)  # One-time use only
+    
+    # Relationships
+    user = relationship("AppUser", back_populates="authorization_codes")
+    client = relationship("OAuthClient", back_populates="authorization_codes")
+
+class CommunityPostType(str, enum.Enum):
+    QUESTION = "question"
+    TUTORIAL = "tutorial"
+    MANUAL = "manual"
+    SHARING = "sharing"
+    TIP = "tip"
+    OTHER = "other"
+
+class CommunityZone(Base):
+    __tablename__ = "community_zone"
+    
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    name = Column(String(100), nullable=False)
+    description = Column(Text, nullable=True)
+    icon = Column(String(50), nullable=True)  # Icon name or emoji
+    color = Column(String(20), nullable=True)  # Hex color code
+    is_active = Column(Boolean, default=True, nullable=False)
+    display_order = Column(BigInteger, default=0, nullable=False)
+    created_by = Column(UUID(as_uuid=True), ForeignKey("app_user.id", ondelete="SET NULL"), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    
+    # Relationships
+    creator = relationship("AppUser")
+    posts = relationship("CommunityPost", back_populates="zone")
+
+class CommunityPost(Base):
+    __tablename__ = "community_post"
+    
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    author_id = Column(UUID(as_uuid=True), ForeignKey("app_user.id", ondelete="SET NULL"))
+    zone_id = Column(UUID(as_uuid=True), ForeignKey("community_zone.id", ondelete="SET NULL"), nullable=True)
+    title = Column(String, nullable=False)
+    content = Column(Text, nullable=False)  # markdown or rich text JSON
+    type = Column(SQLEnum(CommunityPostType), nullable=False, default=CommunityPostType.SHARING)
+    tags = Column(JSON, nullable=True)  # optional list of tags
+    views = Column(BigInteger, default=0)
+    likes_count = Column(BigInteger, default=0, nullable=False)
+    is_pinned = Column(Boolean, default=False)
+    is_locked = Column(Boolean, default=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    deleted_at = Column(DateTime(timezone=True), nullable=True)
+    
+    # Relationships
+    author = relationship("AppUser")
+    zone = relationship("CommunityZone", back_populates="posts")
+    likes = relationship("CommunityPostLike", back_populates="post", cascade="all, delete-orphan")
+    attachments = relationship("CommunityAttachment", back_populates="post", cascade="all, delete-orphan")
+
+class CommunityPostLike(Base):
+    __tablename__ = "community_post_like"
+    
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    post_id = Column(UUID(as_uuid=True), ForeignKey("community_post.id", ondelete="CASCADE"), nullable=False)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("app_user.id", ondelete="CASCADE"), nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    
+    # Relationships
+    post = relationship("CommunityPost", back_populates="likes")
+    user = relationship("AppUser")
+
+class CommunityComment(Base):
+    __tablename__ = "community_comment"
+    
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    post_id = Column(UUID(as_uuid=True), ForeignKey("community_post.id", ondelete="CASCADE"))
+    user_id = Column(UUID(as_uuid=True), ForeignKey("app_user.id", ondelete="SET NULL"))
+    parent_id = Column(UUID(as_uuid=True), ForeignKey("community_comment.id"), nullable=True)
+    content = Column(Text, nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    deleted_at = Column(DateTime(timezone=True), nullable=True)
+    
+    # Relationships
+    post = relationship("CommunityPost")
+    user = relationship("AppUser")
+
+class CommunityAttachment(Base):
+    __tablename__ = "community_attachment"
+    
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    post_id = Column(UUID(as_uuid=True), ForeignKey("community_post.id", ondelete="CASCADE"), nullable=True)
+    comment_id = Column(UUID(as_uuid=True), ForeignKey("community_comment.id", ondelete="CASCADE"), nullable=True)
+    uploaded_by = Column(UUID(as_uuid=True), ForeignKey("app_user.id", ondelete="SET NULL"))
+    filename = Column(String, nullable=False)
+    storage_key = Column(String, nullable=False)
+    file_size = Column(BigInteger, nullable=False)
+    mime_type = Column(String, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    
+    # Relationships
+    uploader = relationship("AppUser")
+    post = relationship("CommunityPost", back_populates="attachments")
+
+class DrawingFolder(Base):
+    __tablename__ = "drawing_folder"
+    
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    project_id = Column(UUID(as_uuid=True), ForeignKey("project.id", ondelete="CASCADE"), nullable=False)
+    created_by = Column(UUID(as_uuid=True), ForeignKey("app_user.id", ondelete="SET NULL"))
+    description = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    
+    # Relationships
+    project = relationship("Project", back_populates="drawing_folders")
+    creator = relationship("AppUser")
+    images = relationship("DrawingImage", back_populates="folder", cascade="all, delete-orphan")
+
+class DrawingImage(Base):
+    __tablename__ = "drawing_image"
+    
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    folder_id = Column(UUID(as_uuid=True), ForeignKey("drawing_folder.id", ondelete="CASCADE"), nullable=False)
+    uploaded_by = Column(UUID(as_uuid=True), ForeignKey("app_user.id", ondelete="SET NULL"))
+    filename = Column(String, nullable=False)
+    storage_key = Column(String, nullable=False)
+    file_size = Column(BigInteger, nullable=False)
+    mime_type = Column(String, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    
+    # Relationships
+    folder = relationship("DrawingFolder", back_populates="images")
+    uploader = relationship("AppUser")

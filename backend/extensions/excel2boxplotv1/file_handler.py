@@ -219,3 +219,6 @@ class FileHandler:
             self.standardizer.cleanup()
         self.was_standardized = False
         self.standardized_file_path = None
+
+
+

@@ -102,12 +102,49 @@ class CommonalityAnalyzer:
             logger.warning(f"Error checking meta sheet: {str(e)}")
             return False
     
-    def generate_jsl(self, fai_columns: List[str], csv_filename: str) -> str:
+    def _generate_data_type_header(self, csv_filename: str, cat_var: str, variable_data_type: str) -> str:
+        """
+        Generate JSL header with data type and modeling type settings.
+        
+        Args:
+            csv_filename: Name of the CSV file
+            cat_var: Name of the categorical variable
+            variable_data_type: Data type/modeling type ('character-nominal' or 'numeric-continuous')
+            
+        Returns:
+            JSL header string with data type settings
+        """
+        # Map variable_data_type to JMP data type and modeling type
+        if variable_data_type == 'character-nominal':
+            data_type = 'Character'
+            modeling_type = 'Nominal'
+        elif variable_data_type == 'numeric-continuous':
+            data_type = 'Numeric'
+            modeling_type = 'Continuous'
+        else:
+            return ""
+        
+        header = f"""//! Auto-run flag
+
+// Open your current data file
+dt = Open("{csv_filename}");
+
+// Double-check the file opened successfully
+If( Is Empty( dt ),
+    Throw( "❌ Failed to open data table: {csv_filename}" )
+);
+
+// Define data/modeling types
+Try( dt:{cat_var} << Set Data Type("{data_type}"); dt:{cat_var} << Set Modeling Type("{modeling_type}");, );"""
+        
+        return header
+    
+    def generate_jsl(self, fai_columns: List[str], csv_filename: str, 
+                    variable_data_type: Optional[str] = None, cat_var: Optional[str] = None) -> str:
         """Generate JSL script for all FAI columns."""
         blocks = []
         for fai in fai_columns:
             block = f"""//!  Start of {fai}                           // auto-run flag
-// Open("{csv_filename}");
 gb = Graph Builder(
     Size( 1080, 768 ),
     Show Control Panel( 0 ),
@@ -246,13 +283,16 @@ If( Is Scriptable( gb ),
                 "error": str(e)
             }
     
-    def analyze_excel_file(self, file_path: str, output_dir: str = "/tmp/") -> Dict[str, Any]:
+    def analyze_excel_file(self, file_path: str, output_dir: str = "/tmp/", 
+                          variable_data_type: Optional[str] = None, cat_var: Optional[str] = None) -> Dict[str, Any]:
         """
         Main analysis function that processes Excel file and generates CSV + JSL
         
         Args:
             file_path: Path to Excel file
             output_dir: Directory for saving output files
+            variable_data_type: Optional data type/modeling type ('character-nominal', 'numeric-continuous', or None)
+            cat_var: Optional categorical variable name (for data type setting)
             
         Returns:
             Dict with analysis results
@@ -297,10 +337,16 @@ If( Is Scriptable( gb ),
                 analysis_mode = "meta"
             else:
                 logger.info("Using standard analyzer for JSL generation")
-                jsl_content = self.generate_jsl(fai_cols, csv_filename)
+                jsl_content = self.generate_jsl(fai_cols, csv_filename, variable_data_type=variable_data_type, cat_var=cat_var)
                 analysis_mode = "standard"
             
-            # 9) Save JSL
+            # 9) Add data type/modeling type header if needed (for both meta and standard modes)
+            if variable_data_type and variable_data_type != 'none' and cat_var:
+                jsl_header = self._generate_data_type_header(csv_filename, cat_var, variable_data_type)
+                jsl_content = jsl_header + "\n\n" + jsl_content
+                logger.info(f"[Commonality] Added data type header for variable '{cat_var}' with type '{variable_data_type}'")
+            
+            # 10) Save JSL
             with open(jsl_path, "w", encoding="utf-8") as f:
                 f.write(jsl_content)
             

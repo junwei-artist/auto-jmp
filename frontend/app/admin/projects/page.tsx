@@ -1,12 +1,12 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 
 interface Project {
   id: string
   name: string
-  description: string
+  description?: string
   owner_id: string
   created_at: string
   run_count: number
@@ -18,6 +18,24 @@ export default function AdminProjectsPage() {
   const [isLoading, setIsLoading] = useState(true)
   const [isAuthenticated, setIsAuthenticated] = useState(false)
 
+  const fetchProjects = useCallback(async () => {
+    try {
+      const token = localStorage.getItem('access_token')
+      const response = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:4700'}/api/v1/admin/projects`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
+      })
+
+      if (response.ok) {
+        const projectsData = await response.json()
+        setProjects(projectsData)
+      }
+    } catch (error) {
+      console.error('Failed to fetch projects:', error)
+    }
+  }, [])
+
   useEffect(() => {
     const checkAuth = async () => {
       const token = localStorage.getItem('access_token')
@@ -27,7 +45,7 @@ export default function AdminProjectsPage() {
       }
 
       try {
-        const response = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/v1/auth/me`, {
+        const response = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:4700'}/api/v1/auth/me`, {
           headers: {
             'Authorization': `Bearer ${token}`,
           },
@@ -52,25 +70,7 @@ export default function AdminProjectsPage() {
     }
 
     checkAuth()
-  }, [router])
-
-  const fetchProjects = async () => {
-    try {
-      const token = localStorage.getItem('access_token')
-      const response = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/v1/admin/projects`, {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-        },
-      })
-
-      if (response.ok) {
-        const projectsData = await response.json()
-        setProjects(projectsData)
-      }
-    } catch (error) {
-      console.error('Failed to fetch projects:', error)
-    }
-  }
+  }, [router, fetchProjects])
 
   const handleDeleteProject = async (projectId: string, projectName: string) => {
     if (!confirm(`Are you sure you want to delete the project "${projectName}"? This action cannot be undone.`)) {
@@ -79,7 +79,7 @@ export default function AdminProjectsPage() {
 
     try {
       const token = localStorage.getItem('access_token')
-      const response = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/v1/admin/projects/${projectId}`, {
+      const response = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:4700'}/api/v1/admin/projects/${projectId}`, {
         method: 'DELETE',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -99,7 +99,7 @@ export default function AdminProjectsPage() {
   }
 
   const handleLogout = () => {
-    localStorage.removeItem('auth_token')
+    localStorage.removeItem('access_token')
     localStorage.removeItem('user_id')
     localStorage.removeItem('is_guest')
     router.push('/admin')

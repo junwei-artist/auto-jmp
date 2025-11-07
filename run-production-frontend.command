@@ -53,7 +53,7 @@ fi
 CONFIG_FILE="frontend/.frontend-config"
 
 # Default production port
-DEFAULT_PROD_PORT=4801
+DEFAULT_PROD_PORT=4800
 
 # Function to check if port is in use
 check_port() {

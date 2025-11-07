@@ -31,12 +31,12 @@ export default function AdminPage() {
         
         // Check if user is admin
         if (data.is_admin) {
-          localStorage.setItem('auth_token', data.access_token)
+          localStorage.setItem('access_token', data.access_token)
           localStorage.setItem('user_id', data.user_id)
           localStorage.setItem('is_guest', 'false')
           
           // Redirect to admin dashboard
-          router.push('/admin/dashboard')
+          window.location.href = '/admin/dashboard'
         } else {
           setError('Admin privileges required')
         }

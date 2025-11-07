@@ -1,15 +1,16 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, ReactNode } from 'react'
 import { useParams } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Alert, AlertDescription } from '@/components/ui/alert-simple'
-import { Loader2, Eye, Download, Globe, Lock, ArrowLeft, Home, X } from 'lucide-react'
+import { Loader2, Eye, Download, Globe, Lock, ArrowLeft, Home, X, ChevronDown, ChevronRight, Info } from 'lucide-react'
 import { useLanguage } from '@/lib/language'
 import { LanguageSelector } from '@/components/LanguageSelector'
 import { PublicImageGallery } from '@/components/PublicImageGallery'
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog'
 import toast from 'react-hot-toast'
 
 interface Project {
@@ -37,6 +38,7 @@ interface Run {
   created_at: string
   started_at?: string
   finished_at?: string
+  jmp_task_id?: string
 }
 
 interface Artifact {
@@ -54,7 +56,7 @@ interface Artifact {
 export default function PublicProjectPage() {
   const params = useParams()
   const { t } = useLanguage()
-  const projectId = params.id as string
+  const projectId = (params as any)?.id as string
 
   const [project, setProject] = useState<Project | null>(null)
   const [runs, setRuns] = useState<Run[]>([])
@@ -63,6 +65,9 @@ export default function PublicProjectPage() {
   const [error, setError] = useState<string | null>(null)
   const [selectedRun, setSelectedRun] = useState<Run | null>(null)
   const [showGallery, setShowGallery] = useState(false)
+  const [expandedRuns, setExpandedRuns] = useState<Set<string>>(new Set())
+  const [showRunInfo, setShowRunInfo] = useState(false)
+  const [selectedRunInfo, setSelectedRunInfo] = useState<Run | null>(null)
 
   const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:4700'
 
@@ -147,6 +152,40 @@ export default function PublicProjectPage() {
       toast.error('Failed to download ZIP file')
     }
   }
+
+  const toggleRun = (id: string) => {
+    setExpandedRuns(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) {
+        next.delete(id)
+      } else {
+        next.add(id)
+      }
+      return next
+    })
+  }
+
+  const RoundIcon = ({ children, className = '' }: { children: ReactNode, className?: string }) => (
+    <span className={`inline-flex items-center justify-center rounded-full bg-gray-200 text-gray-700 font-medium h-6 w-6 text-xs ${className}`}>{children}</span>
+  )
+
+  const ModernCommentIcon = ({ className = "w-8 h-8", primary = "#2563eb", secondary = "#e0e7ff" }) => (
+    <svg viewBox="0 0 32 32" fill="none" className={className} xmlns="http://www.w3.org/2000/svg">
+      <defs><linearGradient id="cmtg" x1="8" y1="6" x2="28" y2="28" gradientUnits="userSpaceOnUse"><stop stopColor={secondary}/><stop offset="1" stopColor={primary} stopOpacity="0.22"/></linearGradient></defs>
+      <path d="M6 14c0-4 3.6-7 8-7h4c4.4 0 8 3 8 7s-3.6 7-8 7h-2l-5 4v-4.5C8.72 19.73 6 17.14 6 14Z" fill="url(#cmtg)"/>
+      <g stroke={primary} strokeWidth="1.6" strokeLinecap="round"><path d="M11.5 14.5h9"/><path d="M13.5 18h5"/></g>
+      <filter id="blur1" x="0" y="0" width="32" height="36"><feGaussianBlur stdDeviation="1.5"/></filter>
+    </svg>
+  )
+  const ModernArtifactIcon = ({ className = "w-8 h-8", primary = "#a21caf", secondary = "#f3e8ff" }) => (
+    <svg viewBox="0 0 32 32" fill="none" className={className} xmlns="http://www.w3.org/2000/svg">
+      <rect x="7" y="8" width="18" height="16" rx="4" fill="url(#afg)" stroke={primary} strokeWidth="1.8"/>
+      <defs><linearGradient id="afg" x1="7" y1="8" x2="25" y2="24" gradientUnits="userSpaceOnUse"><stop stopColor={secondary}/><stop offset="1" stopColor={primary} stopOpacity="0.13"/></linearGradient></defs>
+      <rect x="11" y="13" width="10" height="2" rx="1" fill={primary} opacity="0.23"/>
+      <rect x="11" y="17" width="8" height="1.8" rx="0.9" fill={primary} opacity="0.12"/>
+      <rect x="11" y="20" width="7" height="1.2" rx="0.6" fill={primary} opacity="0.09"/>
+    </svg>
+  )
 
   if (isLoading) {
     return (
@@ -240,8 +279,13 @@ export default function PublicProjectPage() {
                   <div className="space-y-4">
                     {runs.map((run) => (
                       <div key={run.id} className="border rounded-lg p-4">
-                        <div className="flex items-center justify-between mb-3">
-                          <div className="flex items-center space-x-3">
+                        <div className="flex items-center justify-between mb-3 cursor-pointer" onClick={() => toggleRun(run.id)}>
+                          <div className="flex items-center space-x-2">
+                            {expandedRuns.has(run.id) ? (
+                              <ChevronDown className="h-4 w-4" />
+                            ) : (
+                              <ChevronRight className="h-4 w-4" />
+                            )}
                             <Badge className={getStatusColor(run.status)}>
                               {run.status}
                             </Badge>
@@ -252,26 +296,55 @@ export default function PublicProjectPage() {
                               </p>
                             </div>
                           </div>
-                          <div className="flex items-center space-x-2">
-                            <Button 
-                              variant="outline" 
-                              size="sm"
-                              onClick={() => {
-                                setSelectedRun(run)
-                                setShowGallery(true)
-                              }}
-                            >
-                              <Eye className="h-4 w-4" />
-                            </Button>
-                            <Button 
-                              variant="outline" 
-                              size="sm"
-                              onClick={() => handleDownloadZip(run.id)}
-                            >
-                              <Download className="h-4 w-4" />
-                            </Button>
+                          <div className="flex items-center space-x-6">
+                            {/* Big icons for comments and artifacts, vertical layout */}
+                            <div className="flex flex-col items-center">
+                              <div className="flex items-center space-x-2">
+                                <ModernCommentIcon />
+                                <span className="text-sm text-gray-700 font-semibold">0</span>
+                              </div>
+                            </div>
+                            <div className="flex flex-col items-center">
+                              <div className="flex items-center space-x-2">
+                                <ModernArtifactIcon />
+                                <span className="text-sm text-gray-700 font-semibold">{artifacts.filter(a => a.run_id === run.id).length}</span>
+                              </div>
+                            </div>
+                            {/* Action Buttons */}
+                            <div className="flex items-center space-x-2">
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={e => { e.stopPropagation(); setSelectedRun(run); setShowGallery(true); }}
+                              >
+                                <Eye className="h-4 w-4" />
+                              </Button>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={e => { e.stopPropagation(); handleDownloadZip(run.id); }}
+                              >
+                                <Download className="h-4 w-4" />
+                              </Button>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={e => {
+                                  e.stopPropagation();
+                                  setSelectedRunInfo(run);
+                                  setShowRunInfo(true);
+                                }}
+                                title="Show run information"
+                              >
+                                <Info className="h-4 w-4" />
+                              </Button>
+                            </div>
                           </div>
                         </div>
+                        {/* Collapsible details */}
+                        {expandedRuns.has(run.id) && (
+                          <div></div>
+                        )}
                       </div>
                     ))}
                   </div>
@@ -379,6 +452,36 @@ export default function PublicProjectPage() {
           </div>
         </div>
       )}
+
+      {/* Run Info Dialog */}
+      <Dialog open={showRunInfo} onOpenChange={setShowRunInfo}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Run Information</DialogTitle>
+            <DialogDescription>
+              Details for this analysis run
+            </DialogDescription>
+          </DialogHeader>
+          {selectedRunInfo && (
+            <div className="space-y-3 py-4">
+              <div>
+                <label className="text-sm font-semibold text-gray-700">Run ID:</label>
+                <p className="text-sm text-gray-900 font-mono break-all">{selectedRunInfo.id}</p>
+              </div>
+              <div>
+                <label className="text-sm font-semibold text-gray-700">Project ID:</label>
+                <p className="text-sm text-gray-900 font-mono break-all">{selectedRunInfo.project_id}</p>
+              </div>
+              <div>
+                <label className="text-sm font-semibold text-gray-700">JMP Task ID:</label>
+                <p className="text-sm text-gray-900 font-mono break-all">
+                  {selectedRunInfo.jmp_task_id || 'Not set'}
+                </p>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

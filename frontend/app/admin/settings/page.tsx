@@ -30,6 +30,9 @@ export default function AdminSettingsPage() {
   const [isUpdatingQueueMode, setIsUpdatingQueueMode] = useState(false)
   const [extensions, setExtensions] = useState<Extension[]>([])
   const [isLoadingExtensions, setIsLoadingExtensions] = useState(false)
+  const [timeout, setTimeoutValue] = useState(300)
+  const [isUpdatingTimeout, setIsUpdatingTimeout] = useState(false)
+  const [timeoutInput, setTimeoutInput] = useState('300')
 
   useEffect(() => {
     const checkAuth = async () => {
@@ -50,7 +53,7 @@ export default function AdminSettingsPage() {
           const userData = await response.json()
           if (userData.is_admin) {
             setIsAuthenticated(true)
-            await Promise.all([fetchAuditLogs(), fetchQueueMode(), fetchExtensions()])
+            await Promise.all([fetchAuditLogs(), fetchQueueMode(), fetchExtensions(), fetchTimeout()])
           } else {
             router.push('/admin')
           }
@@ -83,6 +86,65 @@ export default function AdminSettingsPage() {
     } catch (error) {
       console.error('Failed to fetch audit logs:', error)
     }
+  }
+
+  const fetchTimeout = async () => {
+    try {
+      const token = localStorage.getItem('access_token')
+      const response = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/v1/admin/timeout`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
+      })
+
+      if (response.ok) {
+        const data = await response.json()
+        setTimeoutValue(data.timeout)
+        setTimeoutInput(data.timeout.toString())
+      }
+    } catch (error) {
+      console.error('Failed to fetch timeout:', error)
+    }
+  }
+
+  const updateTimeout = async (newTimeout: number) => {
+    setIsUpdatingTimeout(true)
+    try {
+      const token = localStorage.getItem('access_token')
+      const response = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/v1/admin/timeout`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ timeout: newTimeout }),
+      })
+
+      if (response.ok) {
+        const data = await response.json()
+        setTimeoutValue(data.timeout)
+        setTimeoutInput(data.timeout.toString())
+        // Refresh audit logs to show the setting change
+        await fetchAuditLogs()
+      } else {
+        const errorData = await response.json()
+        alert(`Failed to update timeout: ${errorData.detail || 'Unknown error'}`)
+      }
+    } catch (error) {
+      console.error('Failed to update timeout:', error)
+      alert('Failed to update timeout')
+    } finally {
+      setIsUpdatingTimeout(false)
+    }
+  }
+
+  const handleTimeoutSubmit = () => {
+    const timeoutValue = parseInt(timeoutInput)
+    if (isNaN(timeoutValue) || timeoutValue <= 0) {
+      alert('Please enter a valid positive number')
+      return
+    }
+    updateTimeout(timeoutValue)
   }
 
   const fetchQueueMode = async () => {
@@ -178,7 +240,9 @@ export default function AdminSettingsPage() {
   }
 
   const handleLogout = () => {
-    localStorage.removeItem('auth_token')
+    localStorage.removeItem('access_token')
+    localStorage.removeItem('user_id')
+    localStorage.removeItem('is_guest')
     localStorage.removeItem('user_id')
     localStorage.removeItem('is_guest')
     router.push('/admin')
@@ -316,6 +380,61 @@ export default function AdminSettingsPage() {
                         ? 'Only one task can run at a time. Other tasks will be queued and processed sequentially.'
                         : 'Multiple tasks can run simultaneously for faster processing.'
                       }
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Timeout Settings */}
+        <div className="bg-white shadow rounded-lg mb-8">
+          <div className="px-6 py-4 border-b border-gray-200">
+            <h3 className="text-lg font-medium text-gray-900">JMP Processing Timeout</h3>
+            <p className="text-sm text-gray-600 mt-1">Configure the maximum time to wait for JMP processing to complete</p>
+          </div>
+          <div className="px-6 py-4">
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <div className="flex-1">
+                  <h4 className="text-sm font-medium text-gray-900">Timeout (seconds)</h4>
+                  <p className="text-sm text-gray-600 mt-1">
+                    Maximum time to wait for JMP processing to complete. Current value: {timeout} seconds ({Math.round(timeout / 60)} minutes)
+                  </p>
+                </div>
+                <div className="ml-6 flex items-center gap-3">
+                  <input
+                    type="number"
+                    min="1"
+                    value={timeoutInput}
+                    onChange={(e) => setTimeoutInput(e.target.value)}
+                    disabled={isUpdatingTimeout}
+                    className="w-32 px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                    placeholder="300"
+                  />
+                  <button
+                    onClick={handleTimeoutSubmit}
+                    disabled={isUpdatingTimeout || timeoutInput === timeout.toString()}
+                    className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-sm"
+                  >
+                    {isUpdatingTimeout ? 'Updating...' : 'Update'}
+                  </button>
+                </div>
+              </div>
+              
+              <div className="bg-gray-50 rounded-lg p-4">
+                <div className="flex items-start">
+                  <div className="flex-shrink-0">
+                    <div className="w-3 h-3 rounded-full mt-1 bg-blue-500"></div>
+                  </div>
+                  <div className="ml-3">
+                    <p className="text-sm font-medium text-gray-900">
+                      Current Timeout: {timeout} seconds
+                    </p>
+                    <p className="text-sm text-gray-600 mt-1">
+                      Tasks will timeout after {timeout} seconds ({Math.round(timeout / 60)} minutes) if JMP processing doesn't complete. 
+                      Increase this value for longer-running analyses.
                     </p>
                   </div>
                 </div>

@@ -32,6 +32,7 @@ class ConnectionManager:
         self.active_connections: Dict[str, List[WebSocket]] = {}
         self.general_connections: List[WebSocket] = []
         self.subscriptions: Dict[str, List[WebSocket]] = {}  # run_id -> list of websockets
+        self.redis_subscriptions: Dict[str, asyncio.Task] = {}  # run_id -> Redis subscription task
     
     async def connect(self, websocket: WebSocket, run_id: str):
         """Connect a WebSocket to a run room."""
@@ -95,18 +96,72 @@ class ConnectionManager:
                 self.subscriptions[run_id].append(websocket)
             print(f"WebSocket subscribed to run: {run_id}")
             
+            # Start Redis subscription if not already started
+            if run_id not in self.redis_subscriptions:
+                task = asyncio.create_task(self._subscribe_to_redis(run_id))
+                self.redis_subscriptions[run_id] = task
+            
         elif message.get("type") == "unsubscribe" and "run_id" in message:
             run_id = message["run_id"]
             if run_id in self.subscriptions and websocket in self.subscriptions[run_id]:
                 self.subscriptions[run_id].remove(websocket)
             print(f"WebSocket unsubscribed from run: {run_id}")
+            
+            # Clean up Redis subscription if no more subscribers
+            if run_id in self.subscriptions and not self.subscriptions[run_id]:
+                if run_id in self.redis_subscriptions:
+                    self.redis_subscriptions[run_id].cancel()
+                    del self.redis_subscriptions[run_id]
+    
+    async def _subscribe_to_redis(self, run_id: str):
+        """Subscribe to Redis updates for a run and forward to WebSocket subscribers."""
+        pubsub = None
+        try:
+            redis_client = await get_redis()
+            pubsub = redis_client.pubsub()
+            await pubsub.subscribe(f"run:{run_id}")
+            print(f"Subscribed to Redis channel: run:{run_id}")
+            
+            async for message in pubsub.listen():
+                if message["type"] == "message":
+                    try:
+                        data = json.loads(message["data"])
+                        # Forward to all subscribers
+                        await self.send_to_subscribers(run_id, data)
+                    except json.JSONDecodeError:
+                        continue
+                    except asyncio.CancelledError:
+                        break
+                elif message["type"] == "subscribe":
+                    print(f"Redis subscription confirmed for run:{run_id}")
+        except asyncio.CancelledError:
+            print(f"Redis subscription cancelled for run: {run_id}")
+        except Exception as e:
+            print(f"Error in Redis subscription for run {run_id}: {e}")
+        finally:
+            if pubsub:
+                try:
+                    await pubsub.unsubscribe(f"run:{run_id}")
+                    await pubsub.close()
+                except Exception as e:
+                    print(f"Error closing Redis pubsub for run {run_id}: {e}")
 
 manager = ConnectionManager()
 
 async def publish_run_update(run_id: str, message: dict):
-    """Publish run update to WebSocket room."""
+    """Publish run update to WebSocket room and Redis pub/sub."""
+    # Send to direct WebSocket connections
     await manager.send_to_run(run_id, message)
     await manager.send_to_subscribers(run_id, message)
+    
+    # Also publish to Redis for real-time transient updates
+    try:
+        redis_client = await get_redis()
+        await redis_client.publish(f"run:{run_id}", json.dumps(message))
+        print(f"Published update to Redis run:{run_id}: {message}")
+    except Exception as e:
+        print(f"Failed to publish to Redis: {e}")
+    
     print(f"Published update to run:{run_id}: {message}")
 
 async def subscribe_to_run_updates(run_id: str):

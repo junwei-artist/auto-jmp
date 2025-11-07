@@ -90,6 +90,20 @@ const getPlugins = (t: (key: string) => string): Plugin[] => {
         getTranslation('plugin.excel2commonality.features.3', 'JSL script generation'),
         getTranslation('plugin.excel2commonality.features.4', 'CSV export')
       ]
+    },
+    {
+      id: 'excel2commonality-generic',
+      name: getTranslation('plugin.excel2commonality-generic.name', 'Excel to Commonality (Generic)'),
+      description: getTranslation('plugin.excel2commonality-generic.description', 'Convert Excel files to CSV and JSL scripts for commonality analysis with user-selected categorical variables'),
+      icon: <BarChart3 className="h-8 w-8 text-teal-600" />,
+      features: [
+        getTranslation('plugin.excel2commonality-generic.features.0', 'Automatic sheet detection'),
+        getTranslation('plugin.excel2commonality-generic.features.1', 'FAI column detection'),
+        getTranslation('plugin.excel2commonality-generic.features.2', 'Non-FAI column detection'),
+        getTranslation('plugin.excel2commonality-generic.features.3', 'User-selected categorical variables'),
+        getTranslation('plugin.excel2commonality-generic.features.4', 'Multi-variable visualization'),
+        getTranslation('plugin.excel2commonality-generic.features.5', 'Custom wizard interface')
+      ]
     }
   ]
 }
@@ -111,7 +125,7 @@ function PluginSelectionContent() {
 
   // Handle URL parameter for pre-selected plugin
   useEffect(() => {
-    const pluginParam = searchParams.get('plugin')
+    const pluginParam = searchParams?.get('plugin')
     if (pluginParam) {
       const plugin = plugins.find(p => p.id === pluginParam)
       if (plugin && !selectedPlugin) {

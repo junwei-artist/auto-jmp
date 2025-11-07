@@ -28,7 +28,7 @@ This directory contains macOS command scripts for easy installation and running 
 
 ---
 
-#### `run-backend.command`
+#### `run-backend-dev.command`
 **Purpose**: Starts the FastAPI backend service with intelligent port management
 
 **What it does**:
@@ -41,7 +41,7 @@ This directory contains macOS command scripts for easy installation and running 
 
 **Usage**:
 ```bash
-./run-backend.command
+./run-backend-dev.command
 ```
 
 **Features**:
@@ -100,7 +100,7 @@ This directory contains macOS command scripts for easy installation and running 
 
 ---
 
-#### `run-frontend.command`
+#### `run-frontend-dev.command`
 **Purpose**: Runs the frontend service with mode selection and port management
 
 **What it does**:
@@ -112,7 +112,7 @@ This directory contains macOS command scripts for easy installation and running 
 
 **Usage**:
 ```bash
-./run-frontend.command
+./run-frontend-dev.command
 ```
 
 **Mode Options**:
@@ -141,12 +141,12 @@ This directory contains macOS command scripts for easy installation and running 
 
 **Terminal 1 - Backend**:
 ```bash
-./run-backend.command
+./run-backend-dev.command
 ```
 
 **Terminal 2 - Frontend (Development)**:
 ```bash
-./run-frontend.command
+./run-frontend-dev.command
 ```
 
 **Terminal 2 - Frontend (Production)**:
@@ -246,11 +246,11 @@ When a port is in use, you'll be presented with options:
 ```
 data-analysis/
 ├── install-backend.command      # Backend installation
-├── run-backend.command         # Backend service runner
+├── run-backend-dev.command      # Backend service runner (development)
 ├── run-production-frontend.command  # Production frontend runner
 ├── install-frontend.command    # Frontend installation
 ├── build-frontend.command      # Frontend build
-├── run-frontend.command        # Frontend service runner
+├── run-frontend-dev.command    # Frontend service runner (development)
 ├── backend/
 │   ├── .backend-config        # Backend port configuration
 │   ├── .env                   # Backend environment variables

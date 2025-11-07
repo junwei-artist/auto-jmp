@@ -6,7 +6,8 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { Download, Eye, RefreshCw, X, ChevronLeft, ChevronRight, ZoomIn, ZoomOut, MessageCircle, Maximize2, Minimize2, RotateCw, RotateCcw, MessageSquare } from 'lucide-react'
+import { Input } from '@/components/ui/input'
+import { Download, Eye, RefreshCw, X, ChevronLeft, ChevronRight, ZoomIn, ZoomOut, MessageCircle, Maximize2, Minimize2, RotateCw, RotateCcw, MessageSquare, Search } from 'lucide-react'
 import { useAuth } from '@/lib/auth'
 import ArtifactComments from './ArtifactComments'
 
@@ -61,6 +62,7 @@ export function ImageGallery({ runId, projectId, run, onClose }: ImageGalleryPro
   const [isFullscreen, setIsFullscreen] = useState(false)
   const [showComments, setShowComments] = useState(true)
   const [rotation, setRotation] = useState(0)
+  const [searchQuery, setSearchQuery] = useState('')
 
   // Fetch artifacts with auto-refresh
   const { data: artifacts, isLoading, error, refetch } = useQuery({
@@ -82,7 +84,7 @@ export function ImageGallery({ runId, projectId, run, onClose }: ImageGalleryPro
   })
 
   // Filter image artifacts and convert relative URLs to absolute
-  const imageArtifacts = artifacts?.filter(artifact => 
+  const allImageArtifacts = artifacts?.filter(artifact => 
     artifact.kind === 'output_image' && artifact.mime_type?.startsWith('image/')
   ).map(artifact => ({
     ...artifact,
@@ -92,6 +94,11 @@ export function ImageGallery({ runId, projectId, run, onClose }: ImageGalleryPro
         ? `/api${artifact.download_url}`
         : artifact.download_url
   })) || []
+
+  // Filter by search query
+  const imageArtifacts = allImageArtifacts.filter(artifact =>
+    artifact.filename.toLowerCase().includes(searchQuery.toLowerCase())
+  )
 
   // Fetch ZIP download URL
   const { data: zipData } = useQuery({
@@ -214,6 +221,15 @@ export function ImageGallery({ runId, projectId, run, onClose }: ImageGalleryPro
     )
   }
 
+  // Handle image selection from grid - find index in filtered array
+  const handleImageClick = (artifact: Artifact) => {
+    const index = imageArtifacts.findIndex(a => a.id === artifact.id)
+    if (index !== -1) {
+      setSelectedImageIndex(index)
+      setIsLightboxOpen(true)
+    }
+  }
+
   // Handle fullscreen toggle
   const toggleFullscreen = () => {
     setIsFullscreen(!isFullscreen)
@@ -232,6 +248,17 @@ export function ImageGallery({ runId, projectId, run, onClose }: ImageGalleryPro
     setZoomLevel(1)
     setRotation(0)
   }, [selectedImageIndex])
+
+  // Reset selected index when search query changes or filtered list changes
+  useEffect(() => {
+    if (imageArtifacts.length > 0) {
+      // Reset to first image if current selection is out of bounds
+      setSelectedImageIndex(prev => prev >= imageArtifacts.length ? 0 : prev)
+    } else {
+      // Reset to 0 if no images match search
+      setSelectedImageIndex(0)
+    }
+  }, [searchQuery, imageArtifacts.length])
 
   // Handle keyboard navigation
   useEffect(() => {
@@ -395,6 +422,27 @@ export function ImageGallery({ runId, projectId, run, onClose }: ImageGalleryPro
         </CardContent>
       </Card>
 
+      {/* Search Bar */}
+      <Card>
+        <CardContent className="p-4">
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+            <Input
+              type="text"
+              placeholder="Search images by filename..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="pl-10"
+            />
+          </div>
+          {searchQuery && (
+            <div className="mt-2 text-sm text-gray-600">
+              Showing {imageArtifacts.length} of {allImageArtifacts.length} image{allImageArtifacts.length !== 1 ? 's' : ''}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
       {/* Images Grid */}
       {imageArtifacts.length > 0 ? (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -405,10 +453,7 @@ export function ImageGallery({ runId, projectId, run, onClose }: ImageGalleryPro
                   src={artifact.download_url}
                   alt={artifact.filename}
                   className="w-full h-full object-contain cursor-pointer"
-                  onClick={() => {
-                    setSelectedImageIndex(index)
-                    setIsLightboxOpen(true)
-                  }}
+                  onClick={() => handleImageClick(artifact)}
                 />
                 
                 {/* Comment count badge */}
@@ -426,8 +471,7 @@ export function ImageGallery({ runId, projectId, run, onClose }: ImageGalleryPro
                       variant="secondary"
                       onClick={(e) => {
                         e.stopPropagation()
-                        setSelectedImageIndex(index)
-                        setIsLightboxOpen(true)
+                        handleImageClick(artifact)
                       }}
                     >
                       <Eye className="h-4 w-4" />
@@ -460,6 +504,13 @@ export function ImageGallery({ runId, projectId, run, onClose }: ImageGalleryPro
                 <div>Images are being generated...</div>
                 <div className="text-sm text-gray-500">
                   This page will automatically refresh when images are ready.
+                </div>
+              </div>
+            ) : searchQuery ? (
+              <div className="space-y-2">
+                <div>No images found matching "{searchQuery}".</div>
+                <div className="text-sm text-gray-500">
+                  Try adjusting your search query.
                 </div>
               </div>
             ) : (

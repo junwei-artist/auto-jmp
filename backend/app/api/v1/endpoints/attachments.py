@@ -42,32 +42,15 @@ async def check_project_access_for_attachment(
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
     
-    # If no user, check if project allows guest access
-    if not user:
-        if not project.allow_guest:
-            raise HTTPException(status_code=403, detail="Guest access not allowed")
+    # NEW POLICY: Any authenticated user can access attachments of private projects
+    if user:
         return project
     
-    # Check if user is owner
-    if project.owner_id == user.id:
-        return project
-    
-    # Check if user is a member
-    from app.models import ProjectMember
-    member_result = await db.execute(
-        select(ProjectMember).where(
-            ProjectMember.project_id == project_id,
-            ProjectMember.user_id == user.id
-        )
-    )
-    if member_result.scalar_one_or_none():
-        return project
-    
-    # Allow guest access to all projects (shared access)
+    # Unauthenticated: only if guests allowed
     if project.allow_guest:
         return project
     
-    raise HTTPException(status_code=403, detail="Access denied")
+    raise HTTPException(status_code=403, detail="Authentication required")
 
 @router.post("/{project_id}/attachments", response_model=ProjectAttachmentResponse)
 async def upload_project_attachment(
@@ -226,9 +209,18 @@ async def download_project_attachment(
 ):
     """Download a project attachment."""
     from fastapi.responses import FileResponse
+    from app.core.config import settings
     
-    # Validate project access
-    project = await check_project_access_for_attachment(db, uuid.UUID(project_id), current_user)
+    # If ALLOW_PUBLIC_MEDIA_ACCESS is enabled, skip auth checks for attachments
+    if settings.ALLOW_PUBLIC_MEDIA_ACCESS:
+        # Still validate project exists but skip auth
+        result = await db.execute(select(Project).where(Project.id == uuid.UUID(project_id)))
+        project = result.scalar_one_or_none()
+        if not project:
+            raise HTTPException(status_code=404, detail="Project not found")
+    else:
+        # Validate project access with normal auth
+        project = await check_project_access_for_attachment(db, uuid.UUID(project_id), current_user)
     
     # Get attachment
     result = await db.execute(

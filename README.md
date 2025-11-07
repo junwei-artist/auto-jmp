@@ -519,10 +519,10 @@ NEXT_PUBLIC_WS_URL=wss://your-api-domain.com
    pkill -f "uvicorn" && pkill -f "next dev"
    
    # Restart backend
-   ./run-backend.command &
+   ./run-backend-dev.command &
    
    # Restart frontend
-   ./run-frontend.command &
+   ./run-frontend-dev.command &
    ```
 
 **Note**: The frontend is configured to bind to `0.0.0.0` by default using the `--hostname` flag, making it accessible from the network. You should see `TCP *:iims (LISTEN)` in the port listing, indicating it's bound to all interfaces.
@@ -607,7 +607,7 @@ ALLOWED_FILE_TYPES=["text/csv", "application/octet-stream", "text/x-jmp-script",
 3. **Hardcoded URL Issues**
    - **Problem**: Frontend uses hardcoded URLs instead of server IP
    - **Solution**: The frontend runner scripts now automatically detect and configure the server IP:
-     - `run-frontend.command` and `run-production-frontend.command` automatically detect server IP
+     - `run-frontend-dev.command` and `run-production-frontend.command` automatically detect server IP
      - Updates `.env.local` with correct `NEXT_PUBLIC_FRONTEND_URL`
      - Frontend code uses environment variables instead of hardcoded URLs
 

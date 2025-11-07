@@ -213,7 +213,7 @@ npm run dev -- --hostname 0.0.0.0 --port 4800
 Or use the provided script:
 
 ```bash
-./run-frontend.command
+./run-frontend-dev.command
 ```
 
 ### 3. Verify Setup

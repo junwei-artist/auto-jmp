@@ -532,6 +532,14 @@ export default function DashboardPage() {
               <Button 
                 variant="ghost" 
                 size="sm"
+                onClick={() => router.push('/community')}
+                className="flex items-center space-x-2"
+              >
+                <span>Community</span>
+              </Button>
+              <Button 
+                variant="ghost" 
+                size="sm"
                 onClick={() => window.open('/help', '_blank')}
                 className="flex items-center space-x-2"
               >

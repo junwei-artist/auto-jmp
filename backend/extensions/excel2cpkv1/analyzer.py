@@ -438,7 +438,7 @@ Wait(0.5);
 If( Is Scriptable( gb ),
     gb << Set Control Panel( 0 );
     Wait( 0.3 );
-    gb << Save Picture( "{imgdir}{test_name}_spec.png", png );
+    gb << Save Picture( "{test_name}.png", png );
     gb << Close Window;
 );
 // End for {test_name}

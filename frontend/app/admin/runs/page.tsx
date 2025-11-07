@@ -131,7 +131,9 @@ export default function AdminRunsPage() {
   }
 
   const handleLogout = () => {
-    localStorage.removeItem('auth_token')
+    localStorage.removeItem('access_token')
+    localStorage.removeItem('user_id')
+    localStorage.removeItem('is_guest')
     localStorage.removeItem('user_id')
     localStorage.removeItem('is_guest')
     router.push('/admin')

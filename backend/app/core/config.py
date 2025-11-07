@@ -1,6 +1,8 @@
 from pydantic_settings import BaseSettings
-from typing import List, Optional
+from pydantic import field_validator
+from typing import List, Optional, Union
 import os
+import json
 
 class Settings(BaseSettings):
     # API Configuration
@@ -13,18 +15,18 @@ class Settings(BaseSettings):
     # Security
     SECRET_KEY: str = os.getenv("SECRET_KEY", "your-secret-key-change-in-production")
     ALGORITHM: str = "HS256"
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 1440  # 24 hours
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7
     
     # Database
     DATABASE_URL: str = os.getenv("DATABASE_URL", "postgresql+asyncpg://data_user:data_userpassword@localhost/data_analysis")
     
     # Redis
-    REDIS_URL: str = os.getenv("REDIS_URL", "redis://localhost:6379")
+    REDIS_URL: str = os.getenv("REDIS_URL", "redis://localhost:4378")
     
     # Celery
-    CELERY_BROKER_URL: str = os.getenv("CELERY_BROKER_URL", "redis://localhost:6379/0")
-    CELERY_RESULT_BACKEND: str = os.getenv("CELERY_RESULT_BACKEND", "redis://localhost:6379/0")
+    CELERY_BROKER_URL: str = os.getenv("CELERY_BROKER_URL", "redis://localhost:4378/0")
+    CELERY_RESULT_BACKEND: str = os.getenv("CELERY_RESULT_BACKEND", "redis://localhost:4378/0")
     
     # Object Storage (S3/MinIO)
     AWS_ACCESS_KEY_ID: str = os.getenv("AWS_ACCESS_KEY_ID", "")
@@ -53,6 +55,24 @@ class Settings(BaseSettings):
         "http://localhost:3001",
     ]
     
+    @field_validator('BACKEND_CORS_ORIGINS', mode='before')
+    @classmethod
+    def parse_cors_origins(cls, v: Union[str, List[str]]) -> List[str]:
+        """Parse CORS origins from string (JSON) or return as list."""
+        if isinstance(v, str):
+            try:
+                # Try parsing as JSON array
+                parsed = json.loads(v)
+                if isinstance(parsed, list):
+                    return parsed
+                elif isinstance(parsed, str):
+                    # If it's a single string, split by comma
+                    return [origin.strip() for origin in parsed.split(',') if origin.strip()]
+            except (json.JSONDecodeError, ValueError):
+                # If JSON parsing fails, try splitting by comma
+                return [origin.strip() for origin in v.split(',') if origin.strip()]
+        return v if isinstance(v, list) else list(v) if v else []
+    
     # File Upload
     MAX_FILE_SIZE: int = 100 * 1024 * 1024  # 100MB
     MAX_ATTACHMENT_SIZE: int = 200 * 1024 * 1024  # 200MB for project attachments
@@ -64,8 +84,12 @@ class Settings(BaseSettings):
     GUEST_RATE_LIMIT: int = 10  # requests per hour
     GUEST_MAX_FILE_SIZE: int = 10 * 1024 * 1024  # 10MB
     
+    # Public Media Access
+    ALLOW_PUBLIC_MEDIA_ACCESS: bool = os.getenv("ALLOW_PUBLIC_MEDIA_ACCESS", "false").lower() == "true"  # Allow direct access to images/attachments without auth
+    
     # JMP Configuration
     JMP_TASK_DIR: str = os.getenv("JMP_TASK_DIR", "/tmp/jmp_tasks")
+    TASKS_DIRECTORY: str = os.getenv("TASKS_DIRECTORY", "/Users/lytech/Documents/service/auto-jmp/backend/tasks")  # Primary path for task files
     JMP_MAX_WAIT_TIME: int = 300  # 5 minutes
     JMP_START_DELAY: int = 4  # seconds
     
@@ -77,3 +101,61 @@ class Settings(BaseSettings):
         case_sensitive = True
 
 settings = Settings()
+
+async def get_jmp_max_wait_time(db_session=None) -> int:
+    """
+    Get JMP_MAX_WAIT_TIME from database setting, with fallback to config/env.
+    
+    Args:
+        db_session: Optional database session. If provided, will query database.
+                   If None, will return config value.
+    
+    Returns:
+        Timeout in seconds
+    """
+    import logging
+    logger = logging.getLogger(__name__)
+    
+    # If no database session provided, return config value
+    if db_session is None:
+        env_value = os.getenv("JMP_MAX_WAIT_TIME")
+        if env_value:
+            timeout = int(env_value)
+            logger.info(f"[CONFIG] Using timeout from environment variable: {timeout}s")
+            return timeout
+        timeout = settings.JMP_MAX_WAIT_TIME
+        logger.info(f"[CONFIG] Using timeout from config default: {timeout}s")
+        return timeout
+    
+    # Try to get from database
+    try:
+        from sqlalchemy import select
+        from app.models import AppSetting
+        
+        result = await db_session.execute(
+            select(AppSetting).where(AppSetting.k == "jmp_max_wait_time")
+        )
+        setting = result.scalar_one_or_none()
+        
+        if setting:
+            try:
+                timeout = int(json.loads(setting.v))
+                logger.info(f"[CONFIG] Using timeout from database setting: {timeout}s")
+                return timeout
+            except (json.JSONDecodeError, ValueError) as e:
+                logger.warning(f"[CONFIG] Failed to parse database timeout setting: {e}, falling back to config")
+        else:
+            logger.info("[CONFIG] No timeout setting found in database, using config default")
+    except Exception as e:
+        # If database query fails, fall back to config
+        logger.warning(f"[CONFIG] Failed to query database for timeout setting: {e}, falling back to config")
+    
+    # Fallback to environment variable or config default
+    env_value = os.getenv("JMP_MAX_WAIT_TIME")
+    if env_value:
+        timeout = int(env_value)
+        logger.info(f"[CONFIG] Using timeout from environment variable (fallback): {timeout}s")
+        return timeout
+    timeout = settings.JMP_MAX_WAIT_TIME
+    logger.info(f"[CONFIG] Using timeout from config default (fallback): {timeout}s")
+    return timeout

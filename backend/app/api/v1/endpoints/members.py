@@ -306,9 +306,27 @@ async def remove_project_member(
     if not membership:
         raise HTTPException(status_code=404, detail="Membership not found")
     
+    # Get user info for history log
+    user_result = await db.execute(select(AppUser).where(AppUser.id == uuid.UUID(user_id)))
+    removed_user = user_result.scalar_one_or_none()
+    
     # Remove membership
     await db.delete(membership)
     await db.commit()
+    
+    # Create history log
+    from app.api.v1.endpoints.projects import create_history_log
+    await create_history_log(
+        db=db,
+        project_id=uuid.UUID(project_id),
+        user_id=current_user.id if current_user else None,
+        action_type="member_removed",
+        description=f"Member {removed_user.email if removed_user else 'Unknown'} removed from project",
+        metadata={
+            "user_id": user_id,
+            "user_email": removed_user.email if removed_user else None
+        }
+    )
     
     # Send notification to the removed user
     await NotificationService.notify_user_removed_from_project(

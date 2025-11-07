@@ -1,20 +1,27 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, and_
 from pydantic import BaseModel
 from typing import List, Optional
 import uuid
 from datetime import datetime, timezone
+from pathlib import Path
+import re
+import logging
+import base64
+from fastapi.responses import Response
 
-from app.core.database import get_db
+from app.core.database import get_db, AsyncSessionLocal
 from app.core.auth import get_current_user, get_current_user_optional
 from app.core.celery import celery_app
 from app.core.websocket import publish_run_update
 from app.core.storage import local_storage
-from app.models import Project, Run, RunStatus, AppUser, Artifact, ProjectMember, AppSetting, RunComment, ProjectAttachment
+from app.core.config import settings
+from app.models import Project, Run, RunStatus, AppUser, Artifact, ProjectMember, AppSetting, RunComment, ProjectAttachment, ProjectHistoryLog
 from app.services.notification_service import NotificationService
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 class RunCreate(BaseModel):
     project_id: str
@@ -71,6 +78,9 @@ class RunArtifactWithCommentsResponse(BaseModel):
 
 class RunCommentUpdate(BaseModel):
     content: str
+
+class RunTaskNameUpdate(BaseModel):
+    task_name: str
 
 @router.get("/", response_model=List[RunResponse])
 async def list_runs(
@@ -158,141 +168,302 @@ async def check_project_access(
 
 @router.post("/", response_model=RunResponse)
 async def create_run(
-    run_data: RunCreate,
+    project_id: str = Form(...),
+    csv_file: UploadFile = File(...),
+    jsl_file: UploadFile = File(...),
     db: AsyncSession = Depends(get_db),
     current_user: Optional[AppUser] = Depends(get_current_user_optional)
 ):
-    """Create a new JMP analysis run."""
-    project_id = uuid.UUID(run_data.project_id)
-    project = await check_project_access(db, project_id, current_user)
+    """
+    Create a new JMP analysis run from uploaded CSV and JSL files.
     
-    # Create run record
-    run = Run(
-        project_id=project_id,
-        started_by=current_user.id if current_user else None,
-        status=RunStatus.QUEUED,
-        task_name="jmp_boxplot",
-        message="Run queued"
-    )
-    
-    db.add(run)
-    await db.commit()
-    await db.refresh(run)
-    
-    # Create artifact records for input files
-    csv_artifact = Artifact(
-        project_id=project_id,
-        run_id=run.id,
-        kind="input_csv",
-        storage_key=run_data.csv_key,
-        filename="data.csv",
-        mime_type="text/csv"
-    )
-    
-    jsl_artifact = Artifact(
-        project_id=project_id,
-        run_id=run.id,
-        kind="input_jsl",
-        storage_key=run_data.jsl_key,
-        filename="script.jsl",
-        mime_type="text/plain"
-    )
-    
-    db.add(csv_artifact)
-    db.add(jsl_artifact)
-    await db.commit()
-    
-    # Create project attachments for input files
-    run_id_str = str(run.id)
-    
-    # Create CSV attachment
-    csv_attachment = ProjectAttachment(
-        project_id=project_id,
-        uploaded_by=current_user.id if current_user else None,
-        filename=f"data_{run_id_str[:8]}.csv",
-        description=f"Uploaded for generating run {run_id_str}",
-        storage_key=run_data.csv_key,
-        file_size=0,  # We'll update this if needed
-        mime_type="text/csv"
-    )
-    
-    # Create JSL attachment
-    jsl_attachment = ProjectAttachment(
-        project_id=project_id,
-        uploaded_by=current_user.id if current_user else None,
-        filename=f"script_{run_id_str[:8]}.jsl",
-        description=f"Uploaded for generating run {run_id_str}",
-        storage_key=run_data.jsl_key,
-        file_size=0,  # We'll update this if needed
-        mime_type="text/plain"
-    )
-    
-    db.add(csv_attachment)
-    db.add(jsl_attachment)
-    await db.commit()
-    
-    # Check queue mode setting
-    queue_mode_result = await db.execute(
-        select(AppSetting).where(AppSetting.k == "queue_mode")
-    )
-    queue_mode_setting = queue_mode_result.scalar_one_or_none()
-    
-    # Default to parallel mode (False) if not set
-    queue_mode = False
-    if queue_mode_setting:
-        try:
-            import json
-            queue_mode = json.loads(queue_mode_setting.v)
-        except:
-            queue_mode = False
-    
-    # Check if there are any running tasks when queue mode is enabled
-    if queue_mode:
-        running_tasks_count = await db.scalar(
-            select(func.count(Run.id)).where(Run.status == RunStatus.RUNNING)
-        )
+    Flow:
+    1. Create run record and run folder
+    2. Save uploaded CSV and JSL to run folder
+    3. Create artifacts for uploaded files
+    4. Process CSV and JSL files
+    5. Generate task folder with processed files
+    6. Copy processed files to task folder
+    7. Queue Celery task
+    """
+    stage = "init"
+    try:
+        project_uuid = uuid.UUID(project_id)
+        project = await check_project_access(db, project_uuid, current_user)
         
-        if running_tasks_count > 0:
-            # There's already a running task, keep this one queued
-            run.message = "Run queued - waiting for other tasks to complete"
-            await db.commit()
-            
-            # Publish queued status
-            await publish_run_update(str(run.id), {
-                "type": "run_queued",
-                "run_id": str(run.id),
-                "status": "queued",
-                "message": "Run queued - waiting for other tasks to complete"
-            })
-        else:
-            # No running tasks, start this one immediately
-            task = celery_app.send_task("run_jmp_boxplot", args=[str(run.id)])
-    else:
-        # Parallel mode - start immediately
-        task = celery_app.send_task("run_jmp_boxplot", args=[str(run.id)])
-    
-    # Publish initial status
-    await publish_run_update(str(run.id), {
-        "type": "run_created",
-        "run_id": str(run.id),
-        "status": "queued",
-        "message": "Run queued for processing"
-    })
-    
-    return RunResponse(
-        id=str(run.id),
-        project_id=str(run.project_id),
-        status=run.status.value,
-        task_name=run.task_name,
-        message=run.message,
-        image_count=run.image_count,
-        created_at=run.created_at,
-        started_at=run.started_at,
-        finished_at=run.finished_at,
-        started_by=str(run.started_by) if run.started_by else None,
-        started_by_email=current_user.email if current_user else None,
-        started_by_is_guest=current_user.is_guest if current_user else None
-    )
+        # Validate file types
+        if not csv_file.filename or not csv_file.filename.lower().endswith('.csv'):
+            raise HTTPException(status_code=400, detail="CSV file must have .csv extension")
+        if not jsl_file.filename or not jsl_file.filename.lower().endswith('.jsl'):
+            raise HTTPException(status_code=400, detail="JSL file must have .jsl extension")
+        
+        # STEP 1: Create run record and folder FIRST (before processing)
+        async with AsyncSessionLocal() as create_db:
+            try:
+                run = Run(
+                    project_id=project_uuid,
+                    started_by=current_user.id if current_user else None,
+                    status=RunStatus.QUEUED,
+                    task_name="jmp_boxplot",
+                    message="Run queued"
+                )
+                create_db.add(run)
+                await create_db.commit()
+                await create_db.refresh(run)
+                
+                logger.info(f"[RUNS] Run created: {run.id}")
+                
+                # STEP 2: Create run folder immediately after run is created
+                run_dir_key = f"runs/{str(run.id)}"
+                run_dir_path = local_storage.get_file_path(run_dir_key)
+                run_dir_path.mkdir(parents=True, exist_ok=True)
+                
+                logger.info(f"[RUNS] Run folder created: {run_dir_path}")
+                
+                # STEP 3: Save uploaded CSV and JSL to run folder
+                stage = "save_files"
+                csv_content = await csv_file.read()
+                jsl_content = await jsl_file.read()
+                
+                # Generate filenames
+                ts = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+                uid = str(uuid.uuid4())[:8]
+                csv_filename = f"data_{ts}_{uid}.csv"
+                jsl_filename = f"script_{ts}_{uid}.jsl"
+                
+                csv_storage_key = f"{run_dir_key}/{csv_filename}"
+                jsl_storage_key = f"{run_dir_key}/{jsl_filename}"
+                csv_storage_path = local_storage.get_file_path(csv_storage_key)
+                jsl_storage_path = local_storage.get_file_path(jsl_storage_key)
+                
+                # Save files to run folder
+                csv_storage_path.write_bytes(csv_content)
+                jsl_storage_path.write_bytes(jsl_content)
+                
+                # Set JSL file permissions to prevent macOS auto-opening
+                jsl_storage_path.chmod(0o644)
+                
+                logger.info(f"[RUNS] Saved uploaded files to run folder:")
+                logger.info(f"  CSV: {csv_storage_path} (size: {len(csv_content)} bytes)")
+                logger.info(f"  JSL: {jsl_storage_path} (size: {len(jsl_content)} bytes)")
+                
+                # STEP 4: Create artifacts for uploaded files
+                stage = "create_artifacts"
+                csv_artifact = Artifact(
+                    project_id=project_uuid,
+                    run_id=run.id,
+                    kind="input_csv",
+                    storage_key=str(csv_storage_path.resolve()),
+                    filename=csv_filename,
+                    mime_type="text/csv"
+                )
+                
+                jsl_artifact = Artifact(
+                    project_id=project_uuid,
+                    run_id=run.id,
+                    kind="input_jsl",
+                    storage_key=str(jsl_storage_path.resolve()),
+                    filename=jsl_filename,
+                    mime_type="text/plain"
+                )
+                
+                create_db.add(csv_artifact)
+                create_db.add(jsl_artifact)
+                await create_db.commit()
+                await create_db.refresh(csv_artifact)
+                await create_db.refresh(jsl_artifact)
+                
+                logger.info(f"[RUNS] Artifacts created for uploaded files")
+                
+                # STEP 5: Process CSV and JSL (validate and prepare)
+                stage = "process_files"
+                # Read CSV to validate it's valid
+                try:
+                    csv_text = csv_storage_path.read_text(encoding='utf-8')
+                    if not csv_text.strip():
+                        raise ValueError("CSV file is empty")
+                    # Validate CSV has at least one line
+                    lines = csv_text.strip().split('\n')
+                    if len(lines) < 1:
+                        raise ValueError("CSV file must have at least one line")
+                except Exception as e:
+                    raise ValueError(f"Invalid CSV file: {str(e)}")
+                
+                # Read JSL to validate it's valid
+                try:
+                    jsl_text = jsl_storage_path.read_text(encoding='utf-8')
+                    if not jsl_text.strip():
+                        raise ValueError("JSL file is empty")
+                except Exception as e:
+                    raise ValueError(f"Invalid JSL file: {str(e)}")
+                
+                logger.info(f"[RUNS] CSV and JSL files validated successfully")
+                
+                # STEP 6: Generate task folder with processed files
+                stage = "create_task_folder"
+                ts_task = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+                task_uid = str(uuid.uuid4())  # Use full UUID for better uniqueness
+                jmp_task_id = f"{ts_task}_{task_uid}"
+                
+                tasks_root = Path(settings.TASKS_DIRECTORY).expanduser().resolve()
+                task_dir = tasks_root / f"task_{jmp_task_id}"
+                task_dir.mkdir(parents=True, exist_ok=True)
+                
+                logger.info(f"[RUNS] Task folder created: {task_dir}")
+                
+                # STEP 7: Copy processed files to task folder
+                stage = "copy_to_task_folder"
+                csv_dst = task_dir / csv_filename
+                jsl_dst = task_dir / jsl_filename
+                
+                # Copy CSV file as-is
+                csv_dst.write_bytes(csv_content)
+                
+                # Read JSL file and ensure header Open() points to absolute CSV path in task folder
+                absolute_csv_path = str(csv_dst.resolve())
+                
+                # Create comment lines with metadata
+                create_time = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+                jsl_header = f"""// JSL Script generated by Auto-JMP Platform
+// Run ID: {str(run.id)}
+// Task Folder ID: {jmp_task_id}
+// Created: {create_time}
+// CSV File: {csv_dst.name}
+Open("{absolute_csv_path}");
+"""
+                
+                # Replace existing Open("..."); header and comments if present, otherwise prepend
+                pattern = r'(?:^\s*//.*?\n)*\s*Open\(".*?"\);\s*\n?'
+                if re.search(pattern, jsl_text, flags=re.MULTILINE):
+                    modified_jsl_content = re.sub(pattern, jsl_header, jsl_text, count=1, flags=re.MULTILINE)
+                    logger.info("[RUNS] Replaced existing Open() header and comments in JSL")
+                else:
+                    modified_jsl_content = jsl_header + jsl_text
+                    logger.info("[RUNS] Prepended Open() header and comments to JSL")
+                
+                # Write modified JSL to task folder
+                jsl_dst.write_text(modified_jsl_content, encoding='utf-8')
+                jsl_dst.chmod(0o644)
+                
+                logger.info(f"[RUNS] Files copied to task folder:")
+                logger.info(f"  CSV: {csv_dst}")
+                logger.info(f"  JSL: {jsl_dst}")
+                
+                # Verify copies
+                if not csv_dst.exists() or not jsl_dst.exists():
+                    raise RuntimeError(f"Failed to copy files into task folder: {task_dir}")
+                
+                # STEP 8: Set jmp_task_id on run and commit
+                stage = "persist_task_id"
+                run.jmp_task_id = jmp_task_id
+                await create_db.commit()
+                
+                logger.info(f"[RUNS] Task ID persisted on run: {jmp_task_id}")
+                
+                # Notify frontend
+                await publish_run_update(str(run.id), {
+                    "type": "task_prepared",
+                    "run_id": str(run.id),
+                    "status": "queued",
+                    "message": f"Task folder ready: task_{jmp_task_id}",
+                    "task_dir": str(task_dir)
+                })
+                
+                # STEP 9: Queue Celery task (after task folder is prepared)
+                stage = "queue_task"
+                # Check queue mode setting
+                queue_mode_result = await create_db.execute(
+                    select(AppSetting).where(AppSetting.k == "queue_mode")
+                )
+                queue_mode_setting = queue_mode_result.scalar_one_or_none()
+                
+                queue_mode = False
+                if queue_mode_setting:
+                    try:
+                        import json
+                        queue_mode = json.loads(queue_mode_setting.v)
+                    except:
+                        queue_mode = False
+                
+                if queue_mode:
+                    running_tasks_count = await create_db.scalar(
+                        select(func.count(Run.id)).where(Run.status == RunStatus.RUNNING)
+                    )
+                    
+                    if running_tasks_count > 0:
+                        run.message = "Run queued - waiting for other tasks to complete"
+                        await create_db.commit()
+                        
+                        await publish_run_update(str(run.id), {
+                            "type": "run_queued",
+                            "run_id": str(run.id),
+                            "status": "queued",
+                            "message": "Run queued - waiting for other tasks to complete"
+                        })
+                    else:
+                        celery_app.send_task("run_jmp_boxplot", args=[str(run.id)])
+                else:
+                    celery_app.send_task("run_jmp_boxplot", args=[str(run.id)])
+                
+                logger.info(f"[RUNS] Celery task queued for run {run.id}")
+                
+                # Create history log for run creation
+                try:
+                    from app.api.v1.endpoints.projects import create_history_log
+                    await create_history_log(
+                        db=create_db,
+                        project_id=run.project_id,
+                        user_id=current_user.id if current_user else None,
+                        action_type="run_created",
+                        description=f"New run created: {run.task_name}",
+                        metadata={
+                            "run_id": str(run.id),
+                            "task_name": run.task_name,
+                            "status": run.status.value
+                        }
+                    )
+                except Exception as e:
+                    logger.warning(f"Failed to create history log: {e}")
+                
+                # Publish initial status
+                await publish_run_update(str(run.id), {
+                    "type": "run_created",
+                    "run_id": str(run.id),
+                    "status": "queued",
+                    "message": "Run queued for processing"
+                })
+                
+                # Return run response
+                return RunResponse(
+                    id=str(run.id),
+                    project_id=str(run.project_id),
+                    status=run.status.value,
+                    task_name=run.task_name,
+                    message=run.message,
+                    image_count=run.image_count,
+                    created_at=run.created_at,
+                    started_at=run.started_at,
+                    finished_at=run.finished_at,
+                    started_by=str(run.started_by) if run.started_by else None,
+                    started_by_email=current_user.email if current_user else None,
+                    started_by_is_guest=current_user.is_guest if current_user else None
+                )
+                
+            except Exception as e:
+                logger.error(f"[RUNS] Failed to create run: {e}", exc_info=True)
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Failed to create run: {str(e)} (stage: {stage})"
+                )
+                
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"[RUNS] Unexpected error creating run: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Unexpected error creating run: {str(e)}"
+        )
 
 @router.get("/{run_id}", response_model=RunResponse)
 async def get_run(
@@ -381,6 +552,108 @@ async def get_run_artifacts(
     
     return artifact_responses
 
+@router.get("/{run_id}/task-images")
+async def get_run_task_images(
+    run_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: Optional[AppUser] = Depends(get_current_user_optional)
+):
+    """Get images directly from the run's task folder (not from database artifacts)."""
+    result = await db.execute(select(Run).where(Run.id == uuid.UUID(run_id), Run.deleted_at.is_(None)))
+    run = result.scalar_one_or_none()
+    
+    if not run:
+        raise HTTPException(status_code=404, detail="Run not found")
+    
+    # Check project access
+    await check_project_access(db, run.project_id, current_user)
+    
+    # Check if run has jmp_task_id
+    if not run.jmp_task_id:
+        return {
+            "run_id": run_id,
+            "images": [],
+            "task_dir": None,
+            "message": "Task folder not yet created"
+        }
+    
+    # Construct task folder path
+    tasks_root = Path(settings.TASKS_DIRECTORY).expanduser().resolve()
+    task_dir = tasks_root / f"task_{run.jmp_task_id}"
+    
+    images = []
+    if task_dir.exists() and task_dir.is_dir():
+        # Find all image files in the task folder
+        image_extensions = {'.png', '.jpg', '.jpeg', '.gif', '.bmp', '.tiff'}
+        for file_path in sorted(task_dir.glob("*")):
+            if file_path.is_file() and file_path.suffix.lower() in image_extensions:
+                # Create a URL to serve the image
+                relative_path = file_path.relative_to(tasks_root)
+                encoded_path = base64.b64encode(str(relative_path).encode()).decode()
+                images.append({
+                    "filename": file_path.name,
+                    "size": file_path.stat().st_size,
+                    "modified": file_path.stat().st_mtime,
+                    "url": f"/api/v1/runs/{run_id}/task-image/{file_path.name}",
+                    "encoded_path": encoded_path
+                })
+    
+    return {
+        "run_id": run_id,
+        "images": images,
+        "task_dir": str(task_dir) if task_dir.exists() else None,
+        "count": len(images)
+    }
+
+@router.get("/{run_id}/task-image/{filename}")
+async def get_run_task_image(
+    run_id: str,
+    filename: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: Optional[AppUser] = Depends(get_current_user_optional)
+):
+    """Serve an image directly from the run's task folder."""
+    result = await db.execute(select(Run).where(Run.id == uuid.UUID(run_id), Run.deleted_at.is_(None)))
+    run = result.scalar_one_or_none()
+    
+    if not run:
+        raise HTTPException(status_code=404, detail="Run not found")
+    
+    # Check project access
+    await check_project_access(db, run.project_id, current_user)
+    
+    if not run.jmp_task_id:
+        raise HTTPException(status_code=404, detail="Task folder not found")
+    
+    # Construct task folder path
+    tasks_root = Path(settings.TASKS_DIRECTORY).expanduser().resolve()
+    task_dir = tasks_root / f"task_{run.jmp_task_id}"
+    image_path = task_dir / filename
+    
+    if not image_path.exists() or not image_path.is_file():
+        raise HTTPException(status_code=404, detail="Image not found")
+    
+    # Verify the image is actually in the task directory (security check)
+    try:
+        image_path.resolve().relative_to(task_dir.resolve())
+    except ValueError:
+        raise HTTPException(status_code=403, detail="Access denied")
+    
+    # Determine content type
+    content_type = "image/png"
+    if filename.lower().endswith('.jpg') or filename.lower().endswith('.jpeg'):
+        content_type = "image/jpeg"
+    elif filename.lower().endswith('.gif'):
+        content_type = "image/gif"
+    elif filename.lower().endswith('.bmp'):
+        content_type = "image/bmp"
+    elif filename.lower().endswith('.tiff'):
+        content_type = "image/tiff"
+    
+    # Read and return the image
+    image_data = image_path.read_bytes()
+    return Response(content=image_data, media_type=content_type)
+
 @router.get("/{run_id}/download-zip")
 async def get_run_zip_download_url(
     run_id: str,
@@ -461,6 +734,95 @@ async def delete_run(
     await db.commit()
     
     return {"message": "Run deleted successfully"}
+
+@router.patch("/{run_id}/task-name", response_model=RunResponse)
+async def update_run_task_name(
+    run_id: str,
+    update_data: RunTaskNameUpdate,
+    current_user: Optional[AppUser] = Depends(get_current_user_optional),
+    db: AsyncSession = Depends(get_db)
+):
+    """Update the task name of a run."""
+    run_uuid = uuid.UUID(run_id)
+    
+    # Get the run and check access
+    result = await db.execute(select(Run).where(Run.id == run_uuid, Run.deleted_at.is_(None)))
+    run = result.scalar_one_or_none()
+    
+    if not run:
+        raise HTTPException(status_code=404, detail="Run not found")
+    
+    # Check if user has access to the project and is a member (not just watcher)
+    project_result = await db.execute(select(Project).where(Project.id == run.project_id))
+    project = project_result.scalar_one_or_none()
+    
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    
+    # Check if user is owner or member (not watcher)
+    if current_user:
+        is_owner = project.owner_id == current_user.id
+        member_result = await db.execute(
+            select(ProjectMember).where(
+                ProjectMember.project_id == run.project_id,
+                ProjectMember.user_id == current_user.id
+            )
+        )
+        member = member_result.scalar_one_or_none()
+        is_member = member is not None and member.role in ['member', 'MEMBER', 'OWNER']
+        
+        if not (is_owner or is_member):
+            raise HTTPException(status_code=403, detail="Only project members can edit run task names")
+    else:
+        raise HTTPException(status_code=401, detail="Authentication required")
+    
+    # Store old task name for history log
+    old_task_name = run.task_name
+    
+    # Update task name
+    run.task_name = update_data.task_name
+    await db.commit()
+    await db.refresh(run)
+    
+    # Create history log
+    from app.api.v1.endpoints.projects import create_history_log
+    await create_history_log(
+        db=db,
+        project_id=run.project_id,
+        user_id=current_user.id if current_user else None,
+        action_type="run_task_name_updated",
+        description=f"Run task name updated from '{old_task_name}' to '{update_data.task_name}'",
+        metadata={
+            "run_id": str(run.id),
+            "old_task_name": old_task_name,
+            "new_task_name": update_data.task_name
+        }
+    )
+    
+    # Get user info for response
+    started_by_email = None
+    started_by_is_guest = None
+    if run.started_by:
+        user_result = await db.execute(select(AppUser).where(AppUser.id == run.started_by))
+        user = user_result.scalar_one_or_none()
+        if user:
+            started_by_email = user.email
+            started_by_is_guest = user.is_guest
+    
+    return RunResponse(
+        id=str(run.id),
+        project_id=str(run.project_id),
+        status=run.status.value,
+        task_name=run.task_name,
+        message=run.message,
+        image_count=run.image_count,
+        created_at=run.created_at,
+        started_at=run.started_at,
+        finished_at=run.finished_at,
+        started_by=str(run.started_by) if run.started_by else None,
+        started_by_email=started_by_email,
+        started_by_is_guest=started_by_is_guest
+    )
 
 # Run Comments endpoints
 @router.get("/{run_id}/comments", response_model=List[RunCommentResponse])

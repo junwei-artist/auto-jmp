@@ -8,11 +8,12 @@ import { Badge } from '@/components/ui/badge'
 import { Alert, AlertDescription } from '@/components/ui/alert-simple'
 import { Switch } from '@/components/ui/switch'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { Loader2, Upload, FileText, BarChart3, Users, Share2, ArrowLeft, Download, Eye, Globe, Lock, Trash2, Settings, MessageSquare, UserPlus, ChevronDown, ChevronRight, Edit2, Check, X, Paperclip } from 'lucide-react'
+import { Loader2, Upload, FileText, BarChart3, Users, Share2, ArrowLeft, Download, Eye, Globe, Lock, Trash2, Settings, MessageSquare, UserPlus, ChevronDown, ChevronRight, Edit2, Check, X, Paperclip, FolderOpen, FileSpreadsheet } from 'lucide-react'
 import { useAuth } from '@/lib/auth'
 import { projectApi, runApi } from '@/lib/api'
-import { useMutation, useQuery } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useLanguage } from '@/lib/language'
+import { useSocket } from '@/lib/socket'
 import { LanguageSelector } from '@/components/LanguageSelector'
 import { ImageGallery } from '@/components/ImageGallery'
 import { ProjectMembership } from '@/components/ProjectMembership'
@@ -20,6 +21,7 @@ import { EnhancedProjectMembership } from '@/components/EnhancedProjectMembershi
 import { ProjectComments } from '@/components/ProjectComments'
 import RunComments from '@/components/RunComments'
 import { ProjectAttachments } from '@/components/ProjectAttachments'
+import { ProjectDrawings } from '@/components/ProjectDrawings'
 import { NotificationBell } from '@/components/NotificationCenter'
 import toast from 'react-hot-toast'
 
@@ -87,7 +89,7 @@ export default function ProjectPage() {
   const router = useRouter()
   const { user, ready } = useAuth()
   const { t } = useLanguage()
-  const projectId = params.id as string
+  const projectId = (params as any)?.id as string
 
   // Helper function to get auth token
   const getAuthToken = () => {
@@ -114,6 +116,11 @@ export default function ProjectPage() {
   const [isEditingProject, setIsEditingProject] = useState(false)
   const [editProjectName, setEditProjectName] = useState('')
   const [editProjectDescription, setEditProjectDescription] = useState('')
+  const [expandedRuns, setExpandedRuns] = useState<Set<string>>(new Set())
+  const [editingTaskName, setEditingTaskName] = useState<string | null>(null)
+  const [editTaskNameValue, setEditTaskNameValue] = useState('')
+  const [historyLogs, setHistoryLogs] = useState<any[]>([])
+  const [historyLogsLoading, setHistoryLogsLoading] = useState(false)
 
   // Fetch server info for public sharing
   useEffect(() => {
@@ -161,6 +168,7 @@ export default function ProjectPage() {
   }, [project, projectLoading, projectError, user, projectId])
 
   // Fetch project runs with auto-refresh
+  const queryClient = useQueryClient()
   const { data: runs, isLoading: runsLoading, refetch: refetchRuns } = useQuery<Run[]>({
     queryKey: ['project-runs', projectId],
     queryFn: () => projectApi.getProjectRuns(projectId),
@@ -168,6 +176,50 @@ export default function ProjectPage() {
     refetchInterval: 5000, // Simple 5-second refresh
     refetchIntervalInBackground: true,
   })
+
+  // Subscribe to WebSocket updates for real-time image count
+  const { subscribeToRun, unsubscribeFromRun } = useSocket()
+  useEffect(() => {
+    if (!runs || runs.length === 0) return
+
+    // Subscribe to all running runs for real-time updates
+    const runningRuns = runs.filter(run => run.status === 'running' || run.status === 'queued')
+    
+    runningRuns.forEach(run => {
+      subscribeToRun(run.id, (update: any) => {
+        if (update.type === 'run_progress' && update.image_count !== undefined) {
+          // Update the run's image_count in the query cache
+          queryClient.setQueryData<Run[]>(['project-runs', projectId], (oldRuns) => {
+            if (!oldRuns) return oldRuns
+            return oldRuns.map(r => 
+              r.id === update.run_id 
+                ? { ...r, image_count: update.image_count, message: update.message }
+                : r
+            )
+          })
+        } else if (update.type === 'run_completed' || update.type === 'run_failed') {
+          // Update final image count and status when run completes
+          queryClient.setQueryData<Run[]>(['project-runs', projectId], (oldRuns) => {
+            if (!oldRuns) return oldRuns
+            return oldRuns.map(r => 
+              r.id === update.run_id 
+                ? { ...r, image_count: update.image_count || r.image_count, status: update.status, message: update.message }
+                : r
+            )
+          })
+          // Unsubscribe from completed runs
+          unsubscribeFromRun(run.id)
+        }
+      })
+    })
+
+    // Cleanup: unsubscribe when component unmounts or runs change
+    return () => {
+      runningRuns.forEach(run => {
+        unsubscribeFromRun(run.id)
+      })
+    }
+  }, [runs, projectId, subscribeToRun, unsubscribeFromRun, queryClient])
 
   // Fetch project artifacts
   const { data: artifacts, isLoading: artifactsLoading } = useQuery<Artifact[]>({
@@ -327,6 +379,42 @@ export default function ProjectPage() {
   }, [runs])
 
   // Delete run mutation
+  // Fetch history logs when history tab is active
+  useEffect(() => {
+    if (activeTab === 'history' && projectId) {
+      const fetchHistoryLogs = async () => {
+        setHistoryLogsLoading(true)
+        try {
+          const logs = await projectApi.getProjectHistory(projectId)
+          setHistoryLogs(logs)
+        } catch (error) {
+          console.error('Failed to fetch history logs:', error)
+        } finally {
+          setHistoryLogsLoading(false)
+        }
+      }
+      fetchHistoryLogs()
+    }
+  }, [activeTab, projectId])
+
+  // Update run task name mutation
+  const updateRunTaskNameMutation = useMutation({
+    mutationFn: ({ runId, taskName }: { runId: string; taskName: string }) =>
+      runApi.updateRunTaskName(runId, taskName),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['project-runs', projectId] })
+      queryClient.invalidateQueries({ queryKey: ['project', projectId, 'history'] })
+      if (activeTab === 'history') {
+        projectApi.getProjectHistory(projectId).then(setHistoryLogs).catch(console.error)
+      }
+      toast.success('Task name updated successfully')
+      setEditingTaskName(null)
+    },
+    onError: (error: any) => {
+      toast.error(error.message || 'Failed to update task name')
+    }
+  })
+
   const deleteRunMutation = useMutation({
     mutationFn: (runId: string) => runApi.deleteRun(runId),
     onSuccess: () => {
@@ -385,85 +473,25 @@ export default function ProjectPage() {
         throw new Error('Please select both CSV and JSL files')
       }
 
-      // Upload files first
-      // Determine content types with fallbacks
-      const csvContentType = csvFile.type || (csvFile.name.endsWith('.csv') ? 'text/csv' : 'text/plain')
-      const jslContentType = jslFile.type || (jslFile.name.endsWith('.jsl') ? 'text/x-jmp-script' : 'text/plain')
+      // Create FormData to send CSV and JSL files directly
+      const formData = new FormData()
+      formData.append('project_id', projectId)
+      formData.append('csv_file', csvFile)
+      formData.append('jsl_file', jslFile)
 
-      const csvUploadResponse = await fetch(`/api/v1/uploads/presign`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${getAuthToken()}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          filename: csvFile.name,
-          content_type: csvContentType,
-        }),
-      })
-
-      const jslUploadResponse = await fetch(`/api/v1/uploads/presign`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${getAuthToken()}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          filename: jslFile.name,
-          content_type: jslContentType,
-        }),
-      })
-
-      if (!csvUploadResponse.ok || !jslUploadResponse.ok) {
-        throw new Error('Failed to get upload URLs')
-      }
-
-      const csvUploadData = await csvUploadResponse.json()
-      const jslUploadData = await jslUploadResponse.json()
-
-      // Upload files to storage using FormData
-      const csvFormData = new FormData()
-      csvFormData.append('file', csvFile)
-      
-      const jslFormData = new FormData()
-      jslFormData.append('file', jslFile)
-
-      const csvUploadResult = await fetch(`/api${csvUploadData.upload_url}`, {
-        method: 'POST',
-        body: csvFormData,
-        headers: {
-          'Authorization': `Bearer ${getAuthToken()}`,
-        },
-      })
-
-      const jslUploadResult = await fetch(`/api${jslUploadData.upload_url}`, {
-        method: 'POST',
-        body: jslFormData,
-        headers: {
-          'Authorization': `Bearer ${getAuthToken()}`,
-        },
-      })
-
-      if (!csvUploadResult.ok || !jslUploadResult.ok) {
-        throw new Error('Failed to upload files')
-      }
-
-      // Start the run
+      // Start the run with files uploaded directly
       const runResponse = await fetch(`/api/v1/runs`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${getAuthToken()}`,
-          'Content-Type': 'application/json',
+          // Don't set Content-Type - browser will set it with boundary for FormData
         },
-        body: JSON.stringify({
-          project_id: projectId,
-          csv_key: csvUploadData.storage_key,
-          jsl_key: jslUploadData.storage_key,
-        }),
+        body: formData,
       })
 
       if (!runResponse.ok) {
-        throw new Error('Failed to start run')
+        const errorData = await runResponse.json().catch(() => ({ detail: 'Failed to start run' }))
+        throw new Error(errorData.detail || 'Failed to start run')
       }
 
       return runResponse.json()
@@ -584,6 +612,36 @@ export default function ProjectPage() {
       description: editProjectDescription.trim() || undefined
     })
   }
+
+  const toggleRun = (id: string) => {
+    setExpandedRuns(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) {
+        next.delete(id)
+      } else {
+        next.add(id)
+      }
+      return next
+    })
+  }
+
+  const ModernCommentIcon = ({ className = "w-8 h-8", primary = "#2563eb", secondary = "#e0e7ff" }) => (
+    <svg viewBox="0 0 32 32" fill="none" className={className} xmlns="http://www.w3.org/2000/svg">
+      <defs><linearGradient id="cmtg" x1="8" y1="6" x2="28" y2="28" gradientUnits="userSpaceOnUse"><stop stopColor={secondary}/><stop offset="1" stopColor={primary} stopOpacity="0.22"/></linearGradient></defs>
+      <path d="M6 14c0-4 3.6-7 8-7h4c4.4 0 8 3 8 7s-3.6 7-8 7h-2l-5 4v-4.5C8.72 19.73 6 17.14 6 14Z" fill="url(#cmtg)"/>
+      <g stroke={primary} strokeWidth="1.6" strokeLinecap="round"><path d="M11.5 14.5h9"/><path d="M13.5 18h5"/></g>
+      <filter id="blur1" x="0" y="0" width="32" height="36"><feGaussianBlur stdDeviation="1.5"/></filter>
+    </svg>
+  )
+  const ModernArtifactIcon = ({ className = "w-8 h-8", primary = "#a21caf", secondary = "#f3e8ff" }) => (
+    <svg viewBox="0 0 32 32" fill="none" className={className} xmlns="http://www.w3.org/2000/svg">
+      <rect x="7" y="8" width="18" height="16" rx="4" fill="url(#afg)" stroke={primary} strokeWidth="1.8"/>
+      <defs><linearGradient id="afg" x1="7" y1="8" x2="25" y2="24" gradientUnits="userSpaceOnUse"><stop stopColor={secondary}/><stop offset="1" stopColor={primary} stopOpacity="0.13"/></linearGradient></defs>
+      <rect x="11" y="13" width="10" height="2" rx="1" fill={primary} opacity="0.23"/>
+      <rect x="11" y="17" width="8" height="1.8" rx="0.9" fill={primary} opacity="0.12"/>
+      <rect x="11" y="20" width="7" height="1.2" rx="0.6" fill={primary} opacity="0.09"/>
+    </svg>
+  )
 
   if (projectLoading) {
     return (
@@ -771,10 +829,14 @@ export default function ProjectPage() {
           {/* Main Content */}
           <div className="lg:col-span-2">
             <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-              <TabsList className="grid w-full grid-cols-5">
+              <TabsList className="grid w-full grid-cols-6">
                 <TabsTrigger value="analysis" className="flex items-center space-x-2">
                   <BarChart3 className="h-4 w-4" />
                   <span>{t('project.tabs.analysis')}</span>
+                </TabsTrigger>
+                <TabsTrigger value="drawings" className="flex items-center space-x-2">
+                  <FolderOpen className="h-4 w-4" />
+                  <span>{t('drawings.tab')}</span>
                 </TabsTrigger>
                 <TabsTrigger value="attachments" className="flex items-center space-x-2">
                   <Paperclip className="h-4 w-4" />
@@ -907,13 +969,70 @@ export default function ProjectPage() {
                       <div className="space-y-4">
                         {runs.map((run) => (
                           <div key={run.id} className="border rounded-lg p-4">
-                            <div className="flex items-center justify-between mb-3">
-                              <div className="flex items-center space-x-3">
+                            <div className="flex items-center justify-between mb-3 cursor-pointer" onClick={() => toggleRun(run.id)}>
+                              <div className="flex items-center space-x-2">
+                                {expandedRuns.has(run.id) ? (
+                                  <ChevronDown className="h-4 w-4" />
+                                ) : (
+                                  <ChevronRight className="h-4 w-4" />
+                                )}
                                 <Badge className={getStatusColor(run.status)}>
                                   {run.status}
                                 </Badge>
-                                <div>
-                                  <p className="font-medium">{run.task_name}</p>
+                                <div className="flex-1">
+                                  {editingTaskName === run.id ? (
+                                    <div className="flex items-center space-x-2">
+                                      <input
+                                        type="text"
+                                        value={editTaskNameValue}
+                                        onChange={(e) => setEditTaskNameValue(e.target.value)}
+                                        className="px-2 py-1 border rounded text-sm"
+                                        autoFocus
+                                        onKeyDown={(e) => {
+                                          if (e.key === 'Enter') {
+                                            updateRunTaskNameMutation.mutate({ runId: run.id, taskName: editTaskNameValue })
+                                          } else if (e.key === 'Escape') {
+                                            setEditingTaskName(null)
+                                            setEditTaskNameValue('')
+                                          }
+                                        }}
+                                      />
+                                      <Button
+                                        size="sm"
+                                        variant="outline"
+                                        onClick={() => updateRunTaskNameMutation.mutate({ runId: run.id, taskName: editTaskNameValue })}
+                                        disabled={updateRunTaskNameMutation.isPending}
+                                      >
+                                        <Check className="h-4 w-4" />
+                                      </Button>
+                                      <Button
+                                        size="sm"
+                                        variant="outline"
+                                        onClick={() => {
+                                          setEditingTaskName(null)
+                                          setEditTaskNameValue('')
+                                        }}
+                                      >
+                                        <X className="h-4 w-4" />
+                                      </Button>
+                                    </div>
+                                  ) : (
+                                    <div className="flex items-center space-x-2 group">
+                                      <p className="font-medium">{run.task_name}</p>
+                                      {(currentUserRole === 'owner' || currentUserRole === 'member') && (
+                                        <button
+                                          onClick={(e) => {
+                                            e.stopPropagation()
+                                            setEditingTaskName(run.id)
+                                            setEditTaskNameValue(run.task_name)
+                                          }}
+                                          className="opacity-0 group-hover:opacity-100 transition-opacity"
+                                        >
+                                          <Edit2 className="h-3 w-3 text-gray-500 hover:text-gray-700" />
+                                        </button>
+                                      )}
+                                    </div>
+                                  )}
                                   <p className="text-sm text-gray-600">
                                     {run.image_count} {t('project.analysisHistory.images')} • {new Date(run.created_at).toLocaleString()}
                                   </p>
@@ -924,193 +1043,218 @@ export default function ProjectPage() {
                                   )}
                                 </div>
                               </div>
-                              <div className="flex items-center space-x-2">
-                                <Button 
-                                  variant="outline" 
-                                  size="sm"
-                                  onClick={() => {
-                                    setSelectedRun(run)
-                                    setShowGallery(true)
-                                  }}
-                                >
-                                  <Eye className="h-4 w-4" />
-                                </Button>
-                                <Button 
-                                  variant="outline" 
-                                  size="sm"
-                                  onClick={async () => {
-                                    try {
-                                      // Download the ZIP file directly
-                                      const downloadResponse = await fetch(`/api/v1/uploads/download-zip/${run.id}`, {
-                                        headers: {
-                                          'Authorization': `Bearer ${getAuthToken()}`,
-                                        },
-                                      })
-                                      
-                                      if (!downloadResponse.ok) throw new Error('Download failed')
-                                      
-                                      const blob = await downloadResponse.blob()
-                                      const url = window.URL.createObjectURL(blob)
-                                      const a = document.createElement('a')
-                                      a.href = url
-                                      a.download = `run_${run.id}_results.zip`
-                                      document.body.appendChild(a)
-                                      a.click()
-                                      window.URL.revokeObjectURL(url)
-                                      document.body.removeChild(a)
-                                      
-                                      toast.success('ZIP file downloaded successfully!')
-                                    } catch (error) {
-                                      console.error('Download error:', error)
-                                      toast.error('Failed to download ZIP file')
-                                    }
-                                  }}
-                                >
-                                  <Download className="h-4 w-4" />
-                                </Button>
-                                {currentUserRole === 'owner' && (
-                                  <Button 
-                                    variant="outline" 
+                              <div className="flex items-center space-x-6">
+                                {/* Big icons for comments and artifacts, vertical layout */}
+                                <div className="flex flex-col items-center">
+                                  <div className="flex items-center space-x-2">
+                                    <ModernCommentIcon />
+                                    <span className="text-sm text-gray-700 font-semibold">{runCommentCounts[run.id] ?? 0}</span>
+                                  </div>
+                                </div>
+                                <div className="flex flex-col items-center">
+                                  <div className="flex items-center space-x-2">
+                                    <ModernArtifactIcon />
+                                    <span className="text-sm text-gray-700 font-semibold">{(runArtifactComments[run.id]?.reduce((sum, art) => sum + (art.comment_count || 0), 0) ?? 0)}</span>
+                                  </div>
+                                </div>
+                                {/* Action Buttons */}
+                                <div className="flex items-center space-x-2">
+                                  <Button
+                                    variant="outline"
                                     size="sm"
-                                    onClick={() => {
-                                      if (confirm('Are you sure you want to delete this run? This action cannot be undone.')) {
-                                        deleteRunMutation.mutate(run.id)
+                                    onClick={e => { e.stopPropagation(); setSelectedRun(run); setShowGallery(true); }}
+                                  >
+                                    <Eye className="h-4 w-4" />
+                                  </Button>
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={e => {
+                                      e.stopPropagation();
+                                      window.open(`/projects/${projectId}/runs/${run.id}/powerpoint-wizard`, '_blank')
+                                    }}
+                                    title="Generate PowerPoint from Excel and Drawings"
+                                  >
+                                    <FileSpreadsheet className="h-4 w-4" />
+                                  </Button>
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={async e => {
+                                      e.stopPropagation();
+                                      try {
+                                        const downloadResponse = await fetch(`/api/v1/uploads/download-zip/${run.id}`, {
+                                          headers: {
+                                            'Authorization': `Bearer ${getAuthToken()}`,
+                                          },
+                                        })
+                                        if (!downloadResponse.ok) throw new Error('Download failed')
+                                        const blob = await downloadResponse.blob()
+                                        const url = window.URL.createObjectURL(blob)
+                                        const a = document.createElement('a')
+                                        a.href = url
+                                        a.download = `run_${run.id}_results.zip`
+                                        document.body.appendChild(a)
+                                        a.click()
+                                        window.URL.revokeObjectURL(url)
+                                        document.body.removeChild(a)
+                                        toast.success('ZIP file downloaded successfully!')
+                                      } catch (error) {
+                                        console.error('Download error:', error)
+                                        toast.error('Failed to download ZIP file')
                                       }
                                     }}
-                                    disabled={deleteRunMutation.isPending}
-                                    className="text-red-600 hover:text-red-700 hover:bg-red-50"
                                   >
-                                    {deleteRunMutation.isPending ? (
-                                      <Loader2 className="h-4 w-4 animate-spin" />
-                                    ) : (
-                                      <Trash2 className="h-4 w-4" />
-                                    )}
+                                    <Download className="h-4 w-4" />
                                   </Button>
-                                )}
+                                  {currentUserRole === 'owner' && (
+                                    <Button
+                                      variant="outline"
+                                      size="sm"
+                                      onClick={e => {
+                                        e.stopPropagation();
+                                        if (confirm('Are you sure you want to delete this run? This action cannot be undone.')) {
+                                          deleteRunMutation.mutate(run.id)
+                                        }
+                                      }}
+                                      disabled={deleteRunMutation.isPending}
+                                      className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                                    >
+                                      {deleteRunMutation.isPending ? (
+                                        <Loader2 className="h-4 w-4 animate-spin" />
+                                      ) : (
+                                        <Trash2 className="h-4 w-4" />
+                                      )}
+                                    </Button>
+                                  )}
+                                </div>
                               </div>
                             </div>
-                            
-                            {/* Comments Toggle Button */}
-                            <div className="mt-3 pt-3 border-t border-gray-200">
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => toggleComments(run.id)}
-                                className="w-full justify-start text-gray-600 hover:text-gray-800"
-                              >
-                                {expandedComments.has(run.id) ? (
-                                  <ChevronDown className="mr-2 h-4 w-4" />
-                                ) : (
-                                  <ChevronRight className="mr-2 h-4 w-4" />
+                            {/* Collapsible section */}
+                            {expandedRuns.has(run.id) && (
+                              <div>
+                                {/* Put all details currently in the run card below this line for when expanded */}
+                                {/* Comments Toggle Button */}
+                                <div className="mt-3 pt-3 border-t border-gray-200">
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={e => { e.stopPropagation(); toggleComments(run.id) }}
+                                    className="w-full justify-start text-gray-600 hover:text-gray-800"
+                                  >
+                                    {expandedComments.has(run.id) ? (
+                                      <ChevronDown className="mr-2 h-4 w-4" />
+                                    ) : (
+                                      <ChevronRight className="mr-2 h-4 w-4" />
+                                    )}
+                                    <MessageSquare className="mr-2 h-4 w-4" />
+                                    Comments {commentCountsLoading ? '...' : (runCommentCounts[run.id] !== undefined && runCommentCounts[run.id] > 0 && `(${runCommentCounts[run.id]})`)}
+                                  </Button>
+                                </div>
+                                {/* Run Comments - Collapsible */}
+                                {expandedComments.has(run.id) && (
+                                  <div className="mt-3">
+                                    <RunComments 
+                                      runId={run.id}
+                                      currentUserRole={currentUserRole}
+                                      onCommentCountChange={(count) => {
+                                        setRunCommentCounts(prev => ({
+                                          ...prev,
+                                          [run.id]: count
+                                        }))
+                                      }}
+                                    />
+                                  </div>
                                 )}
-                                <MessageSquare className="mr-2 h-4 w-4" />
-                                Comments {commentCountsLoading ? '...' : (runCommentCounts[run.id] !== undefined && runCommentCounts[run.id] > 0 && `(${runCommentCounts[run.id]})`)}
-                              </Button>
-                            </div>
-                            
-                            {/* Run Comments - Collapsible */}
-                            {expandedComments.has(run.id) && (
-                              <div className="mt-3">
-                                <RunComments 
-                                  runId={run.id}
-                                  currentUserRole={currentUserRole}
-                                  onCommentCountChange={(count) => {
-                                    setRunCommentCounts(prev => ({
-                                      ...prev,
-                                      [run.id]: count
-                                    }))
-                                  }}
-                                />
-                              </div>
-                            )}
+                                {/* Artifact Comments Section */}
+                                <div className="mt-3 pt-3 border-t border-gray-200">
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => toggleArtifacts(run.id)}
+                                    className="w-full justify-start text-gray-600 hover:text-gray-800"
+                                  >
+                                    {expandedArtifacts.has(run.id) ? (
+                                      <ChevronDown className="mr-2 h-4 w-4" />
+                                    ) : (
+                                      <ChevronRight className="mr-2 h-4 w-4" />
+                                    )}
+                                    <FileText className="mr-2 h-4 w-4" />
+                                    Artifacts
+                                    {(() => {
+                                      if (artifactCommentsLoading) {
+                                        return ' (loading...)'
+                                      }
+                                      const stats = getArtifactCommentStats(run.id)
+                                      if (stats.totalArtifacts > 0) {
+                                        return ` (${stats.artifactsWithComments}/${stats.totalArtifacts} artifacts, ${stats.totalComments} comments)`
+                                      } else if (runArtifactComments[run.id] === undefined) {
+                                        return ' (loading...)'
+                                      } else {
+                                        return ' (no artifacts)'
+                                      }
+                                    })()}
+                                  </Button>
+                                </div>
 
-                            {/* Artifact Comments Section */}
-                            <div className="mt-3 pt-3 border-t border-gray-200">
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => toggleArtifacts(run.id)}
-                                className="w-full justify-start text-gray-600 hover:text-gray-800"
-                              >
-                                {expandedArtifacts.has(run.id) ? (
-                                  <ChevronDown className="mr-2 h-4 w-4" />
-                                ) : (
-                                  <ChevronRight className="mr-2 h-4 w-4" />
-                                )}
-                                <FileText className="mr-2 h-4 w-4" />
-                                Artifacts
-                                {(() => {
-                                  if (artifactCommentsLoading) {
-                                    return ' (loading...)'
-                                  }
-                                  const stats = getArtifactCommentStats(run.id)
-                                  if (stats.totalArtifacts > 0) {
-                                    return ` (${stats.artifactsWithComments}/${stats.totalArtifacts} artifacts, ${stats.totalComments} comments)`
-                                  } else if (runArtifactComments[run.id] === undefined) {
-                                    return ' (loading...)'
-                                  } else {
-                                    return ' (no artifacts)'
-                                  }
-                                })()}
-                              </Button>
-                            </div>
-
-                            {/* Artifact Comments List - Collapsible */}
-                            {expandedArtifacts.has(run.id) && (
-                              <div className="mt-3">
-                                {(() => {
-                                  const artifacts = runArtifactComments[run.id]
-                                  
-                                  if (artifacts === undefined) {
-                                    return (
-                                      <div className="text-center py-4 text-gray-500">
-                                        <FileText className="h-6 w-6 mx-auto mb-2 opacity-50" />
-                                        <p className="text-sm">Loading artifacts...</p>
-                                      </div>
-                                    )
-                                  }
-                                  
-                                  const artifactsWithComments = artifacts.filter(a => a.comment_count > 0)
-                                  
-                                  if (artifacts.length === 0) {
-                                    return (
-                                      <div className="text-center py-4 text-gray-500">
-                                        <FileText className="h-6 w-6 mx-auto mb-2 opacity-50" />
-                                        <p className="text-sm">No artifacts found for this run</p>
-                                      </div>
-                                    )
-                                  }
-                                  
-                                  if (artifactsWithComments.length === 0) {
-                                    return (
-                                      <div className="text-center py-4 text-gray-500">
-                                        <FileText className="h-6 w-6 mx-auto mb-2 opacity-50" />
-                                        <p className="text-sm">No artifacts have comments yet</p>
-                                      </div>
-                                    )
-                                  }
-                                  
-                                  return (
-                                    <div className="space-y-2">
-                                      <h5 className="text-sm font-medium text-gray-700 mb-2">
-                                        Artifacts with Comments ({artifactsWithComments.length})
-                                      </h5>
-                                      {artifactsWithComments.map((artifact) => (
-                                        <div key={artifact.artifact_id} className="flex items-center justify-between p-2 bg-gray-50 rounded-lg">
-                                          <div className="flex items-center space-x-2">
-                                            <Badge variant="outline" className="text-xs">
-                                              {artifact.kind}
-                                            </Badge>
-                                            <span className="text-sm font-medium">{artifact.filename}</span>
+                                {/* Artifact Comments List - Collapsible */}
+                                {expandedArtifacts.has(run.id) && (
+                                  <div className="mt-3">
+                                    {(() => {
+                                      const artifacts = runArtifactComments[run.id]
+                                      
+                                      if (artifacts === undefined) {
+                                        return (
+                                          <div className="text-center py-4 text-gray-500">
+                                            <FileText className="h-6 w-6 mx-auto mb-2 opacity-50" />
+                                            <p className="text-sm">Loading artifacts...</p>
                                           </div>
-                                          <Badge variant="secondary" className="text-xs">
-                                            {artifact.comment_count} comment{artifact.comment_count !== 1 ? 's' : ''}
-                                          </Badge>
+                                        )
+                                      }
+                                      
+                                      const artifactsWithComments = artifacts.filter(a => a.comment_count > 0)
+                                      
+                                      if (artifacts.length === 0) {
+                                        return (
+                                          <div className="text-center py-4 text-gray-500">
+                                            <FileText className="h-6 w-6 mx-auto mb-2 opacity-50" />
+                                            <p className="text-sm">No artifacts found for this run</p>
+                                          </div>
+                                        )
+                                      }
+                                      
+                                      if (artifactsWithComments.length === 0) {
+                                        return (
+                                          <div className="text-center py-4 text-gray-500">
+                                            <FileText className="h-6 w-6 mx-auto mb-2 opacity-50" />
+                                            <p className="text-sm">No artifacts have comments yet</p>
+                                          </div>
+                                        )
+                                      }
+                                      
+                                      return (
+                                        <div className="space-y-2">
+                                          <h5 className="text-sm font-medium text-gray-700 mb-2">
+                                            Artifacts with Comments ({artifactsWithComments.length})
+                                          </h5>
+                                          {artifactsWithComments.map((artifact) => (
+                                            <div key={artifact.artifact_id} className="flex items-center justify-between p-2 bg-gray-50 rounded-lg">
+                                              <div className="flex items-center space-x-2">
+                                                <Badge variant="outline" className="text-xs">
+                                                  {artifact.kind}
+                                                </Badge>
+                                                <span className="text-sm font-medium">{artifact.filename}</span>
+                                              </div>
+                                              <Badge variant="secondary" className="text-xs">
+                                                {artifact.comment_count} comment{artifact.comment_count !== 1 ? 's' : ''}
+                                              </Badge>
+                                            </div>
+                                          ))}
                                         </div>
-                                      ))}
-                                    </div>
-                                  )
-                                })()}
+                                      )
+                                    })()}
+                                  </div>
+                                )}
                               </div>
                             )}
                           </div>
@@ -1121,6 +1265,14 @@ export default function ProjectPage() {
                     )}
                   </CardContent>
                 </Card>
+              </TabsContent>
+
+              <TabsContent value="drawings">
+                <ProjectDrawings 
+                  projectId={projectId}
+                  currentUserRole={currentUserRole}
+                  currentUserId={user?.id || ''}
+                />
               </TabsContent>
 
               <TabsContent value="attachments">
@@ -1164,131 +1316,49 @@ export default function ProjectPage() {
               </TabsContent>
 
               <TabsContent value="history" className="space-y-6">
-                {/* Runs History */}
+                {/* History Logs */}
                 <Card>
                   <CardHeader>
-                    <div className="flex items-center justify-between">
-                      <CardTitle className="flex items-center">
-                        <BarChart3 className="mr-2 h-5 w-5" />
-                        {t('projects.analysisHistory')}
-                      </CardTitle>
-                      {runs && runs.length > 0 && (
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={toggleAllComments}
-                          className="flex items-center space-x-2"
-                        >
-                          {runs.every(run => expandedComments.has(run.id)) ? (
-                            <>
-                              <ChevronDown className="h-4 w-4" />
-                              <span>Hide All Comments</span>
-                            </>
-                          ) : (
-                            <>
-                              <ChevronRight className="h-4 w-4" />
-                              <span>Show All Comments</span>
-                            </>
-                          )}
-                        </Button>
-                      )}
-                    </div>
+                    <CardTitle className="flex items-center">
+                      <FileText className="mr-2 h-5 w-5" />
+                      Project History Logs
+                    </CardTitle>
                   </CardHeader>
                   <CardContent>
-                    {runsLoading ? (
+                    {historyLogsLoading ? (
                       <div className="text-center py-4">
                         <Loader2 className="h-6 w-6 animate-spin mx-auto mb-2" />
-                        <p className="text-gray-600">{t('projects.loadingRuns')}</p>
+                        <p className="text-gray-600">Loading history logs...</p>
                       </div>
-                    ) : runs && runs.length > 0 ? (
+                    ) : historyLogs && historyLogs.length > 0 ? (
                       <div className="space-y-3">
-                        {runs.map((run) => (
-                          <div key={run.id} className="flex items-center justify-between p-3 border rounded-lg">
-                            <div className="flex items-center space-x-3">
-                              <Badge className={getStatusColor(run.status)}>
-                                {run.status}
-                              </Badge>
-                              <div>
-                                <p className="font-medium">{run.task_name}</p>
-                                <p className="text-sm text-gray-600">
-                                  {run.image_count} {t('project.analysisHistory.images')} • {new Date(run.created_at).toLocaleString()}
+                        {historyLogs.map((log: any) => (
+                          <div key={log.id} className="flex items-start space-x-3 p-3 border rounded-lg">
+                            <div className="flex-1">
+                              <p className="text-sm font-medium">{log.description}</p>
+                              <div className="flex items-center space-x-2 mt-1">
+                                <p className="text-xs text-gray-500">
+                                  {log.user_display_name || log.user_email || 'Unknown user'}
                                 </p>
-                                {run.started_by_email && (
-                                  <p className="text-xs text-gray-500">
-                                    {t('project.analysisHistory.startedBy', { email: run.started_by_email })}
-                                  </p>
+                                <span className="text-xs text-gray-400">•</span>
+                                <p className="text-xs text-gray-500">
+                                  {new Date(log.created_at).toLocaleString()}
+                                </p>
+                                {log.action_type && (
+                                  <>
+                                    <span className="text-xs text-gray-400">•</span>
+                                    <Badge variant="outline" className="text-xs">
+                                      {log.action_type}
+                                    </Badge>
+                                  </>
                                 )}
                               </div>
-                            </div>
-                            <div className="flex items-center space-x-2">
-                              <Button 
-                                variant="outline" 
-                                size="sm"
-                                onClick={() => {
-                                  setSelectedRun(run)
-                                  setShowGallery(true)
-                                }}
-                              >
-                                <Eye className="h-4 w-4" />
-                              </Button>
-                              <Button 
-                                variant="outline" 
-                                size="sm"
-                                onClick={async () => {
-                                  try {
-                                    // Download the ZIP file directly
-                                    const downloadResponse = await fetch(`/api/v1/uploads/download-zip/${run.id}`, {
-                                      headers: {
-                                        'Authorization': `Bearer ${getAuthToken()}`,
-                                      },
-                                    })
-                                    
-                                    if (!downloadResponse.ok) throw new Error('Download failed')
-                                    
-                                    const blob = await downloadResponse.blob()
-                                    const url = window.URL.createObjectURL(blob)
-                                    const a = document.createElement('a')
-                                    a.href = url
-                                    a.download = `run_${run.id}_results.zip`
-                                    document.body.appendChild(a)
-                                    a.click()
-                                    window.URL.revokeObjectURL(url)
-                                    document.body.removeChild(a)
-                                    
-                                    toast.success('ZIP file downloaded successfully!')
-                                  } catch (error) {
-                                    console.error('Download error:', error)
-                                    toast.error('Failed to download ZIP file')
-                                  }
-                                }}
-                              >
-                                <Download className="h-4 w-4" />
-                              </Button>
-                              {currentUserRole === 'owner' && (
-                                <Button 
-                                  variant="outline" 
-                                  size="sm"
-                                  onClick={() => {
-                                    if (confirm('Are you sure you want to delete this run? This action cannot be undone.')) {
-                                      deleteRunMutation.mutate(run.id)
-                                    }
-                                  }}
-                                  disabled={deleteRunMutation.isPending}
-                                  className="text-red-600 hover:text-red-700 hover:bg-red-50"
-                                >
-                                  {deleteRunMutation.isPending ? (
-                                    <Loader2 className="h-4 w-4 animate-spin" />
-                                  ) : (
-                                    <Trash2 className="h-4 w-4" />
-                                  )}
-                                </Button>
-                              )}
                             </div>
                           </div>
                         ))}
                       </div>
                     ) : (
-                      <p className="text-gray-600 text-center py-4">{t('project.analysisHistory.noRuns')}</p>
+                      <p className="text-gray-600 text-center py-4">No history logs found</p>
                     )}
                   </CardContent>
                 </Card>

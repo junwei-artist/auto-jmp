@@ -154,7 +154,19 @@ export default function PluginWizard({ pluginName, pluginDescription, onComplete
 
     try {
       const formData = new FormData()
-      formData.append('file', excelFile)
+      // Stamp excel filename with timestamp + uuid
+      const ts = new Date()
+        .toISOString()
+        .replace(/[-:]/g, '')
+        .replace('T', '_')
+        .slice(0, 15)
+      const uid = (globalThis.crypto?.randomUUID?.() || Math.random().toString(36).slice(2, 10))
+      const dot = excelFile.name.lastIndexOf('.')
+      const base = dot > -1 ? excelFile.name.slice(0, dot) : excelFile.name
+      const ext = dot > -1 ? excelFile.name.slice(dot) : ''
+      const stampedName = `${base}_${ts}_${uid}${ext}`
+      const stampedFile = new File([excelFile], stampedName, { type: excelFile.type })
+      formData.append('file', stampedFile)
 
       const response = await fetch(`/api/v1/extensions/${pluginName}/validate`, {
         method: 'POST',

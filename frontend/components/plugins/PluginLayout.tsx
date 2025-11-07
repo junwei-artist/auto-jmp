@@ -12,7 +12,7 @@ interface PluginLayoutProps {
 }
 
 export default function PluginLayout({ children }: PluginLayoutProps) {
-  const pathname = usePathname()
+  const pathname = usePathname() || ''
   
   // Extract plugin ID from path
   const pluginId = pathname.split('/')[2] // /plugins/{pluginId}/...

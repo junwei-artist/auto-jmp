@@ -67,8 +67,8 @@ python reset_db.py
 ```
 
 ### After Reset
-1. Start the backend: `./run-backend.command`
-2. Start the frontend: `./run-frontend.command`
+1. Start the backend: `./run-backend-dev.command`
+2. Start the frontend: `./run-frontend-dev.command`
 3. Login at: http://localhost:4800
 4. Access admin dashboard: http://localhost:4800/admin/dashboard
 

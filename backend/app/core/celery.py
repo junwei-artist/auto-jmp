@@ -1,4 +1,6 @@
 from celery import Celery
+from celery.signals import task_prerun, task_postrun, task_failure
+import logging
 from app.core.config import settings
 
 # Create Celery instance
@@ -22,6 +24,30 @@ celery_app.conf.update(
     worker_prefetch_multiplier=1,
     worker_max_tasks_per_child=1,  # Restart worker after each task
 )
+
+# Signal hooks for richer debug logs
+logger = logging.getLogger(__name__)
+
+@task_prerun.connect
+def _on_task_prerun(sender=None, task_id=None, task=None, args=None, kwargs=None, **extras):
+    try:
+        logger.info("[Celery] Task received: %s id=%s args=%s kwargs=%s", sender, task_id, args, kwargs)
+    except Exception:
+        pass
+
+@task_postrun.connect
+def _on_task_postrun(sender=None, task_id=None, retval=None, state=None, **extras):
+    try:
+        logger.info("[Celery] Task finished: %s id=%s state=%s retval_summary=%s", sender, task_id, state, str(retval)[:200])
+    except Exception:
+        pass
+
+@task_failure.connect
+def _on_task_failure(sender=None, task_id=None, exception=None, einfo=None, **extras):
+    try:
+        logger.error("[Celery] Task failed: %s id=%s exc=%s", sender, task_id, exception)
+    except Exception:
+        pass
 
 # Optional configuration for better error handling
 celery_app.conf.update(

@@ -18,6 +18,7 @@ from extensions.excel2boxplotv2.api import router as excel2boxplotv2_router
 from extensions.excel2processcapability.api import router as excel2processcapability_router
 from extensions.excel2cpkv1.api import router as excel2cpkv1_router
 from extensions.excel2commonality.api import router as excel2commonality_router
+from extensions.excel2commonality_generic.api import router as excel2commonality_generic_router
 
 # Load environment variables
 load_dotenv()
@@ -38,6 +39,9 @@ async def lifespan(app: FastAPI):
     # Load all extensions
     loaded_extensions = extension_manager.load_all_extensions()
     print(f"Loaded {len(loaded_extensions)} extensions: {loaded_extensions}")
+    
+    # Log CORS configuration for debugging
+    print(f"CORS Origins: {settings.BACKEND_CORS_ORIGINS}")
     
     yield
     # Shutdown
@@ -83,6 +87,7 @@ app.include_router(excel2boxplotv2_router, prefix=f"{settings.API_V1_STR}/extens
 app.include_router(excel2processcapability_router, prefix=f"{settings.API_V1_STR}/extensions")
 app.include_router(excel2cpkv1_router, prefix=f"{settings.API_V1_STR}/extensions")
 app.include_router(excel2commonality_router, prefix=f"{settings.API_V1_STR}/extensions")
+app.include_router(excel2commonality_generic_router, prefix=f"{settings.API_V1_STR}/extensions")
 
 # Include WebSocket router
 app.include_router(websocket_router)

@@ -3,8 +3,10 @@ import os
 import sys
 import uuid
 import logging
+import re
 from datetime import datetime
 from typing import Dict, Any
+from pathlib import Path
 
 from celery import current_task
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -17,6 +19,8 @@ sys.path.insert(0, backend_dir)
 from app.core.celery import celery_app
 from app.core.database import AsyncSessionLocal
 from app.core.websocket import publish_run_update
+from app.core.storage import local_storage
+from app.core.config import settings, get_jmp_max_wait_time
 from app.models import Run, RunStatus, Artifact, AppSetting
 
 logger = logging.getLogger(__name__)
@@ -36,38 +40,51 @@ def run_jmp_boxplot(self, run_id: str) -> Dict[str, Any]:
     """
     Celery task to run JMP boxplot analysis.
     
+    IMPORTANT: This task MUST ONLY be called through Celery (send_task or delay).
+    Direct function calls are NOT allowed.
+    
     Args:
         run_id: UUID string of the run to process
         
     Returns:
         Dict with task result information
     """
+    # CRITICAL: Verify this is being called by Celery, not directly
+    if not hasattr(self, 'request') or not self.request:
+        error_msg = "CRITICAL ERROR: run_jmp_boxplot called directly, not through Celery!"
+        logger.error("="*80)
+        logger.error(error_msg)
+        logger.error("This task MUST ONLY be called via celery_app.send_task() or .delay()")
+        logger.error("="*80)
+        return {"status": "failed", "error": error_msg}
+    
     task_id = self.request.id
+    logger.info("="*80)
+    logger.info("[WORKER] Celery task 'run_jmp_boxplot' RECEIVED")
+    logger.info(f"[WORKER] Celery task_id: {task_id}")
+    logger.info(f"[WORKER] Run ID: {run_id}")
+    logger.info(f"[WORKER] Current time: {datetime.utcnow().isoformat()}")
+    logger.info(f"[WORKER] Called by Celery: {hasattr(self, 'request')}")
+    logger.info("="*80)
     
     async def process_run():
         """Async function to process the run."""
+        # Track final state for single database commit at the end
+        final_status = None
+        final_message = None
+        final_image_count = 0
+        final_error = None
+        
         async with AsyncSessionLocal() as db:
             try:
-                # Get the run
+                # Get the run (read-only, no commit)
                 result = await db.execute(select(Run).where(Run.id == uuid.UUID(run_id)))
                 run = result.scalar_one_or_none()
                 
                 if not run:
                     raise ValueError(f"Run {run_id} not found")
                 
-                # Update status to RUNNING
-                await db.execute(
-                    update(Run)
-                    .where(Run.id == uuid.UUID(run_id))
-                    .values(
-                        status=RunStatus.RUNNING,
-                        started_at=datetime.utcnow(),
-                        message="Starting JMP analysis..."
-                    )
-                )
-                await db.commit()
-                
-                # Publish status update
+                # Publish status update (WebSocket only, no database write)
                 await publish_run_update(run_id, {
                     "type": "run_started",
                     "run_id": run_id,
@@ -75,7 +92,7 @@ def run_jmp_boxplot(self, run_id: str) -> Dict[str, Any]:
                     "message": "Starting JMP analysis..."
                 })
                 
-                # Get input artifacts
+                # Get input artifacts (read-only, no commit)
                 artifacts_result = await db.execute(
                     select(Artifact).where(
                         Artifact.run_id == uuid.UUID(run_id),
@@ -96,47 +113,268 @@ def run_jmp_boxplot(self, run_id: str) -> Dict[str, Any]:
                 if not csv_artifact or not jsl_artifact:
                     raise ValueError("Missing CSV or JSL input files")
                 
+                # CRITICAL: Get jmp_task_id from run record - task folder should already be prepared
+                if not run.jmp_task_id:
+                    raise ValueError(f"Run {run_id} does not have jmp_task_id - task folder not prepared")
+                
+                # Construct task folder path
+                tasks_root = Path(settings.TASKS_DIRECTORY).expanduser().resolve()
+                task_dir = tasks_root / f"task_{run.jmp_task_id}"
+                
+                logger.info("="*80)
+                logger.info("[WORKER] Using task folder (prepared by API)")
+                logger.info(f"[WORKER] jmp_task_id: {run.jmp_task_id}")
+                logger.info(f"[WORKER] Task directory: {task_dir}")
+                logger.info(f"[WORKER] Task directory exists: {task_dir.exists()}")
+                logger.info("="*80)
+                
+                if not task_dir.exists():
+                    raise FileNotFoundError(f"Task folder not found: {task_dir}")
+                
+                # Get CSV and JSL files from task folder (these were copied by API)
+                csv_path = None
+                jsl_path = None
+                
+                # Find CSV and JSL files in task folder
+                for file_path in task_dir.glob("*"):
+                    if file_path.is_file():
+                        if file_path.suffix.lower() == '.csv':
+                            csv_path = file_path
+                        elif file_path.suffix.lower() == '.jsl':
+                            jsl_path = file_path
+                
+                if not csv_path or not jsl_path:
+                    # Fallback: use artifact filenames if files match
+                    csv_filename = csv_artifact.filename
+                    jsl_filename = jsl_artifact.filename
+                    csv_path = task_dir / csv_filename
+                    jsl_path = task_dir / jsl_filename
+                
+                logger.info(f"[WORKER] CSV file from task folder: {csv_path}")
+                logger.info(f"[WORKER] JSL file from task folder: {jsl_path}")
+                logger.info(f"[WORKER] CSV exists: {csv_path.exists() if csv_path else False}")
+                logger.info(f"[WORKER] JSL exists: {jsl_path.exists() if jsl_path else False}")
+                
+                # Verify files exist in task folder
+                if csv_path.exists():
+                    csv_size = csv_path.stat().st_size
+                    logger.info(f"[WORKER] CSV file size: {csv_size} bytes")
+                else:
+                    logger.error(f"[WORKER] CSV file NOT FOUND in task folder: {csv_path}")
+                
+                if jsl_path.exists():
+                    jsl_size = jsl_path.stat().st_size
+                    logger.info(f"[WORKER] JSL file size: {jsl_size} bytes")
+                else:
+                    logger.error(f"[WORKER] JSL file NOT FOUND in task folder: {jsl_path}")
+                
+                if not csv_path.exists() or not jsl_path.exists():
+                    error_msg = f"Files not found in task folder. CSV: {csv_path.exists()}, JSL: {jsl_path.exists()}"
+                    logger.error(f"[WORKER] {error_msg}")
+                    raise FileNotFoundError(error_msg)
+                
                 # Update progress
                 await publish_run_update(run_id, {
                     "type": "run_progress",
                     "run_id": run_id,
                     "status": "running",
-                    "message": "Processing files with JMP..."
+                    "message": "Processing files with JMP from task folder..."
                 })
                 
-                # Run JMP analysis with reasonable timeout
-                jmp_runner = JMPRunner(max_wait_time=300)  # 5 minutes
+                # Create background monitoring task to check image count every 3 seconds
+                monitoring_active = asyncio.Event()
+                monitoring_active.set()  # Start active
                 
-                # Get file paths from storage - use absolute paths
-                csv_path = os.path.join(backend_dir, "uploads", csv_artifact.storage_key)
-                jsl_path = os.path.join(backend_dir, "uploads", jsl_artifact.storage_key)
+                async def monitor_image_count():
+                    """Background task to monitor image count in task folder every 3 seconds."""
+                    last_count = -1  # Start at -1 to ensure first update (even if count is 0) is sent
+                    while monitoring_active.is_set():
+                        try:
+                            # Count PNG files in task folder
+                            png_files = list(task_dir.glob("*.png"))
+                            current_count = len(png_files)
+                            
+                            # Send update if count changed (including initial update when last_count is -1)
+                            if current_count != last_count:
+                                last_count = current_count
+                                
+                                # Check if monitoring is still active
+                                if not monitoring_active.is_set():
+                                    break
+                                
+                                # Only send WebSocket update (no database updates to avoid concurrent access)
+                                # Database will be updated by the main process when it completes
+                                update_data = {
+                                    "type": "run_progress",
+                                    "run_id": run_id,
+                                    "status": "running",
+                                    "image_count": current_count
+                                }
+                                
+                                if current_count > 0:
+                                    update_data["message"] = f"Generated {current_count} image{'s' if current_count != 1 else ''} so far..."
+                                else:
+                                    update_data["message"] = "Monitoring task folder for images..."
+                                
+                                await publish_run_update(run_id, update_data)
+                                logger.info(f"[MONITOR] Task folder {task_dir}: {current_count} images found - WebSocket update sent")
+                            
+                            # Wait 3 seconds before next check (check flag during sleep)
+                            for _ in range(30):  # 30 * 0.1 = 3 seconds
+                                if not monitoring_active.is_set():
+                                    break
+                                await asyncio.sleep(0.1)
+                            
+                        except asyncio.CancelledError:
+                            logger.info("[MONITOR] Monitoring task cancelled")
+                            raise  # Re-raise to properly cancel the task
+                        except Exception as e:
+                            logger.error(f"[MONITOR] Error monitoring image count: {e}")
+                            if monitoring_active.is_set():
+                                await asyncio.sleep(3)  # Continue even on error, but only if still active
+                            else:
+                                break  # Exit if monitoring is no longer active
                 
-                # Debug logging
-                print(f"Celery worker - CSV path: {csv_path}")
-                print(f"Celery worker - JSL path: {jsl_path}")
-                print(f"Celery worker - CSV exists: {os.path.exists(csv_path)}")
-                print(f"Celery worker - JSL exists: {os.path.exists(jsl_path)}")
-                print(f"Celery worker - Current working directory: {os.getcwd()}")
+                # Start background monitoring task
+                monitor_task = asyncio.create_task(monitor_image_count())
+                logger.info(f"[MONITOR] Started background image count monitoring for task folder: {task_dir}")
                 
-                # Run the analysis
-                result = jmp_runner.run_csv_jsl(
-                    csv_path=csv_path,
-                    jsl_path=jsl_path
+                # Run JMP analysis - jmp_runner will use the task folder directly
+                # Pass the task_id so jmp_runner knows which task folder to use
+                # Get timeout from database setting, with fallback to config
+                max_wait_time = await get_jmp_max_wait_time(db)
+                logger.info(f"[WORKER] Using timeout setting: {max_wait_time} seconds ({max_wait_time / 60:.1f} minutes)")
+                jmp_runner = JMPRunner(
+                    base_task_dir=settings.TASKS_DIRECTORY,
+                    max_wait_time=max_wait_time, 
+                    jmp_start_delay=6
                 )
                 
-                if result.get("status") == "completed":
-                    # Update run status to SUCCEEDED
-                    await db.execute(
-                        update(Run)
-                        .where(Run.id == uuid.UUID(run_id))
-                        .values(
-                            status=RunStatus.SUCCEEDED,
-                            finished_at=datetime.utcnow(),
-                            message="Analysis completed successfully",
-                            image_count=result.get("image_count", 0),
-                            jmp_task_id=result.get("task_id", "")
+                # Define callback to notify frontend when task folder is ready and CSV is found
+                # Since we're in an async context (process_run), we can schedule tasks directly
+                def sync_callback(task_id: str, task_dir: str, csv_filename: str):
+                    """Synchronous callback wrapper that schedules async notification."""
+                    async def notify_frontend():
+                        await publish_run_update(run_id, {
+                            "type": "task_ready",
+                            "run_id": run_id,
+                            "status": "running",
+                            "message": f"Task folder created and CSV file found: {csv_filename}",
+                            "task_id": task_id,
+                            "task_dir": task_dir,
+                            "csv_filename": csv_filename
+                        })
+                    
+                    # Schedule the coroutine in the current event loop
+                    # Since process_run() is async, the loop should be running
+                    try:
+                        # Get the running event loop (preferred method for Python 3.7+)
+                        loop = asyncio.get_running_loop()
+                        # Schedule the coroutine without blocking
+                        asyncio.create_task(notify_frontend())
+                    except RuntimeError:
+                        # No running loop (shouldn't happen, but handle gracefully)
+                        # This should not occur since we're inside an async function
+                        logger.warning("Could not get running event loop for task_ready notification")
+                
+                # Define progress callback to notify frontend of detailed progress updates
+                def progress_callback(message: str):
+                    """Synchronous callback wrapper that schedules async progress notification."""
+                    # Extract image count from progress message
+                    image_count = None
+                    # Look for patterns like "Found X images" or "Generated X images"
+                    match = re.search(r'(?:Found|Generated)\s+(\d+)\s+images?', message, re.IGNORECASE)
+                    if match:
+                        image_count = int(match.group(1))
+                    
+                    # Only send WebSocket updates (no database updates to avoid concurrent access)
+                    # Database will be updated by the main process when it completes
+                    async def notify_frontend():
+                        update_data = {
+                            "type": "run_progress",
+                            "run_id": run_id,
+                            "status": "running",
+                            "message": message
+                        }
+                        if image_count is not None:
+                            update_data["image_count"] = image_count
+                            update_data["message"] = f"Generated {image_count} image{'s' if image_count != 1 else ''} so far..."
+                        await publish_run_update(run_id, update_data)
+                    
+                    # Schedule the coroutine in the current event loop
+                    try:
+                        loop = asyncio.get_running_loop()
+                        asyncio.create_task(notify_frontend())
+                    except RuntimeError:
+                        logger.warning("Could not get running event loop for progress notification")
+                
+                # Run the analysis with retry on transient 'file not found' failures
+                # Pass task_id so jmp_runner uses the task folder directly (files already there)
+                try:
+                    last_result = None
+                    for attempt in range(3):
+                        result = jmp_runner.run_csv_jsl(
+                            csv_path=str(csv_path),
+                            jsl_path=str(jsl_path),
+                            task_id=run.jmp_task_id,  # Pass task_id so jmp_runner uses existing task folder
+                            on_task_ready=sync_callback,
+                            on_progress=progress_callback
                         )
-                    )
+                        last_result = result
+                        err = (result or {}).get("error", "")
+                        # If success or non-file-not-found error, stop retrying
+                        if (result or {}).get("status") == "completed":
+                            break
+                        if "file not found" not in err.lower():
+                            break
+                        if attempt < 2:
+                            print(f"Retry {attempt+1}/3: file not found, retrying in 3s...")
+                            await asyncio.sleep(3)
+                    result = last_result or {"status": "failed", "error": "Unknown error"}
+                finally:
+                    # Stop monitoring task when JMP execution completes (success or failure)
+                    logger.info("[MONITOR] Stopping background image monitoring task...")
+                    monitoring_active.clear()
+                    
+                    # Give the monitoring task a chance to see the flag and exit gracefully
+                    await asyncio.sleep(0.1)
+                    
+                    # Now cancel the task if it's still running
+                    if not monitor_task.done():
+                        monitor_task.cancel()
+                        try:
+                            # Wait for monitoring task to fully complete (no DB operations, so should be quick)
+                            await asyncio.wait_for(monitor_task, timeout=1.0)
+                        except asyncio.CancelledError:
+                            logger.info("[MONITOR] Background image monitoring task cancelled")
+                        except asyncio.TimeoutError:
+                            logger.warning("[MONITOR] Monitoring task did not stop within timeout")
+                        except Exception as e:
+                            logger.warning(f"[MONITOR] Error stopping monitoring task: {e}")
+                    
+                    logger.info("[MONITOR] Monitoring task fully stopped")
+                
+                # Determine final state based on result (no database writes yet)
+                if result.get("status") == "completed":
+                    # Get final image count from task folder (more accurate than result)
+                    final_png_files = list(task_dir.glob("*.png"))
+                    final_image_count = len(final_png_files)
+                    
+                    # Set final state variables (will be committed at the end)
+                    final_status = RunStatus.SUCCEEDED
+                    final_message = "Analysis completed successfully"
+                    final_image_count = final_image_count
+                    
+                    # Send WebSocket update immediately (no database write)
+                    await publish_run_update(run_id, {
+                        "type": "run_completed",
+                        "run_id": run_id,
+                        "status": "succeeded",
+                        "message": "Analysis completed successfully",
+                        "image_count": final_image_count
+                    })
+                
+                if result.get("status") == "completed":
                     
                     # Process OCR results first to determine which images to save
                     ocr_results = result.get("ocr_results", {})
@@ -158,109 +396,238 @@ def run_jmp_boxplot(self, run_id: str) -> Dict[str, Any]:
                             
                             # Use the actual task directory path as storage key
                             task_dir = result.get("task_dir", "")
-                            
-                            # Check if image_file is already a full path or just a filename
-                            if "/" in image_file or "\\" in image_file:
-                                # Image file is already a full path
-                                actual_image_path = image_file
-                            else:
-                                # Image file is just a filename, prepend task directory
-                                actual_image_path = f"{task_dir}/{image_file}" if task_dir else image_file
-                            
+                            filename = os.path.basename(image_file)
+                            # Normalize task_dir by stripping absolute path parts if present
+                            if os.path.isabs(task_dir):
+                                # Remove root up to 'tasks/'
+                                tasks_index = task_dir.find('tasks')
+                                if tasks_index >= 0:
+                                    task_dir = task_dir[tasks_index:]
+                                else:
+                                    # fallback to just the last part
+                                    task_dir = os.path.basename(task_dir)
+                            storage_key = f"{task_dir}/{filename}" if task_dir else filename
+                            storage_key = storage_key.lstrip('/') # no leading slash
                             artifact = Artifact(
                                 project_id=run.project_id,
                                 run_id=run.id,
                                 kind="output_image",
-                                storage_key=actual_image_path,
-                                filename=image_file,
+                                storage_key=storage_key,
+                                filename=filename,
                                 mime_type="image/png"
                             )
                             db.add(artifact)
-                            logger.info(f"Created artifact for {image_file}")
+                            artifact_msg = f"Created artifact for {filename}"
+                            logger.info(artifact_msg)
+                            
+                            # Broadcast artifact creation progress via WebSocket
+                            try:
+                                await publish_run_update(run_id, {
+                                    "type": "run_progress",
+                                    "run_id": run_id,
+                                    "status": "running",
+                                    "message": artifact_msg,
+                                    "artifact": filename
+                                })
+                            except Exception as ws_err:
+                                logger.warning(f"Failed to send artifact WebSocket update: {ws_err}")
                     
                     # Process OCR results to create text artifacts
                     if ocr_results:
-                        await _process_ocr_results(db, run, ocr_results, result.get("task_dir", ""))
+                        await _process_ocr_results(db, run, ocr_results, result.get("task_dir", ""), run_id)
                     
-                    await db.commit()
+                    # Note: No database commit here - all commits happen at the end
+                else:
+                    # Set final state for failure case (no database writes yet)
+                    final_status = RunStatus.FAILED
+                    final_message = f"Analysis failed: {result.get('error', 'Unknown error')}"
+                    final_error = result.get("error", "Unknown error")
                     
-                    # Publish success update
+                    # If a failure image was generated, register it as an artifact (will be committed at end)
+                    try:
+                        images = result.get("images", []) or []
+                        task_dir = result.get("task_dir", "")
+                        for image_file in images:
+                            # Only register the explicit failure image
+                            if image_file.endswith("failure_error.png"):
+                                # Determine actual path and filename
+                                if "/" in image_file or "\\" in image_file:
+                                    actual_image_path = image_file
+                                    filename = Path(image_file).name
+                                else:
+                                    actual_image_path = f"{task_dir}/{image_file}" if task_dir else image_file
+                                    filename = image_file
+                                failure_artifact = Artifact(
+                                    project_id=run.project_id,
+                                    run_id=run.id,
+                                    kind="output_image",
+                                    storage_key=actual_image_path,
+                                    filename=filename,
+                                    mime_type="image/png"
+                                )
+                                db.add(failure_artifact)
+                                artifact_msg = f"Registered failure image artifact: {filename}"
+                                logger.info(artifact_msg)
+                                
+                                # Broadcast failure artifact creation via WebSocket
+                                try:
+                                    await publish_run_update(run_id, {
+                                        "type": "run_progress",
+                                        "run_id": run_id,
+                                        "status": "running",
+                                        "message": artifact_msg,
+                                        "artifact": filename
+                                    })
+                                except Exception as ws_err:
+                                    logger.warning(f"Failed to send failure artifact WebSocket update: {ws_err}")
+                    except Exception as artifact_err:
+                        logger.error("Failed to register failure image artifact: %s", artifact_err)
+                    
+                    # Publish failure update (WebSocket only, no database write)
                     await publish_run_update(run_id, {
-                        "type": "run_completed",
+                        "type": "run_failed",
                         "run_id": run_id,
-                        "status": "succeeded",
-                        "message": "Analysis completed successfully",
-                        "image_count": result.get("image_count", 0)
+                        "status": "failed",
+                        "message": final_message
                     })
+                
+                # CRITICAL: Single final database commit with all final state
+                # This happens once at the end, avoiding all intermediate database conflicts
+                # Ensure final_status is set (safety check)
+                if final_status is None:
+                    logger.warning("final_status was not set, defaulting to FAILED")
+                    final_status = RunStatus.FAILED
+                    final_message = final_message or "Task status unknown"
+                
+                try:
+                    # Prepare update values for final commit
+                    # Only commit final summary: status, finished_at, message, image_count
+                    update_values = {
+                        "status": final_status,
+                        "finished_at": datetime.utcnow(),
+                        "message": final_message or "Task completed"
+                    }
                     
-                    # Check if queue mode is enabled and process next queued task
-                    await _process_next_queued_task(db)
+                    # Set started_at if not already set (should be set by API, but ensure it's there)
+                    if not run.started_at:
+                        update_values["started_at"] = datetime.utcnow()
                     
+                    if final_status == RunStatus.SUCCEEDED:
+                        update_values["image_count"] = final_image_count
+                    elif final_status == RunStatus.FAILED:
+                        update_values["jmp_task_id"] = result.get("task_id", "")
+                    
+                    # Single database update and commit
+                    await db.execute(
+                        update(Run)
+                        .where(Run.id == uuid.UUID(run_id))
+                        .values(**update_values)
+                    )
+                    await db.commit()
+                    logger.info(f"✅ Final database commit: Status={final_status}, Images={final_image_count if final_status == RunStatus.SUCCEEDED else 0}")
+                except Exception as db_err:
+                    logger.error(f"❌ Failed final database commit: {db_err}")
+                    # Try rollback and retry once
+                    try:
+                        await db.rollback()
+                        update_values = {
+                            "status": final_status,
+                            "finished_at": datetime.utcnow(),
+                            "message": final_message
+                        }
+                        if final_status == RunStatus.SUCCEEDED:
+                            update_values["image_count"] = final_image_count
+                        elif final_status == RunStatus.FAILED:
+                            update_values["jmp_task_id"] = result.get("task_id", "")
+                        
+                        await db.execute(
+                            update(Run)
+                            .where(Run.id == uuid.UUID(run_id))
+                            .values(**update_values)
+                        )
+                        await db.commit()
+                        logger.info(f"✅ Final database commit succeeded after retry")
+                    except Exception as retry_err:
+                        logger.error(f"❌ Final database commit failed even after retry: {retry_err}")
+                        # Continue anyway - WebSocket updates were already sent
+                
+                # Check if queue mode is enabled and process next queued task
+                await asyncio.sleep(1)
+                await _process_next_queued_task(db)
+                
+                # Return final result
+                if final_status == RunStatus.SUCCEEDED:
                     return {
                         "success": True,
                         "run_id": run_id,
                         "message": "Analysis completed successfully",
-                        "image_count": result.get("image_count", 0)
+                        "image_count": final_image_count
                     }
                 else:
-                    # Update run status to FAILED
+                    return {
+                        "success": False,
+                        "run_id": run_id,
+                        "error": final_error or "Unknown error"
+                    }
+                    
+            except Exception as e:
+                # Set final state for exception case
+                final_status = RunStatus.FAILED
+                final_message = f"Task failed: {str(e)}"
+                final_error = str(e)
+                
+                # Wait for any pending async operations to complete
+                await asyncio.sleep(0.5)
+                
+                # Single final database commit for exception case
+                try:
                     await db.execute(
                         update(Run)
                         .where(Run.id == uuid.UUID(run_id))
                         .values(
                             status=RunStatus.FAILED,
                             finished_at=datetime.utcnow(),
-                            message=f"Analysis failed: {result.get('error', 'Unknown error')}",
-                            jmp_task_id=result.get("task_id", "")
+                            message=final_message,
+                            jmp_task_id=""  # No JMP task ID for exception cases
                         )
                     )
                     await db.commit()
-                    
-                    # Publish failure update
-                    await publish_run_update(run_id, {
-                        "type": "run_failed",
-                        "run_id": run_id,
-                        "status": "failed",
-                        "message": f"Analysis failed: {result.get('error', 'Unknown error')}"
-                    })
-                    
-                    # Check if queue mode is enabled and process next queued task
-                    await _process_next_queued_task(db)
-                    
-                    return {
-                        "success": False,
-                        "run_id": run_id,
-                        "error": result.get("error", "Unknown error")
-                    }
-                    
-            except Exception as e:
-                # Update run status to FAILED
-                await db.execute(
-                    update(Run)
-                    .where(Run.id == uuid.UUID(run_id))
-                    .values(
-                        status=RunStatus.FAILED,
-                        finished_at=datetime.utcnow(),
-                        message=f"Task failed: {str(e)}",
-                        jmp_task_id=""  # No JMP task ID for exception cases
-                    )
-                )
-                await db.commit()
+                    logger.info(f"✅ Final database commit (exception): Status=FAILED")
+                except Exception as db_err:
+                    logger.error(f"❌ Failed final database commit (exception): {db_err}")
+                    # Try rollback and retry once
+                    try:
+                        await db.rollback()
+                        await db.execute(
+                            update(Run)
+                            .where(Run.id == uuid.UUID(run_id))
+                            .values(
+                                status=RunStatus.FAILED,
+                                finished_at=datetime.utcnow(),
+                                message=final_message,
+                                jmp_task_id=""
+                            )
+                        )
+                        await db.commit()
+                        logger.info(f"✅ Final database commit succeeded after retry (exception)")
+                    except Exception as retry_err:
+                        logger.error(f"❌ Final database commit failed even after retry (exception): {retry_err}")
                 
-                # Publish failure update
+                # Publish failure update (WebSocket only)
                 await publish_run_update(run_id, {
                     "type": "run_failed",
                     "run_id": run_id,
                     "status": "failed",
-                    "message": f"Task failed: {str(e)}"
+                    "message": final_message
                 })
                 
                 # Check if queue mode is enabled and process next queued task
+                await asyncio.sleep(1)
                 await _process_next_queued_task(db)
                 
                 raise e
         
-        async def _process_ocr_results(db, run, ocr_results: Dict, task_dir: str):
+        async def _process_ocr_results(db, run, ocr_results: Dict, task_dir: str, run_id: str):
             """
             Process OCR results and create text artifacts.
             
@@ -269,6 +636,7 @@ def run_jmp_boxplot(self, run_id: str) -> Dict[str, Any]:
                 run: Run object
                 ocr_results: OCR processing results
                 task_dir: Task directory path
+                run_id: Run ID for WebSocket broadcasts
             """
             try:
                 from app.models import Artifact
@@ -298,7 +666,20 @@ def run_jmp_boxplot(self, run_id: str) -> Dict[str, Any]:
                         ocr_text_path = Path(task_dir) / "initial_ocr.txt"
                         ocr_text_path.write_text(initial_text, encoding="utf-8")
                         
-                        logger.info(f"Created OCR text artifact for initial.png: {len(initial_text)} characters")
+                        artifact_msg = f"Created OCR text artifact for initial.png: {len(initial_text)} characters"
+                        logger.info(artifact_msg)
+                        
+                        # Broadcast OCR artifact creation via WebSocket
+                        try:
+                            await publish_run_update(run_id, {
+                                "type": "run_progress",
+                                "run_id": run_id,
+                                "status": "running",
+                                "message": artifact_msg,
+                                "artifact": "initial_ocr.txt"
+                            })
+                        except Exception as ws_err:
+                            logger.warning(f"Failed to send OCR artifact WebSocket update: {ws_err}")
                 
                 # Process final.png OCR results
                 final_results = ocr_results.get("final", {})
@@ -325,7 +706,20 @@ def run_jmp_boxplot(self, run_id: str) -> Dict[str, Any]:
                         ocr_text_path = Path(task_dir) / "final_ocr.txt"
                         ocr_text_path.write_text(final_text, encoding="utf-8")
                         
-                        logger.info(f"Created OCR text artifact for final.png: {len(final_text)} characters")
+                        artifact_msg = f"Created OCR text artifact for final.png: {len(final_text)} characters"
+                        logger.info(artifact_msg)
+                        
+                        # Broadcast OCR artifact creation via WebSocket
+                        try:
+                            await publish_run_update(run_id, {
+                                "type": "run_progress",
+                                "run_id": run_id,
+                                "status": "running",
+                                "message": artifact_msg,
+                                "artifact": "final_ocr.txt"
+                            })
+                        except Exception as ws_err:
+                            logger.warning(f"Failed to send OCR artifact WebSocket update: {ws_err}")
                 
                 # Create OCR results summary artifact
                 if ocr_results.get("success", False):
@@ -354,7 +748,20 @@ def run_jmp_boxplot(self, run_id: str) -> Dict[str, Any]:
                     summary_path = Path(task_dir) / "ocr_summary.json"
                     summary_path.write_text(json.dumps(ocr_summary, indent=2), encoding="utf-8")
                     
-                    logger.info("Created OCR summary artifact")
+                    artifact_msg = "Created OCR summary artifact"
+                    logger.info(artifact_msg)
+                    
+                    # Broadcast OCR summary artifact creation via WebSocket
+                    try:
+                        await publish_run_update(run_id, {
+                            "type": "run_progress",
+                            "run_id": run_id,
+                            "status": "running",
+                            "message": artifact_msg,
+                            "artifact": "ocr_summary.json"
+                        })
+                    except Exception as ws_err:
+                        logger.warning(f"Failed to send OCR summary WebSocket update: {ws_err}")
                 
             except Exception as e:
                 logger.error(f"Error processing OCR results: {e}")
@@ -409,11 +816,16 @@ async def _process_next_queued_task(db: AsyncSession):
             next_task = next_task_result.scalar_one_or_none()
             
             if next_task:
-                # Start the next queued task
+                # Start the next queued task after a short delay to avoid race conditions
                 from app.core.celery import celery_app
-                celery_app.send_task("run_jmp_boxplot", args=[str(next_task.id)])
-                
-                logger.info(f"Started next queued task: {next_task.id}")
+                try:
+                    # Small pre-delay before scheduling, give DB and filesystem time to settle
+                    await asyncio.sleep(2)
+                    # Schedule with additional countdown to avoid immediate overlap
+                    celery_app.send_task("run_jmp_boxplot", args=[str(next_task.id)], countdown=5)
+                    logger.info(f"Scheduled next queued task in 5s: {next_task.id}")
+                except Exception as e:
+                    logger.error(f"Failed to schedule next queued task {next_task.id}: {e}")
             else:
                 logger.info("No queued tasks found to process")
             

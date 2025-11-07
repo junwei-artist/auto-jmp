@@ -73,7 +73,7 @@ export default function AdminDashboard() {
   }
 
   const handleLogout = () => {
-    localStorage.removeItem('auth_token')
+    localStorage.removeItem('access_token')
     localStorage.removeItem('user_id')
     localStorage.removeItem('is_guest')
     router.push('/admin')
@@ -235,6 +235,20 @@ export default function AdminDashboard() {
             >
               <div className="font-medium text-gray-900">System Settings</div>
               <div className="text-sm text-gray-600">Configure platform</div>
+            </button>
+            <button 
+              onClick={() => router.push('/admin/oauth')}
+              className="p-4 border border-gray-300 rounded-lg hover:bg-gray-50 text-left transition-colors"
+            >
+              <div className="font-medium text-gray-900">OAuth2 Clients</div>
+              <div className="text-sm text-gray-600">Manage external app access</div>
+            </button>
+            <button 
+              onClick={() => router.push('/admin/zones')}
+              className="p-4 border border-gray-300 rounded-lg hover:bg-gray-50 text-left transition-colors"
+            >
+              <div className="font-medium text-gray-900">Community Zones</div>
+              <div className="text-sm text-gray-600">Manage community zones</div>
             </button>
           </div>
         </div>

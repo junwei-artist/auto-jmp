@@ -29,7 +29,7 @@ import psutil
 import json
 import tempfile
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple, Union
+from typing import Dict, List, Optional, Tuple, Union, Callable
 import logging
 from datetime import datetime
 from PIL import Image, ImageDraw, ImageFont
@@ -56,7 +56,7 @@ class JMPRunner:
     def __init__(self, 
                  base_task_dir: Optional[Union[str, Path]] = None,
                  max_wait_time: int = 300,
-                 jmp_start_delay: int = 4):
+                 jmp_start_delay: int = 6):
         """
         Initialize JMP Runner.
         
@@ -65,7 +65,7 @@ class JMPRunner:
             max_wait_time: Maximum time to wait for JMP completion (seconds)
             jmp_start_delay: Delay after opening JMP before running script (seconds)
         """
-        self.base_task_dir = Path(base_task_dir) if base_task_dir else Path("./tasks")
+        self.base_task_dir = Path(base_task_dir) if base_task_dir else Path("/Users/lytech/Documents/service/auto-jmp/backend/tasks")
         self.max_wait_time = max_wait_time
         self.jmp_start_delay = jmp_start_delay
         
@@ -75,6 +75,39 @@ class JMPRunner:
         logger.info(f"JMPRunner initialized with task directory: {self.base_task_dir}")
         if not APPLESCRIPT_AVAILABLE:
             logger.warning("AppleScript not available - JMP automation may not work properly")
+
+    def _candidate_jmp_apps(self) -> List[str]:
+        """Return ordered list of JMP application names/paths to try with `open -a`.
+        Allows override via env vars: JMP_APP_PATH (full path) or JMP_APP_NAME.
+        """
+        candidates: List[str] = []
+        env_path = os.getenv("JMP_APP_PATH")
+        env_name = os.getenv("JMP_APP_NAME")
+        if env_path:
+            candidates.append(env_path)
+        if env_name:
+            candidates.append(env_name)
+        # Common app bundle names
+        candidates.extend([
+            "JMP Pro 18",
+            "JMP Pro 17",
+            "JMP Pro 16",
+            "JMP 18",
+            "JMP 17",
+            "JMP 16",
+            "JMP",
+        ])
+        # Full default installation paths (if user provides env, those are tried first)
+        candidates.extend([
+            "/Applications/JMP Pro 18.app",
+            "/Applications/JMP Pro 17.app",
+            "/Applications/JMP Pro 16.app",
+            "/Applications/JMP 18.app",
+            "/Applications/JMP 17.app",
+            "/Applications/JMP 16.app",
+            "/Applications/JMP.app",
+        ])
+        return candidates
     
     def convert_jsl_paths(self, jsl_content: str, task_dir: Path) -> str:
         """
@@ -113,6 +146,55 @@ class JMPRunner:
                 logger.debug(f"  Save Picture: {path} ({format_param})")
         
         return converted
+    
+    def _verify_task_folder_ready(self, task_dir: Path, csv_dst: Path, jsl_dst: Path) -> Optional[str]:
+        """
+        Comprehensive verification that task folder is ready before opening JSL.
+        
+        Args:
+            task_dir: Task directory path
+            csv_dst: CSV file path in task directory
+            jsl_dst: JSL file path in task directory
+            
+        Returns:
+            None if verification passes, error message string if it fails
+        """
+        # Check 1: Task directory exists
+        if not task_dir.exists():
+            return f"Task directory does not exist: {task_dir}"
+        
+        # Check 2: Task directory is actually a directory
+        if not task_dir.is_dir():
+            return f"Task directory path is not a directory: {task_dir}"
+        
+        # Check 3: Task directory is writable (test write)
+        try:
+            test_file = task_dir / ".test_write_check"
+            test_file.write_text("test")
+            test_file.unlink()  # Clean up
+        except (OSError, PermissionError) as e:
+            return f"Task directory is not writable: {task_dir}. Error: {str(e)}"
+        
+        # Check 4: CSV file exists in task directory
+        if not csv_dst.exists():
+            return f"CSV file does not exist in task directory: {csv_dst}"
+        
+        # Check 5: JSL file exists in task directory
+        if not jsl_dst.exists():
+            return f"JSL file does not exist in task directory: {jsl_dst}"
+        
+        # Check 6: Verify files are actually in the task directory (not outside)
+        try:
+            csv_dst.resolve().relative_to(task_dir.resolve())
+            jsl_dst.resolve().relative_to(task_dir.resolve())
+        except ValueError:
+            return f"Files are not actually inside task directory. Task: {task_dir}, CSV: {csv_dst}, JSL: {jsl_dst}"
+        
+        # All checks passed
+        logger.info(f"Task folder verification passed: {task_dir}")
+        logger.info(f"  CSV file: {csv_dst} (exists: {csv_dst.exists()})")
+        logger.info(f"  JSL file: {jsl_dst} (exists: {jsl_dst.exists()})")
+        return None
     
     def prepend_open_line(self, jsl_file: Path, csv_file: Path, task_dir: Path) -> None:
         """
@@ -280,13 +362,14 @@ class JMPRunner:
         except Exception as e:
             logger.error(f"Error closing JMP processes: {e}")
     
-    def run_jsl_with_jmp(self, jsl_path: Path, task_dir: Path) -> str:
+    def run_jsl_with_jmp(self, jsl_path: Path, task_dir: Path, on_progress: Optional[Callable[[str], None]] = None) -> str:
         """
         Run JSL script with JMP using AppleScript.
         
         Args:
             jsl_path: Path to JSL file
             task_dir: Task directory for monitoring
+            on_progress: Optional callback for progress updates
             
         Returns:
             Status message
@@ -299,18 +382,122 @@ class JMPRunner:
             script_content = jsl_path.read_text(encoding="utf-8")
             has_auto_run = "//!" in script_content.split('\n')[0] if script_content else False
             
-            logger.info(f"JSL script has auto-run flag: {has_auto_run}")
+            auto_run_msg = f"JSL script has auto-run flag: {has_auto_run}"
+            logger.info(auto_run_msg)
+            if on_progress:
+                on_progress(auto_run_msg)
+            
+            # First, bring the script window to the front before running
+            # Use the actual JSL filename to find the correct window
+            jsl_filename = jsl_path.name
+            bring_script_window_front = f'''
+            tell application "System Events"
+                tell application process "JMP"
+                    set frontmost to true
+                    delay 1.5
+                    -- Find and activate the script window using the actual filename
+                    try
+                        set scriptFound to false
+                        -- First, try to find window with exact filename
+                        repeat with w in windows
+                            try
+                                set winName to name of w
+                                if winName contains "{jsl_filename}" then
+                                    set index of w to 1
+                                    perform action "AXRaise" of w
+                                    delay 0.5
+                                    set scriptFound to true
+                                    exit repeat
+                                end if
+                            end try
+                        end repeat
+                        -- If not found, look for script windows (they typically contain ".jsl" in the name)
+                        if not scriptFound then
+                            repeat with w in windows
+                                try
+                                    set winName to name of w
+                                    -- Script windows often have ".jsl" in the name or are script editor windows
+                                    if winName contains ".jsl" or winName contains "Script" or winName contains "Untitled" then
+                                        set index of w to 1
+                                        perform action "AXRaise" of w
+                                        delay 0.5
+                                        set scriptFound to true
+                                        exit repeat
+                                    end if
+                                end try
+                            end repeat
+                        end if
+                        -- Also try to click on the front window to bring it forward
+                        if scriptFound then
+                            try
+                                set frontWindow to window 1
+                                click frontWindow
+                                delay 0.5
+                            end try
+                        end if
+                    on error errMsg
+                        -- If we can't find specific window, just ensure JMP is frontmost
+                        set frontmost to true
+                    end try
+                end tell
+            end tell
+            '''
+            
+            # Try to bring script window to front
+            try:
+                logger.info("Bringing script window to front...")
+                if on_progress:
+                    on_progress("Bringing script window to front...")
+                applescript.run(bring_script_window_front)
+                time.sleep(1)  # Give it a moment to bring window forward
+            except Exception as e:
+                logger.warning(f"Could not bring script window to front: {e}")
+                # Continue anyway - we'll try to run the script
             
             # Use AppleScript to run the script - try multiple approaches
             osa_scripts = [
-                # Method 1: Try Cmd+R approach (most reliable)
-                '''
+                # Method 1: Try Cmd+R approach (most reliable) - ensure script window is frontmost first
+                f'''
                 tell application "System Events"
                     tell application process "JMP"
                         set frontmost to true
-                        delay 2
+                        delay 1
+                        -- Try to find and activate script window before running
                         try
-                            keystroke "r" using {command down}
+                            set scriptFound to false
+                            -- First, try to find window with exact filename
+                            repeat with w in windows
+                                try
+                                    set winName to name of w
+                                    if winName contains "{jsl_filename}" then
+                                        set index of w to 1
+                                        perform action "AXRaise" of w
+                                        delay 0.5
+                                        set scriptFound to true
+                                        exit repeat
+                                    end if
+                                end try
+                            end repeat
+                            -- If not found, look for script windows
+                            if not scriptFound then
+                                repeat with w in windows
+                                    try
+                                        set winName to name of w
+                                        if winName contains ".jsl" or winName contains "Script" or winName contains "Untitled" then
+                                            set index of w to 1
+                                            perform action "AXRaise" of w
+                                            delay 0.5
+                                            set scriptFound to true
+                                            exit repeat
+                                        end if
+                                    end try
+                                end repeat
+                            end if
+                        end try
+                        delay 0.5
+                        -- Now run the script
+                        try
+                            keystroke "r" using {{command down}}
                             return "Run Script triggered via Cmd+R ✅"
                         on error errMsg
                             return "❌ Cmd+R error: " & errMsg
@@ -331,12 +518,45 @@ class JMPRunner:
                     end try
                 end tell
                 ''',
-                # Method 3: Try menu approach
-                '''
+                # Method 3: Try menu approach - ensure script window is frontmost first
+                f'''
                 tell application "System Events"
                     tell application process "JMP"
                         set frontmost to true
-                        delay 2
+                        delay 1
+                        -- Try to find and activate script window before running
+                        try
+                            set scriptFound to false
+                            -- First, try to find window with exact filename
+                            repeat with w in windows
+                                try
+                                    set winName to name of w
+                                    if winName contains "{jsl_filename}" then
+                                        set index of w to 1
+                                        perform action "AXRaise" of w
+                                        delay 0.5
+                                        set scriptFound to true
+                                        exit repeat
+                                    end if
+                                end try
+                            end repeat
+                            -- If not found, look for script windows
+                            if not scriptFound then
+                                repeat with w in windows
+                                    try
+                                        set winName to name of w
+                                        if winName contains ".jsl" or winName contains "Script" or winName contains "Untitled" then
+                                            set index of w to 1
+                                            perform action "AXRaise" of w
+                                            delay 0.5
+                                            set scriptFound to true
+                                            exit repeat
+                                        end if
+                                    end try
+                                end repeat
+                            end if
+                        end try
+                        delay 1
                         try
                             click menu item "Run Script" of menu "Run" of menu bar 1
                             return "Run Script triggered via menu ✅"
@@ -346,12 +566,45 @@ class JMPRunner:
                     end tell
                 end tell
                 ''',
-                # Method 4: Try right-click context menu
-                '''
+                # Method 4: Try right-click context menu - ensure script window is frontmost first
+                f'''
                 tell application "System Events"
                     tell application process "JMP"
                         set frontmost to true
-                        delay 2
+                        delay 1
+                        -- Try to find and activate script window before running
+                        try
+                            set scriptFound to false
+                            -- First, try to find window with exact filename
+                            repeat with w in windows
+                                try
+                                    set winName to name of w
+                                    if winName contains "{jsl_filename}" then
+                                        set index of w to 1
+                                        perform action "AXRaise" of w
+                                        delay 0.5
+                                        set scriptFound to true
+                                        exit repeat
+                                    end if
+                                end try
+                            end repeat
+                            -- If not found, look for script windows
+                            if not scriptFound then
+                                repeat with w in windows
+                                    try
+                                        set winName to name of w
+                                        if winName contains ".jsl" or winName contains "Script" or winName contains "Untitled" then
+                                            set index of w to 1
+                                            perform action "AXRaise" of w
+                                            delay 0.5
+                                            set scriptFound to true
+                                            exit repeat
+                                        end if
+                                    end try
+                                end repeat
+                            end if
+                        end try
+                        delay 1
                         try
                             right click
                             delay 1
@@ -370,15 +623,24 @@ class JMPRunner:
             
             for i, osa in enumerate(osa_scripts):
                 try:
-                    logger.info(f"Trying AppleScript method {i+1}")
+                    progress_msg = f"Trying AppleScript method {i+1}"
+                    logger.info(progress_msg)
+                    if on_progress:
+                        on_progress(progress_msg)
                     script_result = applescript.run(osa)
                     # Convert Result object to string
                     result = str(script_result)
-                    logger.info(f"AppleScript method {i+1} result: {result}")
+                    result_msg = f"AppleScript method {i+1} result: {result}"
+                    logger.info(result_msg)
+                    if on_progress:
+                        on_progress(result_msg)
                     # Also try to get the actual value
                     try:
                         result_value = script_result.out
-                        logger.info(f"AppleScript method {i+1} actual value: {result_value}")
+                        actual_value_msg = f"AppleScript method {i+1} actual value: {result_value}"
+                        logger.info(actual_value_msg)
+                        if on_progress:
+                            on_progress(actual_value_msg)
                         if result_value and "✅" in str(result_value):
                             result = str(result_value)
                             automation_success = True
@@ -407,9 +669,11 @@ class JMPRunner:
                 result = "⚠️ Manual execution required - see guides above"
             
             logger.info("Executed JSL script in JMP")
+            if on_progress:
+                on_progress("Executed JSL script in JMP")
             
             # Wait for JMP to complete processing
-            completed, message = self.wait_for_jmp_completion(task_dir)
+            completed, message = self.wait_for_jmp_completion(task_dir, on_progress=on_progress)
             
             if completed:
                 return f"{result} - {message}"
@@ -421,12 +685,13 @@ class JMPRunner:
             logger.error(error_msg)
             return error_msg
     
-    def wait_for_jmp_completion(self, task_dir: Path) -> Tuple[bool, str]:
+    def wait_for_jmp_completion(self, task_dir: Path, on_progress: Optional[Callable[[str], None]] = None) -> Tuple[bool, str]:
         """
         Wait for JMP to finish by monitoring file count stability and CPU usage.
         
         Args:
             task_dir: Task directory to monitor for output files
+            on_progress: Optional callback for progress updates
             
         Returns:
             Tuple of (completed, message)
@@ -443,10 +708,13 @@ class JMPRunner:
         required_stable_count = 2 if self.max_wait_time <= 30 else 3
         
         logger.info(f"Monitoring JMP completion with {self.max_wait_time}s timeout...")
+        if on_progress:
+            on_progress(f"Monitoring JMP completion with {self.max_wait_time}s timeout...")
         
         # Use shorter sleep intervals for faster timeout
         sleep_interval = 1 if self.max_wait_time <= 30 else 2
         
+        min_runtime = 10  # enforce a short minimum wait before early-exit logic
         while time.time() - start_time < self.max_wait_time:
             # Check CPU usage of JMP processes
             jmp_processes = self.find_jmp_processes()
@@ -460,18 +728,24 @@ class JMPRunner:
             if current_count != last_file_count:
                 last_file_count = current_count
                 stable_count = 0
-                logger.info(f"Found {current_count} images, CPU usage: {cpu_usage:.1f}%")
+                progress_msg = f"Found {current_count} images, CPU usage: {cpu_usage:.1f}%"
+                logger.info(progress_msg)
+                if on_progress:
+                    on_progress(progress_msg)
             else:
                 stable_count += 1
             
             # Check if JMP is done (low CPU and stable file count)
-            if cpu_usage < 5.0 and stable_count >= required_stable_count:
-                logger.info(f"JMP completed successfully. Generated {current_count} images.")
+            if (time.time() - start_time) >= min_runtime and cpu_usage < 5.0 and stable_count >= required_stable_count:
+                completion_msg = f"JMP completed successfully. Generated {current_count} images."
+                logger.info(completion_msg)
+                if on_progress:
+                    on_progress(completion_msg)
                 return True, f"Completed successfully. Generated {current_count} images."
             
             # Early failure detection: if no images after reasonable time and no JMP processes
             elapsed = time.time() - start_time
-            if elapsed > 10 and current_count == 0 and len(jmp_processes) == 0:
+            if elapsed > min_runtime and current_count == 0 and len(jmp_processes) == 0:
                 logger.warning("No JMP processes found and no images generated after 10 seconds")
                 return False, "JMP process not running and no images generated"
             
@@ -559,74 +833,262 @@ class JMPRunner:
     def run_csv_jsl(self, 
                    csv_path: Union[str, Path], 
                    jsl_path: Union[str, Path],
-                   task_id: Optional[str] = None) -> Dict:
+                   task_id: Optional[str] = None,
+                   on_task_ready: Optional[Callable[[str, str, str], None]] = None,
+                   on_progress: Optional[Callable[[str], None]] = None) -> Dict:
         """
         Run the complete JMP pipeline with CSV and JSL files.
-        
+
+        IMPORTANT: This should ONLY be called from Celery worker tasks.
+        Direct calls outside of Celery are NOT allowed.
+
         Args:
             csv_path: Path to CSV file
             jsl_path: Path to JSL file
             task_id: Optional task ID (default: timestamp)
+            on_task_ready: Optional callback called after task folder is created and CSV is found.
+                         Called with (task_id, task_dir_path_str, csv_filename) before opening JSL.
+            on_progress: Optional callback called at various stages of processing.
+                        Called with progress messages as strings.
             
         Returns:
             Dictionary with results including status, images, and metadata
         """
-        # Generate task ID if not provided
-        if task_id is None:
-            task_id = datetime.now().strftime("%Y%m%d_%H%M%S")
-        
-        # Convert to Path objects
-        csv_path = Path(csv_path).expanduser().resolve()
-        jsl_path = Path(jsl_path).expanduser().resolve()
-        
-        # Validate input files
-        if not csv_path.exists():
-            return {
-                "status": "failed",
-                "error": f"CSV file not found: {csv_path}",
-                "task_id": task_id
-            }
-        
-        if not jsl_path.exists():
-            return {
-                "status": "failed", 
-                "error": f"JSL file not found: {jsl_path}",
-                "task_id": task_id
-            }
-        
-        # Create task directory
-        task_dir = self.base_task_dir / f"task_{task_id}"
-        task_dir.mkdir(parents=True, exist_ok=True)
-        
-        logger.info(f"Starting JMP task {task_id}")
-        logger.info(f"CSV: {csv_path.name}")
-        logger.info(f"JSL: {jsl_path.name}")
-        logger.info(f"Task directory: {task_dir}")
-        
         try:
-            # Copy input files to task directory
-            csv_dst = task_dir / csv_path.name
-            jsl_dst = task_dir / jsl_path.name
+            # CRITICAL: Log caller information to detect direct calls outside Celery
+            import inspect
+            import traceback
+            caller_frame = inspect.currentframe().f_back
+            caller_file = caller_frame.f_code.co_filename if caller_frame else "unknown"
+            caller_name = caller_frame.f_code.co_name if caller_frame else "unknown"
+            caller_line = caller_frame.f_lineno if caller_frame else 0
             
-            csv_dst.write_bytes(csv_path.read_bytes())
-            jsl_dst.write_bytes(jsl_path.read_bytes())
+            logger.info("="*80)
+            logger.info("[JMP_RUNNER] run_csv_jsl called")
+            logger.info(f"[JMP_RUNNER] Caller file: {caller_file}")
+            logger.info(f"[JMP_RUNNER] Caller function: {caller_name}")
+            logger.info(f"[JMP_RUNNER] Caller line: {caller_line}")
+            logger.info(f"[JMP_RUNNER] CSV path: {csv_path}")
+            logger.info(f"[JMP_RUNNER] JSL path: {jsl_path}")
+            logger.info(f"[JMP_RUNNER] Task ID: {task_id}")
+            
+            # Check if called from Celery worker
+            is_celery_call = "app/worker/tasks.py" in caller_file or "worker/tasks.py" in caller_file
+            logger.info(f"[JMP_RUNNER] Called from Celery worker: {is_celery_call}")
+            
+            if not is_celery_call:
+                logger.error("="*80)
+                logger.error("CRITICAL ERROR: run_csv_jsl called from OUTSIDE Celery worker!")
+                logger.error(f"Caller: {caller_file}:{caller_name}:{caller_line}")
+                logger.error("This should ONLY be called from app/worker/tasks.py (Celery task)")
+                logger.error("Full stack trace:")
+                for line in traceback.format_stack(caller_frame):
+                    logger.error(line.rstrip())
+                logger.error("="*80)
+                # CRITICAL: Prevent execution if not called from Celery
+                return {
+                    "status": "failed",
+                    "error": f"run_csv_jsl called from outside Celery worker. Caller: {caller_file}:{caller_name}:{caller_line}. This should ONLY be called from Celery tasks.",
+                    "task_id": task_id
+                }
+            
+            # CRITICAL: task_id must be provided - task folder should already be prepared by API
+            if task_id is None:
+                error_msg = "task_id is required - task folder must be prepared by API before calling jmp_runner"
+                logger.error(f"[JMP_RUNNER] {error_msg}")
+                return {
+                    "status": "failed",
+                    "error": error_msg,
+                    "task_id": None
+                }
+            
+            # Convert to Path objects - these should point to files in the task folder
+            csv_path = Path(csv_path).expanduser().resolve()
+            jsl_path = Path(jsl_path).expanduser().resolve()
+            
+            # Task directory path (should already exist, prepared by API)
+            task_dir = self.base_task_dir / f"task_{task_id}"
+            
+            logger.info("="*80)
+            logger.info("[JMP_RUNNER] Processing task (task folder prepared by API)")
+            logger.info(f"[JMP_RUNNER] Task ID: {task_id}")
+            logger.info(f"[JMP_RUNNER] Task directory: {task_dir}")
+            logger.info(f"[JMP_RUNNER] CSV path: {csv_path}")
+            logger.info(f"[JMP_RUNNER] JSL path: {jsl_path}")
+            logger.info("="*80)
+            
+            # CRITICAL: Task folder must already exist (prepared by API)
+            if not task_dir.exists() or not task_dir.is_dir():
+                error_msg = f"Task folder does not exist - must be prepared by API before calling jmp_runner: {task_dir}"
+                logger.error(f"[JMP_RUNNER] {error_msg}")
+                return {
+                    "status": "failed",
+                    "error": error_msg,
+                    "task_id": task_id
+                }
+            
+            # Verify files exist in task folder
+            # If paths don't point to task folder, search for files in task folder
+            csv_in_task = csv_path if csv_path.exists() and str(task_dir) in str(csv_path) else None
+            jsl_in_task = jsl_path if jsl_path.exists() and str(task_dir) in str(jsl_path) else None
+            
+            # Search task folder for CSV and JSL files if not found at provided paths
+            if not csv_in_task or not jsl_in_task:
+                for file_path in task_dir.glob("*"):
+                    if file_path.is_file():
+                        if file_path.suffix.lower() == '.csv' and not csv_in_task:
+                            csv_in_task = file_path
+                        elif file_path.suffix.lower() == '.jsl' and not jsl_in_task:
+                            jsl_in_task = file_path
+            
+            if not csv_in_task or not jsl_in_task:
+                error_msg = f"Files not found in task folder {task_dir}. CSV: {csv_in_task is not None}, JSL: {jsl_in_task is not None}"
+                logger.error(f"[JMP_RUNNER] {error_msg}")
+                return {
+                    "status": "failed",
+                    "error": error_msg,
+                    "task_id": task_id
+                }
+            
+            csv_path = csv_in_task
+            jsl_path = jsl_in_task
+            
+            logger.info(f"[JMP_RUNNER] Using files from task folder:")
+            logger.info(f"  CSV: {csv_path} (exists: {csv_path.exists()}, size: {csv_path.stat().st_size} bytes)")
+            logger.info(f"  JSL: {jsl_path} (exists: {jsl_path.exists()}, size: {jsl_path.stat().st_size} bytes)")
+            
+            # Call callback after verifying task folder is ready
+            if on_task_ready:
+                try:
+                    on_task_ready(task_id, str(task_dir), csv_path.name)
+                except Exception as e:
+                    logger.warning(f"Error in on_task_ready callback: {e}")
             
             # Close any existing JMP processes
             self.close_jmp_processes()
             
-            # Modify JSL to open CSV and convert paths
-            self.prepend_open_line(jsl_dst, csv_dst, task_dir)
+            # Comprehensive verification: ensure task folder is fully ready before opening JSL
+            verification_error = self._verify_task_folder_ready(task_dir, csv_path, jsl_path)
+            if verification_error:
+                error_msg = f"Task folder verification failed before opening JSL: {verification_error}"
+                logger.error(error_msg)
+                logger.error(f"  Task dir exists: {task_dir.exists()}, is_dir: {task_dir.is_dir() if task_dir.exists() else False}")
+                logger.error(f"  CSV path exists: {csv_path.exists()}, path: {csv_path}")
+                logger.error(f"  JSL path exists: {jsl_path.exists()}, path: {jsl_path}")
+                return {
+                    "status": "failed",
+                    "error": error_msg,
+                    "task_id": task_id
+                }
+            
+            logger.info("Task folder verification passed. Proceeding to open JSL file.")
+            logger.info(f"  Opening JSL from task folder: {jsl_path}")
+            logger.info(f"  Task folder: {task_dir}")
+            logger.info(f"  JSL absolute path: {jsl_path.resolve()}")
+            logger.info(f"  JSL is in task dir: {str(task_dir.resolve()) in str(jsl_path.resolve())}")
+            if on_progress:
+                on_progress(f"Task folder verified. Opening JSL file with JMP: {jsl_path.name} (from task_{task_id})")
+            
+            # CRITICAL: Ensure we're using the JSL file from the task folder, not from anywhere else
+            # Double-check that jsl_path is actually inside task_dir
+            try:
+                jsl_path.resolve().relative_to(task_dir.resolve())
+                logger.info(f"[VERIFIED] JSL file is in task folder: {jsl_path}")
+            except ValueError:
+                error_msg = f"CRITICAL ERROR: JSL file is NOT in task folder! Task folder: {task_dir}, JSL path: {jsl_path}"
+                logger.error(f"[JMP_RUNNER] {error_msg}")
+                return {
+                    "status": "failed",
+                    "error": error_msg,
+                    "task_id": task_id
+                }
             
             # Open JSL file with JMP
-            logger.info("Opening JSL file with JMP")
-            subprocess.run(["open", str(jsl_dst)], check=True)
+            logger.info(f"[JMP_RUNNER] Opening JSL file with JMP from task folder: {jsl_path}")
+            if on_progress:
+                on_progress(f"Opening JSL file with JMP: {jsl_path.name}")
+            # Explicitly open with JMP (try multiple known names/paths)
+            last_err: Optional[Exception] = None
+            opened = False
+            for app in self._candidate_jmp_apps():
+                try:
+                    # Re-verify task folder is ready before each open attempt
+                    verification_error = self._verify_task_folder_ready(task_dir, csv_path, jsl_path)
+                    if verification_error:
+                        logger.error(f"Task folder verification failed before opening with {app}: {verification_error}")
+                        raise FileNotFoundError(f"Task folder verification failed: {verification_error}")
+                    
+                    # Final check: ensure file still exists before opening
+                    if not jsl_path.exists():
+                        raise FileNotFoundError(f"JSL file not found: {jsl_path}")
+                    
+                    # Additional check: verify file is actually in task directory
+                    try:
+                        jsl_path.resolve().relative_to(task_dir.resolve())
+                    except ValueError:
+                        raise FileNotFoundError(f"JSL file is not in task directory. Expected in: {task_dir}, Found: {jsl_path}")
+                    
+                    # CRITICAL: Log which file we're about to open
+                    logger.info(f"[CRITICAL] About to open JSL file from task folder:")
+                    logger.info(f"  Task folder: {task_dir}")
+                    logger.info(f"  JSL file to open: {jsl_path}")
+                    logger.info(f"  JSL absolute path: {jsl_path.resolve()}")
+                    logger.info(f"  JSL exists: {jsl_path.exists()}")
+                    logger.info(f"  JSL is in task dir: {task_dir.resolve() in jsl_path.resolve().parents}")
+                    logger.info(f"  Opening with application: {app}")
+                    
+                    # CRITICAL: Use absolute path to ensure we're opening the correct file
+                    jsl_absolute_path = str(jsl_path.resolve())
+                    subprocess.run(["open", "-a", app, jsl_absolute_path], check=True, capture_output=True)
+                    logger.info(f"[SUCCESS] Opened JSL file: {jsl_path}")
+                    logger.info(f"Opened JSL with application: {app}")
+                    if on_progress:
+                        on_progress(f"Opened JSL with application: {app}")
+                    opened = True
+                    # Wait for JMP to load the script and CSV windows
+                    logger.info(f"Waiting {self.jmp_start_delay} seconds for JMP windows to load...")
+                    time.sleep(self.jmp_start_delay)
+                    break
+                except subprocess.CalledProcessError as e:
+                    last_err = e
+                    logger.warning(f"Failed to open with '{app}': {e}")
+                    continue
+            if not opened:
+                # Fallback: try default opener (may still fail)
+                # Comprehensive verification before fallback
+                verification_error = self._verify_task_folder_ready(task_dir, csv_path, jsl_path)
+                if verification_error:
+                    error_msg = f"Task folder verification failed before fallback opener: {verification_error}"
+                    logger.error(error_msg)
+                    return {
+                        "status": "failed",
+                        "error": error_msg,
+                        "task_id": task_id
+                    }
+                
+                # Additional check: verify file is actually in task directory
+                try:
+                    jsl_path.resolve().relative_to(task_dir.resolve())
+                except ValueError:
+                    return {
+                        "status": "failed",
+                        "error": f"JSL file is not in task directory before fallback. Expected in: {task_dir}, Found: {jsl_path}",
+                        "task_id": task_id
+                    }
+                
+            logger.warning("Falling back to default opener for JSL")
+            # CRITICAL: Use absolute path to ensure we're opening the correct file from task folder
+            jsl_absolute_path = str(jsl_path.resolve())
+            logger.info(f"[CRITICAL] Fallback: Opening JSL from task folder with absolute path: {jsl_absolute_path}")
+            subprocess.run(["open", jsl_absolute_path], check=True)
             time.sleep(self.jmp_start_delay)
             
             
             # Run the JSL script
             logger.info("Running JSL script in JMP")
-            run_status = self.run_jsl_with_jmp(jsl_dst, task_dir)
-            
+            if on_progress:
+                on_progress("Running JSL script in JMP")
+            run_status = self.run_jsl_with_jmp(jsl_path, task_dir, on_progress=on_progress)
             
             # Always close JMP processes
             self.close_jmp_processes()
@@ -667,32 +1129,41 @@ class JMPRunner:
             
             logger.info(f"Task {task_id} completed. Generated {len(processed_images)} images.")
             return result
-            
+        
         except Exception as e:
             error_msg = f"Error running JMP task: {str(e)}"
-            logger.error(error_msg)
+            logger.error(error_msg, exc_info=True)
             
             # Always try to close JMP processes
             self.close_jmp_processes()
             
-            # Generate failure image for exception cases
+            # Generate failure image for exception cases (only if task_dir is defined)
+            images = []
             try:
-                failure_image_path = self.generate_failure_image(task_dir, error_msg)
-                images = [failure_image_path]
+                if 'task_dir' in locals() and task_dir.exists():
+                    failure_image_path = self.generate_failure_image(task_dir, error_msg)
+                    images = [failure_image_path]
             except Exception as img_error:
                 logger.error(f"Failed to generate failure image: {img_error}")
-                images = []
             
-            return {
+            # Build response with available variables
+            result = {
                 "status": "failed",
                 "error": error_msg,
-                "task_id": task_id,
-                "task_dir": str(task_dir),
-                "csv_file": csv_path.name,
-                "jsl_file": jsl_path.name,
+                "task_id": task_id if 'task_id' in locals() else None,
                 "images": images,
                 "image_count": len(images)
             }
+            
+            # Add optional fields if variables are defined
+            if 'task_dir' in locals():
+                result["task_dir"] = str(task_dir)
+            if 'csv_path' in locals():
+                result["csv_file"] = csv_path.name if hasattr(csv_path, 'name') else str(csv_path)
+            if 'jsl_path' in locals():
+                result["jsl_file"] = jsl_path.name if hasattr(jsl_path, 'name') else str(jsl_path)
+            
+            return result
     
     def _process_images_with_ocr(self, task_dir: Path) -> Tuple[List[str], Dict]:
         """

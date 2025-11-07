@@ -17,6 +17,8 @@ export default function AdminUsersPage() {
   const [users, setUsers] = useState<User[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [isAuthenticated, setIsAuthenticated] = useState(false)
+  const [editingUserId, setEditingUserId] = useState<string | null>(null)
+  const [newPassword, setNewPassword] = useState<string>("")
 
   useEffect(() => {
     const checkAuth = async () => {
@@ -72,6 +74,41 @@ export default function AdminUsersPage() {
     }
   }
 
+  const handleResetPassword = async (userId: string) => {
+    const password = newPassword.trim() || "123456"
+    
+    if (!confirm(`Reset password for this user to "${password}"?`)) {
+      return
+    }
+
+    try {
+      const token = localStorage.getItem('access_token')
+      const response = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/v1/admin/users/reset-password`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          user_id: userId,
+          new_password: password
+        }),
+      })
+
+      if (response.ok) {
+        const result = await response.json()
+        alert(result.message)
+        setEditingUserId(null)
+        setNewPassword("")
+      } else {
+        const error = await response.json()
+        alert(`Failed to reset password: ${error.detail}`)
+      }
+    } catch (error) {
+      alert('Failed to reset password')
+    }
+  }
+
   const handleDeleteUser = async (userId: string) => {
     if (!confirm('Are you sure you want to delete this user? This action cannot be undone.')) {
       return
@@ -99,7 +136,7 @@ export default function AdminUsersPage() {
   }
 
   const handleLogout = () => {
-    localStorage.removeItem('auth_token')
+    localStorage.removeItem('access_token')
     localStorage.removeItem('user_id')
     localStorage.removeItem('is_guest')
     router.push('/admin')
@@ -201,14 +238,52 @@ export default function AdminUsersPage() {
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                       {user.last_login ? new Date(user.last_login).toLocaleDateString() : 'Never'}
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                      {!user.is_admin && (
-                        <button
-                          onClick={() => handleDeleteUser(user.id)}
-                          className="text-red-600 hover:text-red-900"
-                        >
-                          Delete
-                        </button>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium space-x-3">
+                      {editingUserId === user.id ? (
+                        <div className="flex items-center space-x-2">
+                          <input
+                            type="text"
+                            value={newPassword}
+                            onChange={(e) => setNewPassword(e.target.value)}
+                            placeholder="123456"
+                            className="border border-gray-300 rounded px-2 py-1 text-sm w-32"
+                          />
+                          <button
+                            onClick={() => handleResetPassword(user.id)}
+                            className="text-green-600 hover:text-green-900"
+                          >
+                            Save
+                          </button>
+                          <button
+                            onClick={() => {
+                              setEditingUserId(null)
+                              setNewPassword("")
+                            }}
+                            className="text-gray-600 hover:text-gray-900"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      ) : (
+                        <>
+                          <button
+                            onClick={() => {
+                              setEditingUserId(user.id)
+                              setNewPassword("")
+                            }}
+                            className="text-blue-600 hover:text-blue-900"
+                          >
+                            Reset Password
+                          </button>
+                          {!user.is_admin && (
+                            <button
+                              onClick={() => handleDeleteUser(user.id)}
+                              className="text-red-600 hover:text-red-900"
+                            >
+                              Delete
+                            </button>
+                          )}
+                        </>
                       )}
                     </td>
                   </tr>

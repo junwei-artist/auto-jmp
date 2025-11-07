@@ -33,7 +33,9 @@ class ExtensionManager:
                 sys.path.insert(0, str(extensions_parent))
             
             # Import extension module using the correct path
-            module_name = f'extensions.{extension_name}.extension'
+            # Convert hyphenated extension names to underscores for Python module path
+            module_name = extension_name.replace('-', '_')
+            module_name = f'extensions.{module_name}.extension'
             module = importlib.import_module(module_name)
             
             # Get the extension class name
@@ -49,6 +51,9 @@ class ExtensionManager:
                 class_name = 'Excel2CPKV1Extension'
             elif extension_name == 'excel2commonality':
                 class_name = 'Excel2CommonalityExtension'
+            # Handle both hyphenated and underscored names for the same extension
+            if extension_name == 'excel2commonality-generic' or extension_name == 'excel2commonality_generic':
+                class_name = 'Excel2CommonalityGenericExtension'
             
             # Check if the class exists in the module
             if not hasattr(module, class_name):

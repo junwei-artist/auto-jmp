@@ -14,7 +14,10 @@ from .file_processor import FileProcessor
 from .analysis_runner import AnalysisRunner
 import httpx
 import os
+import asyncio
 from app.core.storage import local_storage
+from datetime import datetime
+import uuid
 
 logger = logging.getLogger(__name__)
 
@@ -666,6 +669,7 @@ async def run_analysis_modular(
     """Run complete analysis using modular approach"""
     try:
         logger.info(f"Running analysis with categorical variable: {cat_var}")
+        stage = "init"
         
         # Save uploaded file temporarily
         with tempfile.NamedTemporaryFile(delete=False, suffix='.xlsx') as tmp_file:
@@ -674,9 +678,11 @@ async def run_analysis_modular(
             tmp_file.flush()
             
             # Load file
+            stage = "load_file"
             load_result = file_handler.load_excel_file(tmp_file.name)
             if not load_result["success"]:
-                return load_result
+                os.unlink(tmp_file.name)
+                return JSONResponse(status_code=400, content={"success": False, "error": load_result.get("error", "Load failed"), "stage": stage, "details": load_result})
             
             # Get data
             df_meta = file_handler.df_meta
@@ -684,11 +690,14 @@ async def run_analysis_modular(
             fai_columns = file_handler.fai_columns
             
             # Process data
+            stage = "process_data"
             process_result = data_processor.process_data(df_meta, df_data, fai_columns, cat_var)
             if not process_result["success"]:
-                return process_result
+                os.unlink(tmp_file.name)
+                return JSONResponse(status_code=400, content={"success": False, "error": process_result.get("error", "Process failed"), "stage": stage, "details": process_result})
             
             # Generate files
+            stage = "generate_files"
             file_result = file_processor.generate_files(
                 df_meta,
                 process_result["processed_data"],
@@ -698,9 +707,11 @@ async def run_analysis_modular(
                 color_by
             )
             if not file_result["success"]:
-                return file_result
+                os.unlink(tmp_file.name)
+                return JSONResponse(status_code=400, content={"success": False, "error": file_result.get("error", "File generation failed"), "stage": stage, "details": file_result})
             
             # Persist files to storage and create a run via standard API
+            stage = "persist_files"
             csv_bytes = file_result["files"]["csv_content"].encode("utf-8")
             jsl_bytes = file_result["files"]["jsl_content"].encode("utf-8")
 
@@ -710,20 +721,267 @@ async def run_analysis_modular(
             local_storage.save_file(csv_bytes, csv_key)
             local_storage.save_file(jsl_bytes, jsl_key)
 
-            backend_base = os.getenv("NEXT_PUBLIC_BACKEND_URL", "http://localhost:4700")
-            async with httpx.AsyncClient(timeout=30.0) as client:
-                run_resp = await client.post(
-                    f"{backend_base}/api/v1/runs/",
-                    json={
-                        "project_id": project_id,
-                        "csv_key": csv_key,
-                        "jsl_key": jsl_key
+            # Use direct Celery call instead of HTTP to ensure proper queueing
+            stage = "create_run"
+            from app.core.celery import celery_app
+            from app.core.database import AsyncSessionLocal
+            from app.core.websocket import publish_run_update
+            from app.models import Run, RunStatus, Artifact
+            
+            run_json = None
+            last_error = None
+            
+            # STEP 1: Create run record FIRST
+            async with AsyncSessionLocal() as create_db:
+                try:
+                    run = Run(
+                        project_id=uuid.UUID(project_id),
+                        started_by=None,  # Note: current_user not available in this endpoint signature
+                        status=RunStatus.QUEUED,
+                        task_name="jmp_boxplot",
+                        message="Run queued"
+                    )
+                    create_db.add(run)
+                    await create_db.commit()
+                    await create_db.refresh(run)
+                    
+                    logger.info(f"[V1] Run created: {run.id}")
+                    
+                    # STEP 2: Create run folder immediately after run is created
+                    run_dir_key = f"runs/{str(run.id)}"
+                    run_dir_path = local_storage.get_file_path(run_dir_key)
+                    run_dir_path.mkdir(parents=True, exist_ok=True)
+                    
+                    logger.info(f"[V1] Run folder created: {run_dir_path}")
+                    
+                    # STEP 3: Save submitted files directly to run folder (not temp location)
+                    ts = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+                    short_uid = str(uuid.uuid4())[:8]
+                    dst_csv_filename = f"data_{ts}_{short_uid}.csv"
+                    dst_jsl_filename = f"analysis_{ts}_{short_uid}.jsl"
+                    dst_csv_rel_key = f"{run_dir_key}/{dst_csv_filename}"
+                    dst_jsl_rel_key = f"{run_dir_key}/{dst_jsl_filename}"
+                    dst_csv_path = local_storage.get_file_path(dst_csv_rel_key)
+                    dst_jsl_path = local_storage.get_file_path(dst_jsl_rel_key)
+                    
+                    dst_csv_path.parent.mkdir(parents=True, exist_ok=True)
+                    
+                    # Determine source file paths from temp/upload location
+                    src_csv_path = local_storage.get_file_path(csv_key)
+                    src_jsl_path = local_storage.get_file_path(jsl_key)
+                    
+                    logger.info(f"[V1] Copying submitted files to run folder:")
+                    logger.info(f"  CSV source: {src_csv_path}")
+                    logger.info(f"  CSV destination: {dst_csv_path}")
+                    logger.info(f"  JSL source: {src_jsl_path}")
+                    logger.info(f"  JSL destination: {dst_jsl_path}")
+                    
+                    # Copy files from temp/upload location to run folder
+                    if not src_csv_path.exists():
+                        raise ValueError(f"CSV source file not found: {src_csv_path}")
+                    if not src_jsl_path.exists():
+                        raise ValueError(f"JSL source file not found: {src_jsl_path}")
+                    
+                    # Copy bytes into run folder
+                    dst_csv_path.write_bytes(src_csv_path.read_bytes())
+                    dst_jsl_path.write_bytes(src_jsl_path.read_bytes())
+                    
+                    # CRITICAL: Set JSL file permissions to prevent macOS auto-opening
+                    dst_jsl_path.chmod(0o644)  # rw-r--r--
+                    
+                    logger.info(f"[V1] Files copied to run folder:")
+                    logger.info(f"  CSV: {dst_csv_path} (size: {dst_csv_path.stat().st_size} bytes)")
+                    logger.info(f"  JSL: {dst_jsl_path} (size: {dst_jsl_path.stat().st_size} bytes)")
+
+                    # CRITICAL: Verify files are written to run folder before proceeding
+                    if not dst_csv_path.exists():
+                        raise ValueError(f"CSV file not found in run folder after copy: {dst_csv_path}")
+                    if not dst_jsl_path.exists():
+                        raise ValueError(f"JSL file not found in run folder after copy: {dst_jsl_path}")
+                    
+                    # STEP 4: Create artifact records pointing directly to run folder paths
+                    csv_artifact = Artifact(
+                        project_id=uuid.UUID(project_id),
+                        run_id=run.id,
+                        kind="input_csv",
+                        storage_key=str(dst_csv_path.resolve()),
+                        filename=dst_csv_filename,
+                        mime_type="text/csv"
+                    )
+                    
+                    jsl_artifact = Artifact(
+                        project_id=uuid.UUID(project_id),
+                        run_id=run.id,
+                        kind="input_jsl",
+                        storage_key=str(dst_jsl_path.resolve()),
+                        filename=dst_jsl_filename,
+                        mime_type="text/plain"
+                    )
+                    
+                    create_db.add(csv_artifact)
+                    create_db.add(jsl_artifact)
+                    await create_db.commit()
+                    await create_db.refresh(csv_artifact)
+                    await create_db.refresh(jsl_artifact)
+                    
+                    logger.info(f"[V1] Artifacts created with run folder paths:")
+                    logger.info(f"  CSV artifact storage_key: {csv_artifact.storage_key}")
+                    logger.info(f"  JSL artifact storage_key: {jsl_artifact.storage_key}")
+                    
+                    # Clean up original temp/upload files
+                    try:
+                        if src_csv_path.exists() and src_csv_path != dst_csv_path:
+                            src_csv_path.unlink()
+                            logger.info(f"[V1] Removed original CSV file: {src_csv_path}")
+                        if src_jsl_path.exists() and src_jsl_path != dst_jsl_path:
+                            src_jsl_path.unlink()
+                            logger.info(f"[V1] Removed original JSL file: {src_jsl_path}")
+                    except Exception as e:
+                        logger.warning(f"[V1] Failed to remove original temp files: {e}")
+                    
+                    # CRITICAL: Final verification - ensure files exist in run folder before queuing Celery
+                    final_csv_path = local_storage.get_file_path(csv_artifact.storage_key)
+                    final_jsl_path = local_storage.get_file_path(jsl_artifact.storage_key)
+                    
+                    if not final_csv_path.exists():
+                        raise ValueError(f"CSV file not found in run folder before queuing Celery: {final_csv_path}")
+                    if not final_jsl_path.exists():
+                        raise ValueError(f"JSL file not found in run folder before queuing Celery: {final_jsl_path}")
+                    
+                    logger.info(f"[V1] Final verification passed - files ready in run folder before queuing Celery:")
+                    logger.info(f"  CSV: {final_csv_path} (size: {final_csv_path.stat().st_size} bytes)")
+                    logger.info(f"  JSL: {final_jsl_path} (size: {final_jsl_path.stat().st_size} bytes)")
+                    
+                    # STEP 5: Prepare task folder and task id BEFORE enqueuing Celery
+                    from pathlib import Path
+                    from datetime import timezone
+                    ts_task = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+                    task_uid = str(uuid.uuid4())[:8]
+                    jmp_task_id = f"{ts_task}_{task_uid}"
+                    # Use settings.TASKS_DIRECTORY to match Celery worker and jmp_runner
+                    from app.core.config import settings
+                    tasks_root = Path(settings.TASKS_DIRECTORY).expanduser().resolve()
+                    task_dir = tasks_root / f"task_{jmp_task_id}"
+                    task_dir.mkdir(parents=True, exist_ok=True)
+
+                    # Copy files from run folder to task folder
+                    csv_dst = task_dir / final_csv_path.name
+                    jsl_dst = task_dir / final_jsl_path.name
+                    
+                    # Copy CSV file as-is
+                    csv_dst.write_bytes(final_csv_path.read_bytes())
+                    
+                    # Read JSL file and ensure header Open() points to absolute CSV path in task folder
+                    jsl_content = final_jsl_path.read_text(encoding='utf-8')
+                    absolute_csv_path = str(csv_dst.resolve())
+                    
+                    # Create comment lines with metadata
+                    create_time = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+                    jsl_header = f"""// JSL Script generated by Auto-JMP Platform
+// Run ID: {str(run.id)}
+// Task Folder ID: {jmp_task_id}
+// Created: {create_time}
+// CSV File: {csv_dst.name}
+Open("{absolute_csv_path}");
+"""
+                    
+                    # Replace existing Open("..."); header and comments if present, otherwise prepend
+                    import re
+                    # Pattern to match comment lines at the start, followed by Open() statement
+                    pattern = r'(?:^\s*//.*?\n)*\s*Open\(".*?"\);\s*\n?'
+                    if re.search(pattern, jsl_content, flags=re.MULTILINE):
+                        modified_jsl_content = re.sub(pattern, jsl_header, jsl_content, count=1, flags=re.MULTILINE)
+                        logger.info("[V1] Replaced existing Open() header and comments in JSL")
+                    else:
+                        modified_jsl_content = jsl_header + jsl_content
+                        logger.info("[V1] Prepended Open() header and comments to JSL")
+                    
+                    # Write modified JSL to task folder
+                    jsl_dst.write_text(modified_jsl_content, encoding='utf-8')
+                    
+                    logger.info(f"[V1] Added JSL header with metadata:")
+                    logger.info(f"[V1]   Run ID: {str(run.id)}")
+                    logger.info(f"[V1]   Task Folder ID: {jmp_task_id}")
+                    logger.info(f"[V1]   Created: {create_time}")
+
+                    # Verify copies
+                    if not csv_dst.exists() or not jsl_dst.exists():
+                        raise RuntimeError(f"Failed to copy files into task folder: {task_dir}")
+
+                    # Persist task id on run
+                    run.jmp_task_id = jmp_task_id
+                    await create_db.commit()
+
+                    # Notify frontend
+                    await publish_run_update(str(run.id), {
+                        "type": "task_prepared",
+                        "run_id": str(run.id),
+                        "status": "queued",
+                        "message": f"Task folder ready: task_{jmp_task_id}",
+                        "task_dir": str(task_dir)
+                    })
+                    
+                    # STEP 6: Queue Celery task directly (only after task folder is prepared)
+                    logger.info(f"[V1] Queuing Celery task 'run_jmp_boxplot' for run {run.id}")
+                    celery_app.send_task("run_jmp_boxplot", args=[str(run.id)])
+                    
+                    # Publish initial status
+                    await publish_run_update(str(run.id), {
+                        "type": "run_created",
+                        "run_id": str(run.id),
+                        "status": "queued",
+                        "message": "Run queued for processing"
+                    })
+                    
+                    run_json = {
+                        "id": str(run.id),
+                        "project_id": str(run.project_id),
+                        "status": run.status.value,
+                        "task_name": run.task_name,
+                        "message": run.message,
+                        "image_count": run.image_count,
+                        "created_at": run.created_at.isoformat() if run.created_at else None,
+                        "started_at": run.started_at.isoformat() if run.started_at else None,
+                        "finished_at": run.finished_at.isoformat() if run.finished_at else None,
+                        "jmp_task_id": run.jmp_task_id
                     }
-                )
-                run_resp.raise_for_status()
-                run_json = run_resp.json()
+                    
+                except Exception as e:
+                    last_error = str(e)
+                    logger.error(f"[V1] Failed to create run directly: {e}", exc_info=True)
+                    if tmp_file and os.path.exists(tmp_file.name):
+                        os.unlink(tmp_file.name)
+                    return JSONResponse(
+                        status_code=400,
+                        content={
+                            "success": False,
+                            "error": f"Failed to create run: {last_error}",
+                            "stage": stage
+                        },
+                    )
+
+            # Save original Excel into the per-run folder for traceability
+            try:
+                if run_json and run_json.get("id"):
+                    run_id = run_json["id"]
+                    run_dir_key = f"runs/{run_id}"
+                    run_dir_path = local_storage.get_file_path(run_dir_key)
+                    run_dir_path.mkdir(parents=True, exist_ok=True)
+                    # Timestamp+UUID filename
+                    original_name = file.filename or "original.xlsx"
+                    base = Path(original_name).stem or "original"
+                    ext = Path(original_name).suffix or ".xlsx"
+                    ts = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+                    uid = str(uuid.uuid4())[:8]
+                    stamped_name = f"{base}_{ts}_{uid}{ext}"
+                    dst_excel_path = run_dir_path / stamped_name
+                    # 'content' holds the uploaded bytes
+                    dst_excel_path.write_bytes(content)
+            except Exception:
+                pass
 
             # Clean up temp file
+            stage = "cleanup"
             os.unlink(tmp_file.name)
 
             return {
@@ -739,6 +997,7 @@ async def run_analysis_modular(
             status_code=400,
             content={
                 "success": False,
-                "error": str(e)
+                "error": str(e),
+                "stage": locals().get("stage", "unknown")
             }
         )

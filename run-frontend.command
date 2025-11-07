@@ -130,18 +130,33 @@ get_port() {
         fi
     fi
     
-    # Save port to config file
+    # Save port to config file (only if it changed from config or file doesn't exist)
     local config_key="${mode}_PORT"
-    if [ -f "$CONFIG_FILE" ]; then
-        # Update existing config
-        if grep -q "^$config_key=" "$CONFIG_FILE"; then
-            sed -i '' "s/^$config_key=.*/$config_key=$port/" "$CONFIG_FILE"
-        else
-            echo "$config_key=$port" >> "$CONFIG_FILE"
-        fi
-    else
+    local should_update=false
+    
+    if [ ! -f "$CONFIG_FILE" ]; then
         # Create new config file
         echo "$config_key=$port" > "$CONFIG_FILE"
+        should_update=true
+    else
+        # Only update if port changed from what's in config
+        if grep -q "^$config_key=" "$CONFIG_FILE"; then
+            local config_port=$(grep "^$config_key=" "$CONFIG_FILE" | cut -d'=' -f2)
+            if [ "$config_port" != "$port" ]; then
+                # Port changed (likely due to conflict), update it
+                sed -i '' "s/^$config_key=.*/$config_key=$port/" "$CONFIG_FILE"
+                should_update=true
+            fi
+        else
+            # Add port if it doesn't exist
+            echo "$config_key=$port" >> "$CONFIG_FILE"
+            should_update=true
+        fi
+    fi
+    
+    # Only show update message if we actually changed something
+    if [ "$should_update" = true ] && [ "$port" != "$default_port" ]; then
+        print_status "Updated config: $config_key=$port" >&2
     fi
     
     echo $port
@@ -179,38 +194,83 @@ if [ -z "$SERVER_IP" ]; then
     SERVER_IP="localhost"
 fi
 
+# Load backend port from config if available (for initial .env.local creation)
+backend_port_for_init=4700
+if [ -f "../backend/.backend-config" ]; then
+    config_backend_port_init=$(grep "^BACKEND_PORT=" ../backend/.backend-config | cut -d'=' -f2)
+    if [ ! -z "$config_backend_port_init" ] && [ "$config_backend_port_init" -gt 0 ] 2>/dev/null; then
+        backend_port_for_init=$config_backend_port_init
+    fi
+fi
+
 # Check if .env.local exists
 if [ ! -f ".env.local" ]; then
     print_warning ".env.local not found. Creating configuration with server IP: $SERVER_IP"
     cat > .env.local << EOF
-NEXT_PUBLIC_BACKEND_URL=http://$SERVER_IP:4700
-NEXT_PUBLIC_WS_URL=ws://$SERVER_IP:4700
+NEXT_PUBLIC_BACKEND_URL=http://$SERVER_IP:$backend_port_for_init
+NEXT_PUBLIC_WS_URL=ws://$SERVER_IP:$backend_port_for_init
 NEXT_PUBLIC_FRONTEND_URL=http://$SERVER_IP:$PORT
 EOF
     print_warning "Created configuration with server IP: $SERVER_IP"
 else
-    # Update existing .env.local with server IP
-    print_status "Updating .env.local with server IP: $SERVER_IP"
-    
-    # Update or add NEXT_PUBLIC_BACKEND_URL
-    if grep -q "^NEXT_PUBLIC_BACKEND_URL=" .env.local; then
-        sed -i '' "s|^NEXT_PUBLIC_BACKEND_URL=.*|NEXT_PUBLIC_BACKEND_URL=http://$SERVER_IP:4700|" .env.local
-    else
-        echo "NEXT_PUBLIC_BACKEND_URL=http://$SERVER_IP:4700" >> .env.local
+    # Load backend port from config if available, otherwise use default
+    backend_port=4700
+    if [ -f "../backend/.backend-config" ]; then
+        config_backend_port=$(grep "^BACKEND_PORT=" ../backend/.backend-config | cut -d'=' -f2)
+        if [ ! -z "$config_backend_port" ] && [ "$config_backend_port" -gt 0 ] 2>/dev/null; then
+            backend_port=$config_backend_port
+        fi
     fi
     
-    # Update or add NEXT_PUBLIC_WS_URL
-    if grep -q "^NEXT_PUBLIC_WS_URL=" .env.local; then
-        sed -i '' "s|^NEXT_PUBLIC_WS_URL=.*|NEXT_PUBLIC_WS_URL=ws://$SERVER_IP:4700|" .env.local
+    # Update .env.local only if values are missing or need server IP update
+    # Preserve existing values if they're already set correctly
+    needs_update=false
+    
+    # Check and update NEXT_PUBLIC_BACKEND_URL (only if missing or server IP changed)
+    if ! grep -q "^NEXT_PUBLIC_BACKEND_URL=" .env.local; then
+        echo "NEXT_PUBLIC_BACKEND_URL=http://$SERVER_IP:$backend_port" >> .env.local
+        needs_update=true
     else
-        echo "NEXT_PUBLIC_WS_URL=ws://$SERVER_IP:4700" >> .env.local
+        # Only update if server IP is different (preserve port from existing config)
+        current_backend_url=$(grep "^NEXT_PUBLIC_BACKEND_URL=" .env.local | cut -d'=' -f2-)
+        current_backend_port=$(echo "$current_backend_url" | sed -n 's/.*:\([0-9]*\)$/\1/p')
+        # Update if port doesn't match backend config or if URL doesn't contain current server IP
+        if [ "$current_backend_port" != "$backend_port" ] || [[ ! "$current_backend_url" =~ $SERVER_IP ]]; then
+            sed -i '' "s|^NEXT_PUBLIC_BACKEND_URL=.*|NEXT_PUBLIC_BACKEND_URL=http://$SERVER_IP:$backend_port|" .env.local
+            needs_update=true
+        fi
     fi
     
-    # Update or add NEXT_PUBLIC_FRONTEND_URL
-    if grep -q "^NEXT_PUBLIC_FRONTEND_URL=" .env.local; then
-        sed -i '' "s|^NEXT_PUBLIC_FRONTEND_URL=.*|NEXT_PUBLIC_FRONTEND_URL=http://$SERVER_IP:$PORT|" .env.local
+    # Check and update NEXT_PUBLIC_WS_URL (only if missing or server IP changed)
+    if ! grep -q "^NEXT_PUBLIC_WS_URL=" .env.local; then
+        echo "NEXT_PUBLIC_WS_URL=ws://$SERVER_IP:$backend_port" >> .env.local
+        needs_update=true
     else
+        current_ws_url=$(grep "^NEXT_PUBLIC_WS_URL=" .env.local | cut -d'=' -f2-)
+        current_ws_port=$(echo "$current_ws_url" | sed -n 's/.*:\([0-9]*\)$/\1/p')
+        if [ "$current_ws_port" != "$backend_port" ] || [[ ! "$current_ws_url" =~ $SERVER_IP ]]; then
+            sed -i '' "s|^NEXT_PUBLIC_WS_URL=.*|NEXT_PUBLIC_WS_URL=ws://$SERVER_IP:$backend_port|" .env.local
+            needs_update=true
+        fi
+    fi
+    
+    # Check and update NEXT_PUBLIC_FRONTEND_URL (only if missing or port changed)
+    if ! grep -q "^NEXT_PUBLIC_FRONTEND_URL=" .env.local; then
         echo "NEXT_PUBLIC_FRONTEND_URL=http://$SERVER_IP:$PORT" >> .env.local
+        needs_update=true
+    else
+        current_frontend_url=$(grep "^NEXT_PUBLIC_FRONTEND_URL=" .env.local | cut -d'=' -f2-)
+        current_frontend_port=$(echo "$current_frontend_url" | sed -n 's/.*:\([0-9]*\)$/\1/p')
+        if [ "$current_frontend_port" != "$PORT" ] || [[ ! "$current_frontend_url" =~ $SERVER_IP ]]; then
+            sed -i '' "s|^NEXT_PUBLIC_FRONTEND_URL=.*|NEXT_PUBLIC_FRONTEND_URL=http://$SERVER_IP:$PORT|" .env.local
+            needs_update=true
+        fi
+    fi
+    
+    if [ "$needs_update" = true ]; then
+        print_status "Updated .env.local with current server IP and ports"
+    else
+        print_status "Using existing .env.local configuration"
     fi
 fi
 
