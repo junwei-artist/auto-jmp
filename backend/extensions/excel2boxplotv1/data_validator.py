@@ -12,6 +12,37 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+def convert_to_native_types(obj: Any) -> Any:
+    """
+    Recursively convert numpy/pandas types to native Python types for JSON serialization.
+    
+    Args:
+        obj: Object that may contain numpy/pandas types
+        
+    Returns:
+        Object with all numpy/pandas types converted to native Python types
+    """
+    if isinstance(obj, (np.integer, np.int64, np.int32, np.int16, np.int8)):
+        return int(obj)
+    elif isinstance(obj, (np.floating, np.float64, np.float32, np.float16)):
+        return float(obj)
+    elif isinstance(obj, np.bool_):
+        return bool(obj)
+    elif isinstance(obj, np.ndarray):
+        return obj.tolist()
+    elif isinstance(obj, pd.Series):
+        return obj.tolist()
+    elif isinstance(obj, pd.DataFrame):
+        return obj.to_dict('records')
+    elif isinstance(obj, dict):
+        return {convert_to_native_types(k): convert_to_native_types(v) for k, v in obj.items()}
+    elif isinstance(obj, (list, tuple)):
+        return [convert_to_native_types(item) for item in obj]
+    elif isinstance(obj, set):
+        return [convert_to_native_types(item) for item in obj]
+    else:
+        return obj
+
 class DataValidator:
     """Validates Excel data structure and content"""
     
@@ -70,8 +101,8 @@ class DataValidator:
             "message": "Structure validation completed",
             "warnings": warnings,
             "details": {
-                "meta_shape": df_meta.shape,
-                "data_shape": df_data.shape,
+                "meta_shape": [int(df_meta.shape[0]), int(df_meta.shape[1])],  # Convert numpy.int64 to int
+                "data_shape": [int(df_data.shape[0]), int(df_data.shape[1])],  # Convert numpy.int64 to int
                 "fai_columns_found": len(fai_columns),
                 "missing_required_columns": len(missing_columns)
             }
@@ -134,6 +165,7 @@ class DataValidator:
                 "details": {"inconsistent_columns": inconsistent_meta}
             })
         
+        unique_main_levels = df_meta["main_level"].nunique() if "main_level" in df_meta.columns else 0
         return {
             "valid": True,
             "checkpoint": 2,
@@ -141,7 +173,7 @@ class DataValidator:
             "warnings": warnings,
             "details": {
                 "meta_rows": len(df_meta),
-                "unique_main_levels": df_meta["main_level"].nunique() if "main_level" in df_meta.columns else 0,
+                "unique_main_levels": int(unique_main_levels),  # Convert numpy.int64 to int
                 "inconsistent_columns": len(inconsistent_meta)
             }
         }
@@ -168,7 +200,7 @@ class DataValidator:
             if col in df_meta.columns:
                 missing_count = df_meta[col].isna().sum()
                 if missing_count > 0:
-                    missing_data[col] = missing_count
+                    missing_data[col] = int(missing_count)  # Convert numpy.int64 to int
         
         if missing_data:
             warnings.append({
@@ -193,8 +225,8 @@ class DataValidator:
             if cat_missing > 0:
                 warnings.append({
                     "type": "categorical_var_missing_values",
-                    "message": f"Categorical variable '{cat_var}' has {cat_missing} missing values",
-                    "details": {"missing_count": cat_missing}
+                    "message": f"Categorical variable '{cat_var}' has {int(cat_missing)} missing values",
+                    "details": {"missing_count": int(cat_missing)}  # Convert numpy.int64 to int
                 })
         
         # Check FAI columns for numeric issues
@@ -223,7 +255,7 @@ class DataValidator:
             "message": "Data quality validation completed",
             "warnings": warnings,
             "details": {
-                "total_data_points": df_data.shape[0] * df_data.shape[1],
+                "total_data_points": int(df_data.shape[0] * df_data.shape[1]),  # Convert numpy.int64 to int
                 "fai_columns": len(fai_columns),
                 "categorical_variable": cat_var,
                 "missing_meta_data": len(missing_data)
@@ -264,13 +296,23 @@ class DataValidator:
                 "error": f"Categorical variable '{cat_var}' has only {total_values} non-null values. Need at least 10 for meaningful analysis."
             }
         
+        # Convert value_counts to native types
+        value_counts_dict = df_data[cat_var].value_counts().head(10).to_dict()
+        # Convert keys and values to native types
+        value_counts_native = {}
+        for k, v in value_counts_dict.items():
+            # Convert key (might be numpy type) and value (numpy.int64) to native types
+            key = convert_to_native_types(k)
+            value = convert_to_native_types(v)
+            value_counts_native[key] = value
+        
         return {
             "valid": True,
             "message": f"Categorical variable '{cat_var}' validation passed",
             "details": {
-                "unique_values": unique_values,
-                "total_values": total_values,
-                "value_counts": df_data[cat_var].value_counts().head(10).to_dict()
+                "unique_values": convert_to_native_types(unique_values),
+                "total_values": convert_to_native_types(total_values),
+                "value_counts": value_counts_native
             }
         }
     
@@ -310,7 +352,8 @@ class DataValidator:
         # Overall validation status
         all_valid = all(result.get("valid", False) for result in results)
         
-        return {
+        # Convert all results to native types for JSON serialization
+        return convert_to_native_types({
             "valid": all_valid,
             "message": "Full validation completed",
             "checkpoints": results,
@@ -320,4 +363,4 @@ class DataValidator:
                 "passed_checkpoints": sum(1 for r in results if r.get("valid", False)),
                 "total_warnings": len(all_warnings)
             }
-        }
+        })

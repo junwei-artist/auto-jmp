@@ -6,6 +6,9 @@ import { useRouter } from 'next/navigation'
 interface Run {
   id: string
   project_id: string
+  project_name?: string
+  project_owner_email?: string
+  project_owner_display_name?: string
   status: string
   task_name: string
   message?: string
@@ -202,7 +205,10 @@ export default function AdminRunsPage() {
                     Status
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Project ID
+                    Project
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Project Owner
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Images
@@ -235,7 +241,17 @@ export default function AdminRunsPage() {
                         </span>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                        {run.project_id}
+                        <a
+                          href={`/projects/${run.project_id}`}
+                          className="text-blue-600 hover:text-blue-800 hover:underline"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                        >
+                          {run.project_name || run.project_id}
+                        </a>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        {run.project_owner_display_name || run.project_owner_email || 'Unknown'}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                         {run.image_count}

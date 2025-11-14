@@ -8,6 +8,8 @@ interface Project {
   name: string
   description?: string
   owner_id: string
+  owner_email?: string
+  owner_display_name?: string
   created_at: string
   run_count: number
 }
@@ -168,7 +170,7 @@ export default function AdminProjectsPage() {
                     Description
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Owner ID
+                    Owner
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Runs
@@ -185,13 +187,20 @@ export default function AdminProjectsPage() {
                 {projects.map((project) => (
                   <tr key={project.id}>
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                      {project.name}
+                      <a
+                        href={`/projects/${project.id}`}
+                        className="text-blue-600 hover:text-blue-800 hover:underline"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                      >
+                        {project.name}
+                      </a>
                     </td>
                     <td className="px-6 py-4 text-sm text-gray-500 max-w-xs truncate">
                       {project.description || 'No description'}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      {project.owner_id}
+                      {project.owner_display_name || project.owner_email || project.owner_id || 'Unknown'}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                       <span className="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-blue-100 text-blue-800">
@@ -202,12 +211,22 @@ export default function AdminProjectsPage() {
                       {new Date(project.created_at).toLocaleDateString()}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                      <button
-                        onClick={() => handleDeleteProject(project.id, project.name)}
-                        className="text-red-600 hover:text-red-900"
-                      >
-                        Delete
-                      </button>
+                      <div className="flex gap-3">
+                        <a
+                          href={`/projects/${project.id}`}
+                          className="text-blue-600 hover:text-blue-800"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                        >
+                          View
+                        </a>
+                        <button
+                          onClick={() => handleDeleteProject(project.id, project.name)}
+                          className="text-red-600 hover:text-red-900"
+                        >
+                          Delete
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}

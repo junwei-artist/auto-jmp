@@ -510,44 +510,146 @@ async def validate_data_modular(
     cat_var: str = Form(...)
 ):
     """Validate data using modular approach"""
+    tmp_file_path = None
+    request_file_handler = None
     try:
         logger.info(f"Validating data with categorical variable: {cat_var}")
+        logger.info(f"Received file: {file.filename}, content_type: {file.content_type}")
+        
+        # Validate file
+        if not file.filename:
+            raise ValueError("No file provided")
         
         # Save uploaded file temporarily
-        with tempfile.NamedTemporaryFile(delete=False, suffix='.xlsx') as tmp_file:
-            content = await file.read()
-            tmp_file.write(content)
-            tmp_file.flush()
-            
-            # Create a new file handler instance for this request (thread-safe)
+        try:
+            with tempfile.NamedTemporaryFile(delete=False, suffix='.xlsx') as tmp_file:
+                content = await file.read()
+                if not content:
+                    raise ValueError("Uploaded file is empty")
+                tmp_file.write(content)
+                tmp_file.flush()
+                tmp_file_path = tmp_file.name
+                logger.info(f"Saved temporary file: {tmp_file_path}, size: {len(content)} bytes")
+        except Exception as file_error:
+            logger.error(f"Error saving uploaded file: {str(file_error)}", exc_info=True)
+            raise ValueError(f"Failed to save uploaded file: {str(file_error)}")
+        
+        # Create a new file handler instance for this request (thread-safe)
+        try:
             request_file_handler = FileHandler()
-            load_result = request_file_handler.load_excel_file(tmp_file.name)
-            if not load_result["success"]:
-                os.unlink(tmp_file.name)
-                return load_result
-            
-            # Get data
-            df_meta = request_file_handler.df_meta
-            df_data = request_file_handler.df_data_raw
-            
-            # Create a new validator instance for this request (thread-safe)
+            load_result = request_file_handler.load_excel_file(tmp_file_path)
+        except Exception as load_error:
+            logger.error(f"Error creating FileHandler or loading file: {str(load_error)}", exc_info=True)
+            # Clean up temp file
+            if tmp_file_path and os.path.exists(tmp_file_path):
+                try:
+                    os.unlink(tmp_file_path)
+                except Exception:
+                    pass
+            raise ValueError(f"Failed to load Excel file: {str(load_error)}")
+        
+        if not load_result.get("success", False):
+            # Clean up temp file
+            if tmp_file_path and os.path.exists(tmp_file_path):
+                try:
+                    os.unlink(tmp_file_path)
+                except Exception as cleanup_error:
+                    logger.warning(f"Error cleaning up temp file: {cleanup_error}")
+            error_msg = load_result.get("error", "Unknown error loading file")
+            logger.warning(f"File loading failed: {error_msg}")
+            return JSONResponse(
+                status_code=400,
+                content={
+                    "success": False,
+                    "error": error_msg
+                }
+            )
+        
+        # Get data - ensure they are not None
+        df_meta = request_file_handler.df_meta
+        df_data = request_file_handler.df_data_raw
+        
+        if df_meta is None or df_data is None:
+            error_msg = "Failed to load data from Excel file"
+            if df_meta is None:
+                error_msg += ": meta sheet is None"
+            if df_data is None:
+                error_msg += ": data sheet is None"
+            logger.error(error_msg)
+            raise ValueError(error_msg)
+        
+        # Create a new validator instance for this request (thread-safe)
+        try:
             request_validator = DataValidator()
             result = request_validator.run_full_validation(df_meta, df_data, cat_var)
-            
-            # Clean up temp file and standardized file if created
-            os.unlink(tmp_file.name)
-            if request_file_handler.was_standardized and request_file_handler.standardized_file_path:
+        except Exception as validation_error:
+            logger.error(f"Error during validation: {str(validation_error)}", exc_info=True)
+            raise ValueError(f"Validation failed: {str(validation_error)}")
+        
+        # Clean up temp file and standardized file if created
+        if tmp_file_path and os.path.exists(tmp_file_path):
+            try:
+                os.unlink(tmp_file_path)
+            except Exception as cleanup_error:
+                logger.warning(f"Error cleaning up temp file: {cleanup_error}")
+        
+        if request_file_handler and request_file_handler.was_standardized and request_file_handler.standardized_file_path:
+            try:
                 request_file_handler.cleanup()
+            except Exception as cleanup_error:
+                logger.warning(f"Error cleaning up standardized file: {cleanup_error}")
+        
+        logger.info("Validation completed successfully")
+        return result
             
-            return result
-            
-    except Exception as e:
-        logger.error(f"Error validating data: {str(e)}", exc_info=True)
+    except ValueError as ve:
+        # Handle validation errors with 400 status
+        logger.error(f"Validation error: {str(ve)}", exc_info=True)
+        
+        # Clean up temp file if it exists
+        if tmp_file_path and os.path.exists(tmp_file_path):
+            try:
+                os.unlink(tmp_file_path)
+            except Exception:
+                pass
+        
+        # Clean up standardized file if it exists
+        if request_file_handler and request_file_handler.was_standardized and request_file_handler.standardized_file_path:
+            try:
+                request_file_handler.cleanup()
+            except Exception:
+                pass
+        
         return JSONResponse(
             status_code=400,
             content={
                 "success": False,
-                "error": str(e)
+                "error": str(ve)
+            }
+        )
+    except Exception as e:
+        # Handle all other errors with 500 status
+        logger.error(f"Unexpected error validating data: {str(e)}", exc_info=True)
+        
+        # Clean up temp file if it exists
+        if tmp_file_path and os.path.exists(tmp_file_path):
+            try:
+                os.unlink(tmp_file_path)
+            except Exception:
+                pass
+        
+        # Clean up standardized file if it exists
+        if request_file_handler and request_file_handler.was_standardized and request_file_handler.standardized_file_path:
+            try:
+                request_file_handler.cleanup()
+            except Exception:
+                pass
+        
+        return JSONResponse(
+            status_code=500,
+            content={
+                "success": False,
+                "error": f"Internal server error: {str(e)}"
             }
         )
 

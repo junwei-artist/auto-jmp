@@ -25,15 +25,23 @@ import {
   X,
   Circle,
   Package,
-  Workflow
+  Workflow,
+  Palette
 } from 'lucide-react'
 import toast from 'react-hot-toast'
+import { useTheme } from '@/lib/theme'
+import { NotificationBell } from '@/components/NotificationCenter'
+import { LanguageSelector } from '@/components/LanguageSelector'
+import { AuthModal } from '@/components/AuthModal'
 
 export default function Navbar() {
   const router = useRouter()
   const pathname = usePathname()
   const { user, logout, isLoading, ready } = useAuth()
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
+  const { theme, setTheme, themes: availableThemes } = useTheme()
+  const [isThemeMenuOpen, setIsThemeMenuOpen] = useState(false)
+  const [isAuthModalOpen, setIsAuthModalOpen] = useState(false)
 
   const handleLogout = () => {
     logout()
@@ -66,9 +74,6 @@ export default function Navbar() {
               <div className="h-8 w-8 rounded-lg bg-gradient-to-br from-indigo-600 to-purple-600 flex items-center justify-center">
                 <LayoutDashboard className="h-5 w-5 text-white" />
               </div>
-              <span className="text-xl font-bold bg-gradient-to-r from-indigo-600 to-purple-600 bg-clip-text text-transparent">
-                Data Analysis
-              </span>
             </div>
 
             {/* Desktop Navigation */}
@@ -94,7 +99,7 @@ export default function Navbar() {
             </div>
           </div>
 
-          {/* Right Side: Status and User Menu */}
+          {/* Right Side: Status, Notification, Language, Theme Switcher, and User Menu */}
           <div className="flex items-center space-x-4">
             {/* Status Indicator */}
             <div className="hidden sm:flex items-center space-x-2">
@@ -104,6 +109,49 @@ export default function Navbar() {
                   {ready ? 'Ready' : 'Loading...'}
                 </span>
               </div>
+            </div>
+
+            {/* Notification Bell */}
+            {user && <NotificationBell />}
+
+            {/* Language Selector */}
+            <LanguageSelector />
+
+            {/* Theme Switcher */}
+            <div className="relative">
+              <DropdownMenu open={isThemeMenuOpen} onOpenChange={setIsThemeMenuOpen}>
+                <DropdownMenuTrigger asChild>
+                  <Button 
+                    variant="ghost" 
+                    size="sm"
+                    className="hover:bg-gray-100"
+                    title="Change theme"
+                  >
+                    <Palette className="h-4 w-4" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-40">
+                  <DropdownMenuLabel>Theme</DropdownMenuLabel>
+                  <DropdownMenuSeparator />
+                  {availableThemes.map((themeOption) => (
+                    <DropdownMenuItem
+                      key={themeOption}
+                      onClick={() => {
+                        setTheme(themeOption)
+                        setIsThemeMenuOpen(false)
+                      }}
+                      className={theme === themeOption ? 'bg-indigo-50' : ''}
+                    >
+                      <div className="flex items-center justify-between w-full">
+                        <span className="capitalize">{themeOption}</span>
+                        {theme === themeOption && (
+                          <Circle className="h-2 w-2 fill-indigo-600 text-indigo-600" />
+                        )}
+                      </div>
+                    </DropdownMenuItem>
+                  ))}
+                </DropdownMenuContent>
+              </DropdownMenu>
             </div>
 
             {/* User Menu */}
@@ -158,7 +206,7 @@ export default function Navbar() {
                 <Button
                   variant="ghost"
                   size="sm"
-                  onClick={() => router.push('/')}
+                  onClick={() => setIsAuthModalOpen(true)}
                   className="hidden sm:flex"
                 >
                   <LogIn className="h-4 w-4 mr-2" />
@@ -166,7 +214,7 @@ export default function Navbar() {
                 </Button>
                 <Button
                   size="sm"
-                  onClick={() => router.push('/')}
+                  onClick={() => setIsAuthModalOpen(true)}
                   className="bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white"
                 >
                   Get Started
@@ -210,6 +258,34 @@ export default function Navbar() {
                 </Button>
               )
             })}
+
+            {/* Theme Switcher in Mobile Menu */}
+            <div className="pt-2 border-t">
+              <div className="px-2 py-1 text-xs font-semibold text-gray-500 mb-2">Theme</div>
+              <div className="space-y-1">
+                {availableThemes.map((themeOption) => (
+                  <Button
+                    key={themeOption}
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => {
+                      setTheme(themeOption)
+                      setIsMobileMenuOpen(false)
+                    }}
+                    className={`w-full justify-start ${
+                      theme === themeOption ? 'bg-indigo-50 text-indigo-600' : ''
+                    }`}
+                  >
+                    <div className="flex items-center justify-between w-full">
+                      <span className="capitalize">{themeOption}</span>
+                      {theme === themeOption && (
+                        <Circle className="h-2 w-2 fill-indigo-600 text-indigo-600" />
+                      )}
+                    </div>
+                  </Button>
+                ))}
+              </div>
+            </div>
             
             {!user && (
               <div className="pt-2 space-y-2">
@@ -217,7 +293,7 @@ export default function Navbar() {
                   variant="outline"
                   size="sm"
                   onClick={() => {
-                    router.push('/')
+                    setIsAuthModalOpen(true)
                     setIsMobileMenuOpen(false)
                   }}
                   className="w-full"
@@ -228,7 +304,7 @@ export default function Navbar() {
                 <Button
                   size="sm"
                   onClick={() => {
-                    router.push('/')
+                    setIsAuthModalOpen(true)
                     setIsMobileMenuOpen(false)
                   }}
                   className="w-full bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white"
@@ -240,6 +316,13 @@ export default function Navbar() {
           </div>
         )}
       </div>
+      
+      {/* Auth Modal */}
+      <AuthModal 
+        open={isAuthModalOpen} 
+        onOpenChange={setIsAuthModalOpen}
+        defaultTab="login"
+      />
     </nav>
   )
 }

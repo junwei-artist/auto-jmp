@@ -836,4 +836,92 @@ async def _process_next_queued_task(db: AsyncSession):
 @celery_app.task(name="health_check")
 def health_check():
     """Simple health check task."""
-    return {"status": "healthy", "timestamp": datetime.utcnow().isoformat()}
+    return {"status": "ok"}
+
+@celery_app.task(name="send_scheduled_notifications")
+def send_scheduled_notifications():
+    """Check and send scheduled daily notifications."""
+    import asyncio
+    from datetime import datetime, timezone
+    from app.models import ScheduledNotification, AppUser, NotificationType
+    from app.services.notification_service import NotificationService
+    
+    async def process_scheduled_notifications():
+        async with AsyncSessionLocal() as db:
+            # Get current time in UTC
+            now_utc = datetime.now(timezone.utc)
+            current_time_str = now_utc.strftime("%H:%M")
+            
+            # Get all active scheduled notifications
+            result = await db.execute(
+                select(ScheduledNotification).where(
+                    ScheduledNotification.is_active == True
+                )
+            )
+            scheduled_notifications = result.scalars().all()
+            
+            sent_count = 0
+            for scheduled in scheduled_notifications:
+                try:
+                    # Check if it's time to send (compare HH:MM)
+                    if scheduled.scheduled_time == current_time_str:
+                        # Check if we already sent today (compare dates, not times)
+                        if scheduled.last_sent_at:
+                            last_sent_date = scheduled.last_sent_at.date()
+                            today = now_utc.date()
+                            if last_sent_date == today:
+                                # Already sent today, skip
+                                continue
+                        
+                        # Get all users
+                        users_result = await db.execute(select(AppUser))
+                        users = users_result.scalars().all()
+                        
+                        # Send notifications to all users
+                        for user in users:
+                            try:
+                                await NotificationService.create_notification(
+                                    db=db,
+                                    user_id=user.id,
+                                    notification_type=NotificationType.ANNOUNCEMENT,
+                                    title=scheduled.title,
+                                    message=scheduled.message
+                                )
+                            except Exception as e:
+                                logger.error(f"Failed to create notification for user {user.id}: {e}")
+                                continue
+                        
+                        # Send to webhooks
+                        try:
+                            from app.api.v1.endpoints.admin import get_webhooks_from_settings, send_to_webhook, ensure_default_webhook
+                            await ensure_default_webhook(db)
+                            webhooks = await get_webhooks_from_settings(db)
+                            
+                            for webhook in webhooks:
+                                try:
+                                    await send_to_webhook(
+                                        webhook["url"],
+                                        scheduled.title,
+                                        scheduled.message,
+                                        secret=webhook.get("secret")
+                                    )
+                                except Exception as e:
+                                    logger.error(f"Failed to send to webhook {webhook.get('url')}: {e}")
+                                    continue
+                        except Exception as e:
+                            logger.error(f"Error sending to webhooks: {e}")
+                            # Continue even if webhook sending fails
+                        
+                        # Update last_sent_at
+                        scheduled.last_sent_at = now_utc
+                        await db.commit()
+                        sent_count += 1
+                        logger.info(f"Sent scheduled notification: {scheduled.title} at {current_time_str}")
+                        
+                except Exception as e:
+                    logger.error(f"Error processing scheduled notification {scheduled.id}: {e}")
+                    continue
+            
+            return {"sent_count": sent_count, "checked_at": current_time_str}
+    
+    return asyncio.run(process_scheduled_notifications())

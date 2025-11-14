@@ -5,20 +5,26 @@ from typing import Optional
 from fastapi import HTTPException
 import shutil
 from pathlib import Path
+from app.core.config import settings
 
 class LocalFileStorage:
     """Simple local file storage implementation."""
     
-    def __init__(self, base_path: str = "uploads"):
+    def __init__(self, base_path: str = None):
         """Initialize storage root as an absolute path.
 
-        If ``base_path`` is relative, anchor it to the backend directory
-        so storage never depends on the process working directory.
-        Optionally respect the UPLOADS_DIR environment variable.
+        Uses hardcoded UPLOADS_DIR from settings, or falls back to environment variable
+        or relative path if not configured.
         """
-        # Determine base path source: env var has precedence
-        env_base = os.getenv("UPLOADS_DIR")
-        configured_base = Path(env_base) if env_base else Path(base_path)
+        # Use hardcoded path from settings first, then env var, then default
+        if settings.UPLOADS_DIR:
+            configured_base = Path(settings.UPLOADS_DIR)
+        else:
+            env_base = os.getenv("UPLOADS_DIR")
+            if env_base:
+                configured_base = Path(env_base)
+            else:
+                configured_base = Path(base_path) if base_path else Path("uploads")
 
         # backend/ directory (this file is backend/app/core/storage.py)
         backend_dir = Path(__file__).resolve().parents[2]
@@ -82,7 +88,8 @@ class LocalFileStorage:
     
     def ensure_workflow_node_structure(self, workflow_id: str, node_id: str):
         """Ensure the workflow node folder structure exists (input, wip, output)"""
-        self.get_workflow_node_path(workflow_id, node_id)
+        node_path = self.get_workflow_node_path(workflow_id, node_id)
+        return node_path
     
     def generate_storage_key(self, filename: str, content_type: str, project_id: str = None) -> str:
         """Generate a unique storage key for a file."""
@@ -163,6 +170,18 @@ class LocalFileStorage:
         except Exception:
             return False
     
+    def delete_workflow_node_folder(self, workflow_id: str, node_id: str) -> bool:
+        """Delete entire workflow node folder and all its contents (input, wip, output)."""
+        node_path = self.get_workflow_path(workflow_id) / "nodes" / node_id
+        try:
+            if node_path.exists():
+                shutil.rmtree(node_path)
+                return True
+            return False
+        except Exception as e:
+            print(f"Error deleting node folder {node_path}: {str(e)}")
+            return False
+    
     def get_project_folder_size(self, project_id: str) -> int:
         """Get total size of all files in project folder."""
         project_path = self.base_path / "projects" / project_id
@@ -201,6 +220,61 @@ class LocalFileStorage:
         except Exception:
             pass
         return None
+    
+    def save_node_config(self, workflow_id: str, node_id: str, config: dict) -> Path:
+        """Save node config as JSON file in the node folder."""
+        import json
+        node_path = self.get_workflow_node_path(workflow_id, node_id)
+        node_path.mkdir(parents=True, exist_ok=True)
+        
+        config_file = node_path / "config.json"
+        with open(config_file, 'w', encoding='utf-8') as f:
+            json.dump(config, f, indent=2, ensure_ascii=False)
+        
+        return config_file
+    
+    def load_node_config(self, workflow_id: str, node_id: str) -> Optional[dict]:
+        """Load node config from JSON file in the node folder."""
+        import json
+        node_path = self.get_workflow_node_path(workflow_id, node_id)
+        config_file = node_path / "config.json"
+        
+        try:
+            if config_file.exists():
+                with open(config_file, 'r', encoding='utf-8') as f:
+                    return json.load(f)
+        except Exception:
+            pass
+        return None
+    
+    def delete_workflow_files(self, workflow_id: str) -> bool:
+        """Delete files in the workflow folder and all subfolders, preserving folder structure and JSON files.
+        
+        This method:
+        - Recursively deletes all non-JSON files in the workflow folder and subfolders
+        - Preserves all subfolders (like 'nodes', 'tasks', etc.) - folders remain but are emptied of non-JSON files
+        - Preserves all JSON files (like 'workflow.json', 'config.json', etc.) anywhere in the folder structure
+        """
+        workflow_path = self.get_workflow_path(workflow_id)
+        try:
+            if not workflow_path.exists():
+                return True  # Already deleted or doesn't exist
+            
+            # Recursively iterate through all files in the workflow folder and subfolders
+            for item in workflow_path.rglob('*'):
+                if item.is_file():
+                    # Only delete non-JSON files
+                    if not item.suffix.lower() == '.json':
+                        try:
+                            item.unlink()
+                        except Exception as e:
+                            print(f"Error deleting file {item}: {str(e)}")
+                # Skip directories - they are preserved (rglob only returns files with '*')
+            
+            return True
+        except Exception as e:
+            print(f"Error deleting workflow files for {workflow_id}: {str(e)}")
+            return False
 
 # Global storage instance
 local_storage = LocalFileStorage()

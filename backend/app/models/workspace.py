@@ -83,11 +83,13 @@ class Workflow(Base):
     status = Column(SQLEnum(WorkflowStatus), nullable=False, default=WorkflowStatus.DRAFT)
     graph_data = Column(JSON, nullable=True)  # Store node positions, connections, etc.
     folder_path = Column(String, nullable=True)  # Path to workflow folder on filesystem
+    created_by = Column(UUID(as_uuid=True), ForeignKey("app_user.id", ondelete="SET NULL"), nullable=True)  # User who created the workflow
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
     last_run_at = Column(DateTime(timezone=True), nullable=True)
     
     # Relationships
+    creator = relationship("AppUser", foreign_keys=[created_by])
     workspaces = relationship("Workspace", secondary="workspace_workflow", back_populates="workflows")
     nodes = relationship("WorkflowNode", back_populates="workflow", cascade="all, delete-orphan", order_by="WorkflowNode.position_x")
     connections = relationship("WorkflowConnection", back_populates="workflow", cascade="all, delete-orphan")

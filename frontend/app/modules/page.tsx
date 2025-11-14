@@ -4,7 +4,7 @@ import { useQuery } from '@tanstack/react-query'
 import { apiClient } from '@/lib/api'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
-import { Package, ArrowLeft, Database, Zap, BarChart3, Settings, ArrowRightCircle, ArrowLeftCircle } from 'lucide-react'
+import { Package, ArrowLeft, Database, Zap, BarChart3, Settings, ArrowRightCircle, ArrowLeftCircle, Hash, Upload, FileSpreadsheet } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
@@ -34,6 +34,10 @@ const getModuleIcon = (moduleType: string) => {
     excel_loader: <Zap className="h-6 w-6" />,
     duckdb_convert: <Database className="h-6 w-6" />,
     boxplot_stats: <BarChart3 className="h-6 w-6" />,
+    excel_to_numeric: <Hash className="h-6 w-6" />,
+    file_uploader: <Upload className="h-6 w-6" />,
+    excel_viewer: <FileSpreadsheet className="h-6 w-6" />,
+    outlier_remover: <FileSpreadsheet className="h-6 w-6" />,
   }
   return icons[moduleType] || <Settings className="h-6 w-6" />
 }
@@ -54,6 +58,26 @@ const getModuleColor = (moduleType: string) => {
       bg: 'bg-gradient-to-br from-purple-500 to-purple-600',
       border: 'border-purple-400',
       text: 'text-purple-600',
+    },
+    excel_to_numeric: {
+      bg: 'bg-gradient-to-br from-pink-500 to-purple-600',
+      border: 'border-pink-400',
+      text: 'text-pink-600',
+    },
+    file_uploader: {
+      bg: 'bg-gradient-to-br from-blue-500 to-cyan-600',
+      border: 'border-blue-400',
+      text: 'text-blue-600',
+    },
+    excel_viewer: {
+      bg: 'bg-gradient-to-br from-indigo-500 to-purple-600',
+      border: 'border-indigo-400',
+      text: 'text-indigo-600',
+    },
+    outlier_remover: {
+      bg: 'bg-gradient-to-br from-orange-500 to-red-600',
+      border: 'border-orange-400',
+      text: 'text-orange-600',
     },
   }
   return colors[moduleType] || {
@@ -141,7 +165,8 @@ export default function ModulesPage() {
               return (
                 <Card
                   key={module.module_type}
-                  className={`hover:shadow-lg transition-all duration-200 border-2 ${colors.border} hover:scale-105`}
+                  className={`hover:shadow-lg transition-all duration-200 border-2 ${colors.border} hover:scale-105 cursor-pointer`}
+                  onClick={() => router.push(`/modules/${module.module_type}`)}
                 >
                   <CardHeader>
                     <div className="flex items-start justify-between mb-2">
@@ -219,6 +244,17 @@ export default function ModulesPage() {
                       {module.inputs.length === 0 && module.outputs.length === 0 && (
                         <p className="text-xs text-gray-500 italic">No inputs or outputs defined</p>
                       )}
+                    </div>
+                    <div className="mt-4 pt-4 border-t">
+                      <Button
+                        className={`w-full ${colors.bg} text-white hover:opacity-90`}
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          router.push(`/modules/${module.module_type}`)
+                        }}
+                      >
+                        Run Module
+                      </Button>
                     </div>
                   </CardContent>
                 </Card>

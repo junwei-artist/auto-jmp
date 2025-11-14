@@ -61,3 +61,14 @@ celery_app.conf.update(
         'run_jmp_boxplot': {'queue': 'jmp'},
     }
 )
+
+# Celery Beat configuration for periodic tasks
+from celery.schedules import crontab
+
+celery_app.conf.beat_schedule = {
+    'send-scheduled-notifications-every-minute': {
+        'task': 'send_scheduled_notifications',
+        'schedule': crontab(minute='*'),  # Run every minute to check for scheduled notifications
+    },
+}
+celery_app.conf.timezone = 'UTC'

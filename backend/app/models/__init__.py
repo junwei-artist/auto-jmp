@@ -278,6 +278,7 @@ class NotificationType(str, enum.Enum):
     COMMUNITY_POST_UPDATED = "COMMUNITY_POST_UPDATED"
     COMMUNITY_POST_LIKED = "COMMUNITY_POST_LIKED"
     COMMUNITY_POST_COMMENTED = "COMMUNITY_POST_COMMENTED"
+    ANNOUNCEMENT = "ANNOUNCEMENT"
 
 class ProjectAttachment(Base):
     __tablename__ = "project_attachment"
@@ -311,6 +312,24 @@ class Notification(Base):
     # Relationships
     user = relationship("AppUser", back_populates="notifications")
     project = relationship("Project")
+
+class ScheduledNotification(Base):
+    """Scheduled daily notification."""
+    __tablename__ = "scheduled_notification"
+    
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    title = Column(String, nullable=False)
+    message = Column(Text, nullable=False)
+    scheduled_time = Column(String, nullable=False)  # Format: "HH:MM" in 24-hour format (e.g., "09:00")
+    timezone = Column(String, default="UTC")  # Timezone for the scheduled time
+    is_active = Column(Boolean, default=True)  # Enable/disable the scheduled notification
+    created_by = Column(UUID(as_uuid=True), ForeignKey("app_user.id"), nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    last_sent_at = Column(DateTime(timezone=True), nullable=True)  # Track when it was last sent
+    
+    # Relationships
+    creator = relationship("AppUser")
 
 class OAuthClient(Base):
     """OAuth2 client for external applications"""

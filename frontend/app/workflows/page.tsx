@@ -8,7 +8,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
-import { Plus, Workflow, Edit, Play, Calendar } from 'lucide-react'
+import { Plus, Workflow, Edit, Play, Calendar, Trash2 } from 'lucide-react'
 import { apiClient } from '@/lib/api'
 import toast from 'react-hot-toast'
 
@@ -28,6 +28,7 @@ export default function WorkflowsPage() {
   const [isCreateOpen, setIsCreateOpen] = useState(false)
   const [workflowName, setWorkflowName] = useState('')
   const [workflowDescription, setWorkflowDescription] = useState('')
+  const [deleteWorkflowId, setDeleteWorkflowId] = useState<string | null>(null)
 
   const { data: workflows, isLoading } = useQuery<Workflow[]>({
     queryKey: ['all-workflows'],
@@ -51,6 +52,20 @@ export default function WorkflowsPage() {
     },
     onError: (error: Error) => {
       toast.error(error.message)
+    }
+  })
+
+  const deleteMutation = useMutation<void, Error, string>({
+    mutationFn: async (workflowId: string) => {
+      return apiClient.delete(`/v1/workflows/${workflowId}`)
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['all-workflows'] })
+      setDeleteWorkflowId(null)
+      toast.success('Workflow deleted successfully')
+    },
+    onError: (error: Error) => {
+      toast.error(error.message || 'Failed to delete workflow')
     }
   })
 
@@ -156,14 +171,25 @@ export default function WorkflowsPage() {
             <CardHeader>
               <div className="flex items-start justify-between">
                 <Workflow className="h-8 w-8 text-indigo-600 mb-2" />
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => router.push(`/workflow/${workflow.id}`)}
-                  title="Edit workflow"
-                >
-                  <Edit className="h-4 w-4" />
-                </Button>
+                <div className="flex gap-1">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => router.push(`/workflow/${workflow.id}`)}
+                    title="Edit workflow"
+                  >
+                    <Edit className="h-4 w-4" />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setDeleteWorkflowId(workflow.id)}
+                    title="Delete workflow"
+                    className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                </div>
               </div>
               <CardTitle>{workflow.name}</CardTitle>
               <CardDescription>
@@ -221,6 +247,35 @@ export default function WorkflowsPage() {
           </Button>
         </div>
       )}
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog open={deleteWorkflowId !== null} onOpenChange={(open) => !open && setDeleteWorkflowId(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete Workflow</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to delete this workflow? This action cannot be undone.
+              Files in the workflow folder will be deleted, but subfolders and JSON files will be preserved.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeleteWorkflowId(null)}>
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => {
+                if (deleteWorkflowId) {
+                  deleteMutation.mutate(deleteWorkflowId)
+                }
+              }}
+              disabled={deleteMutation.isPending}
+            >
+              {deleteMutation.isPending ? 'Deleting...' : 'Delete'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

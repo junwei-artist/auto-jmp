@@ -40,6 +40,17 @@ export class ApiClient {
       throw new Error(errorData.detail || `HTTP ${response.status}`)
     }
     
+    // Handle 204 No Content responses (empty body)
+    if (response.status === 204) {
+      return null as T
+    }
+    
+    // Check if response has content
+    const contentType = response.headers.get('content-type')
+    if (!contentType || !contentType.includes('application/json')) {
+      return null as T
+    }
+    
     return response.json()
   }
 
@@ -53,10 +64,25 @@ export class ApiClient {
   }
 
   async post<T>(endpoint: string, data?: any): Promise<T> {
+    const isFormData = data instanceof FormData
+    
+    // If data is FormData, don't stringify and don't set Content-Type (browser will set it with boundary)
+    let headers: HeadersInit
+    if (isFormData) {
+      // For FormData, only include Authorization header, let browser set Content-Type with boundary
+      const token = localStorage.getItem('access_token')
+      headers = {}
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`
+      }
+    } else {
+      headers = this.getAuthHeaders()
+    }
+    
     const response = await fetch(`${this.baseURL}${endpoint}`, {
       method: 'POST',
-      headers: this.getAuthHeaders(),
-      body: data ? JSON.stringify(data) : undefined,
+      headers: headers,
+      body: data ? (isFormData ? data : JSON.stringify(data)) : undefined,
     })
     
     return this.handleResponse<T>(response)

@@ -9,9 +9,12 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Alert, AlertDescription } from '@/components/ui/alert-simple'
-import { Loader2, Upload, FileText, BarChart3, Users, Share2, HelpCircle, Menu } from 'lucide-react'
+import { Loader2, Upload, FileText, BarChart3, Users, Share2, HelpCircle, Menu, ArrowRight } from 'lucide-react'
 import { DataUploadSVG, RealTimeProcessingSVG, ShareCollaborateSVG, AnalyticsDashboardSVG, PluginEcosystemSVG } from '@/components/svg/Illustrations'
 import { AnimatedWaveBackground, AnimatedDataFlowSVG, InteractiveDashboardSVG, FloatingElementsSVG, ClickToUseDemoSVG } from '@/components/svg/AnimatedIllustrations'
+import { DashboardIconSVG, WorkspacesIconSVG, WorkflowsIconSVG, ModulesIconSVG } from '@/components/svg/PortalIcons'
+import { AllFunctionsHeroSlide, DashboardHeroSlide, WorkspacesHeroSlide, WorkflowsHeroSlide, ModulesHeroSlide } from '@/components/svg/HeroSlides'
+import { Carousel } from '@/components/Carousel'
 import { useAuth } from '@/lib/auth'
 import { authApi } from '@/lib/api'
 import { useMutation } from '@tanstack/react-query'
@@ -61,8 +64,8 @@ export default function HomePage() {
     },
     onSuccess: (data) => {
       login(data.access_token, data.refresh_token, data.user_id, data.is_guest, data.is_admin)
-      toast.success('Welcome back!')
-      router.push('/dashboard')
+      toast.success(t('auth.welcome'))
+      // Stay on home page to explore interfaces
     },
     onError: (error: Error) => {
       toast.error(error.message)
@@ -75,8 +78,8 @@ export default function HomePage() {
     },
     onSuccess: (data) => {
       login(data.access_token, data.refresh_token, data.user_id, data.is_guest, data.is_admin)
-      toast.success('Account created successfully!')
-      router.push('/dashboard')
+      toast.success(t('auth.accountCreated'))
+      // Stay on home page to explore interfaces
     },
     onError: (error: Error) => {
       toast.error(error.message)
@@ -89,8 +92,8 @@ export default function HomePage() {
     },
     onSuccess: (data) => {
       login(data.access_token, '', data.user_id, data.is_guest, false)
-      toast.success('Welcome! You are now using guest access.')
-      router.push('/dashboard')
+      toast.success(t('auth.guestWelcome'))
+      // Stay on home page to explore interfaces
     },
     onError: (error: Error) => {
       toast.error(error.message)
@@ -119,28 +122,299 @@ export default function HomePage() {
     guestMutation.mutate()
   }
 
-  // Redirect to dashboard if user is already logged in
-  useEffect(() => {
-    if (user) {
-      router.push('/dashboard')
+  // Carousel slides data
+  const carouselSlides = [
+    {
+      id: 'all-functions',
+      title: 'Welcome to Data Analysis Platform',
+      subtitle: 'Explore All Functions',
+      description: 'Discover our comprehensive suite of tools for data visualization, organization, automation, and analysis',
+      ctaText: 'Get Started',
+      ctaLink: '#',
+      heroImage: (
+        <div className="relative w-full h-full">
+          <AllFunctionsHeroSlide className="w-full h-full" />
+          <div className="absolute inset-0 flex flex-col items-center text-white z-10 px-4 overflow-y-auto">
+            <div className="flex flex-col items-center justify-center min-h-full w-full py-8 md:py-12 space-y-6 md:space-y-8">
+              {/* Text at top */}
+              <motion.div
+                initial={{ opacity: 0, y: -20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.6 }}
+                className="text-center flex-shrink-0"
+              >
+                <h2 className="text-3xl md:text-5xl lg:text-6xl font-bold mb-2 md:mb-4">
+                  {t('home.carousel.allFunctions.title')}
+                </h2>
+                <p className="text-lg md:text-xl lg:text-2xl max-w-2xl mx-auto">
+                  {t('home.carousel.allFunctions.subtitle')}
+                </p>
+              </motion.div>
+              
+              {/* Four function icons in middle */}
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 md:gap-6 lg:gap-8 max-w-5xl w-full flex-shrink-0 px-4">
+                <motion.div
+                  initial={{ opacity: 0, scale: 0.8 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  transition={{ duration: 0.6, delay: 0.2 }}
+                  className="flex flex-col items-center cursor-pointer group"
+                  onClick={() => router.push('/dashboard')}
+                >
+                  <div className="p-3 md:p-4 bg-white/20 rounded-2xl group-hover:bg-white/30 transition-colors mb-2">
+                    <DashboardIconSVG className="w-14 h-14 md:w-16 md:h-16 lg:w-20 lg:h-20" />
+                  </div>
+                  <span className="text-xs md:text-sm lg:text-base font-semibold text-center">{t('home.interface.dashboard')}</span>
+                </motion.div>
+                
+                <motion.div
+                  initial={{ opacity: 0, scale: 0.8 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  transition={{ duration: 0.6, delay: 0.3 }}
+                  className="flex flex-col items-center cursor-pointer group"
+                  onClick={() => router.push('/workspace')}
+                >
+                  <div className="p-3 md:p-4 bg-white/20 rounded-2xl group-hover:bg-white/30 transition-colors mb-2">
+                    <WorkspacesIconSVG className="w-14 h-14 md:w-16 md:h-16 lg:w-20 lg:h-20" />
+                  </div>
+                  <span className="text-xs md:text-sm lg:text-base font-semibold text-center">{t('home.interface.workspaces')}</span>
+                </motion.div>
+                
+                <motion.div
+                  initial={{ opacity: 0, scale: 0.8 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  transition={{ duration: 0.6, delay: 0.4 }}
+                  className="flex flex-col items-center cursor-pointer group"
+                  onClick={() => router.push('/workflows')}
+                >
+                  <div className="p-3 md:p-4 bg-white/20 rounded-2xl group-hover:bg-white/30 transition-colors mb-2">
+                    <WorkflowsIconSVG className="w-14 h-14 md:w-16 md:h-16 lg:w-20 lg:h-20" />
+                  </div>
+                  <span className="text-xs md:text-sm lg:text-base font-semibold text-center">{t('home.interface.workflows')}</span>
+                </motion.div>
+                
+                <motion.div
+                  initial={{ opacity: 0, scale: 0.8 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  transition={{ duration: 0.6, delay: 0.5 }}
+                  className="flex flex-col items-center cursor-pointer group"
+                  onClick={() => router.push('/modules')}
+                >
+                  <div className="p-3 md:p-4 bg-white/20 rounded-2xl group-hover:bg-white/30 transition-colors mb-2">
+                    <ModulesIconSVG className="w-14 h-14 md:w-16 md:h-16 lg:w-20 lg:h-20" />
+                  </div>
+                  <span className="text-xs md:text-sm lg:text-base font-semibold text-center">{t('home.interface.modules')}</span>
+                </motion.div>
+              </div>
+              
+              {/* Text at bottom */}
+              <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.6, delay: 0.6 }}
+                className="text-center flex-shrink-0"
+              >
+                <p className="text-base md:text-lg lg:text-xl opacity-90">
+                  {t('home.carousel.allFunctions.clickToStart')}
+                </p>
+              </motion.div>
+            </div>
+          </div>
+        </div>
+      )
+    },
+    {
+      id: 'dashboard',
+      title: 'JMP Visualization Dashboard',
+      subtitle: 'Transform Data into Insights',
+      description: 'Create powerful visualizations and analyze your data with advanced JMP tools',
+      ctaText: 'Explore Dashboard',
+      ctaLink: '/dashboard',
+      heroImage: (
+        <div className="relative w-full h-full">
+          <DashboardHeroSlide className="w-full h-full" />
+          <div className="absolute inset-0 flex flex-col items-center justify-center text-white z-10 px-4">
+            {/* Text - centered and moved lower */}
+            <motion.div
+              initial={{ opacity: 0, y: -20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.6 }}
+              className="text-center mt-16 md:mt-24"
+            >
+              <h2 className="text-4xl md:text-6xl font-bold mb-4">
+                {t('home.carousel.dashboard.title')}
+              </h2>
+              <p className="text-xl md:text-2xl max-w-2xl mx-auto">
+                {t('home.carousel.dashboard.subtitle')}
+              </p>
+            </motion.div>
+            
+            {/* SVG in middle - already in background */}
+            
+            {/* Button at bottom */}
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.6, delay: 0.4 }}
+              className="absolute bottom-8 md:bottom-12"
+            >
+              <Button
+                size="lg"
+                onClick={() => router.push('/dashboard')}
+                className="bg-white text-blue-600 hover:bg-gray-100 px-8 py-6 text-lg font-semibold rounded-xl shadow-lg"
+              >
+                {t('home.carousel.startNow')}
+                <ArrowRight className="ml-2 h-5 w-5" />
+              </Button>
+            </motion.div>
+          </div>
+        </div>
+      )
+    },
+    {
+      id: 'workspaces',
+      title: 'Organize Your Workspaces',
+      subtitle: 'Categorize and Manage Tasks',
+      description: 'Create organized workspaces to structure your projects and workflows efficiently',
+      ctaText: 'View Workspaces',
+      ctaLink: '/workspace',
+      heroImage: (
+        <div className="relative w-full h-full">
+          <WorkspacesHeroSlide className="w-full h-full" />
+          <div className="absolute inset-0 flex flex-col items-center justify-center text-white z-10 px-4">
+            {/* Text - centered and moved lower */}
+            <motion.div
+              initial={{ opacity: 0, y: -20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.6 }}
+              className="text-center mt-16 md:mt-24"
+            >
+              <h2 className="text-4xl md:text-6xl font-bold mb-4">
+                {t('home.carousel.workspaces.title')}
+              </h2>
+              <p className="text-xl md:text-2xl max-w-2xl mx-auto">
+                {t('home.carousel.workspaces.subtitle')}
+              </p>
+            </motion.div>
+            
+            {/* SVG in middle - already in background */}
+            
+            {/* Button at bottom */}
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.6, delay: 0.4 }}
+              className="absolute bottom-8 md:bottom-12"
+            >
+              <Button
+                size="lg"
+                onClick={() => router.push('/workspace')}
+                className="bg-white text-green-600 hover:bg-gray-100 px-8 py-6 text-lg font-semibold rounded-xl shadow-lg"
+              >
+                {t('home.carousel.startNow')}
+                <ArrowRight className="ml-2 h-5 w-5" />
+              </Button>
+            </motion.div>
+          </div>
+        </div>
+      )
+    },
+    {
+      id: 'workflows',
+      title: 'Automate with Workflows',
+      subtitle: 'Node-Based Automation',
+      description: 'Build powerful automated workflows using visual node-based programming',
+      ctaText: 'Create Workflow',
+      ctaLink: '/workflows',
+      heroImage: (
+        <div className="relative w-full h-full">
+          <WorkflowsHeroSlide className="w-full h-full" />
+          <div className="absolute inset-0 flex flex-col items-center justify-center text-white z-10 px-4">
+            {/* Text - centered and moved lower */}
+            <motion.div
+              initial={{ opacity: 0, y: -20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.6 }}
+              className="text-center mt-16 md:mt-24"
+            >
+              <h2 className="text-4xl md:text-6xl font-bold mb-4">
+                {t('home.carousel.workflows.title')}
+              </h2>
+              <p className="text-xl md:text-2xl max-w-2xl mx-auto">
+                {t('home.carousel.workflows.subtitle')}
+              </p>
+            </motion.div>
+            
+            {/* SVG in middle - already in background */}
+            
+            {/* Button at bottom */}
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.6, delay: 0.4 }}
+              className="absolute bottom-8 md:bottom-12"
+            >
+              <Button
+                size="lg"
+                onClick={() => router.push('/workflows')}
+                className="bg-white text-purple-600 hover:bg-gray-100 px-8 py-6 text-lg font-semibold rounded-xl shadow-lg"
+              >
+                {t('home.carousel.startNow')}
+                <ArrowRight className="ml-2 h-5 w-5" />
+              </Button>
+            </motion.div>
+          </div>
+        </div>
+      )
+    },
+    {
+      id: 'modules',
+      title: 'Data Analysis Modules',
+      subtitle: 'Powerful Analysis Functions',
+      description: 'Access a wide range of specialized modules for comprehensive data analysis',
+      ctaText: 'Browse Modules',
+      ctaLink: '/modules',
+      heroImage: (
+        <div className="relative w-full h-full">
+          <ModulesHeroSlide className="w-full h-full" />
+          <div className="absolute inset-0 flex flex-col items-center justify-center text-white z-10 px-4">
+            {/* Text - centered and moved lower */}
+            <motion.div
+              initial={{ opacity: 0, y: -20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.6 }}
+              className="text-center mt-16 md:mt-24"
+            >
+              <h2 className="text-4xl md:text-6xl font-bold mb-4">
+                {t('home.carousel.modules.title')}
+              </h2>
+              <p className="text-xl md:text-2xl max-w-2xl mx-auto">
+                {t('home.carousel.modules.subtitle')}
+              </p>
+            </motion.div>
+            
+            {/* SVG in middle - already in background */}
+            
+            {/* Button at bottom */}
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.6, delay: 0.4 }}
+              className="absolute bottom-8 md:bottom-12"
+            >
+              <Button
+                size="lg"
+                onClick={() => router.push('/modules')}
+                className="bg-white text-orange-600 hover:bg-gray-100 px-8 py-6 text-lg font-semibold rounded-xl shadow-lg"
+              >
+                {t('home.carousel.startNow')}
+                <ArrowRight className="ml-2 h-5 w-5" />
+              </Button>
+            </motion.div>
+          </div>
+        </div>
+      )
     }
-  }, [user, router])
-
-  // Skip setup check for now
-  // if (setupStatus === null) {
-  //   return (
-  //     <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-  //       <div className="text-center">
-  //         <Loader2 className="h-8 w-8 animate-spin mx-auto mb-4" />
-  //         <p className="text-gray-600">Checking system status...</p>
-  //       </div>
-  //     </div>
-  //   )
-  // }
-
-  if (user) {
-    return null
-  }
+  ]
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-100 relative overflow-hidden">
@@ -150,156 +424,12 @@ export default function HomePage() {
         <div className="absolute inset-0 bg-gradient-to-br from-blue-600/5 via-purple-600/5 to-indigo-600/5" />
       </div>
 
-      {/* Top Navigation */}
-      <nav className="relative z-10 bg-white/80 backdrop-blur-md shadow-sm border-b border-white/20">
-        <div className="container mx-auto px-4 py-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-4">
-              <div className="relative">
-                <BarChart3 className="h-8 w-8 text-blue-600" />
-                <div className="absolute -top-1 -right-1">
-                  <PluginEcosystemSVG className="w-6 h-6" />
-                </div>
-              </div>
-              <div>
-                <h1 className="text-xl font-bold text-gray-900">{t('landing.title')}</h1>
-                <p className="text-xs text-gray-500">by Dr J. Sun</p>
-              </div>
-            </div>
-            <div className="flex items-center space-x-4">
-              <Button 
-                variant="ghost"
-                onClick={() => window.open('/community', '_self')}
-                className="flex items-center space-x-2 hover:bg-blue-50"
-              >
-                <span>Community</span>
-              </Button>
-              <Button 
-                variant="ghost" 
-                onClick={() => window.open('/help', '_blank')}
-                className="flex items-center space-x-2 hover:bg-blue-50"
-              >
-                <HelpCircle className="h-4 w-4" />
-                <span>{t('help.title')}</span>
-              </Button>
-              <LanguageSelector />
-            </div>
-          </div>
-        </div>
-      </nav>
-
-      {/* Hero Section */}
-      <section className="relative z-10 py-20 px-4">
-        <div className="container mx-auto">
-          <div className="grid lg:grid-cols-2 gap-12 items-center">
-            {/* Left Column - Content */}
-            <div className="space-y-8">
-              <div className="space-y-6">
-                <motion.div
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.6 }}
-                  className="inline-flex items-center px-4 py-2 bg-blue-100 text-blue-800 rounded-full text-sm font-medium"
-                >
-                  <span className="w-2 h-2 bg-blue-600 rounded-full mr-2 animate-pulse"></span>
-                  {t('landing.badge')}
-                </motion.div>
-                
-                <motion.h1
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.6, delay: 0.2 }}
-                  className="text-5xl lg:text-6xl font-bold text-gray-900 leading-tight"
-                >
-                  {t('landing.hero.title')}
-                  <span className="bg-gradient-to-r from-blue-600 via-purple-600 to-indigo-600 bg-clip-text text-transparent block">
-                    {t('landing.hero.subtitle')}
-                  </span>
-                </motion.h1>
-                
-                <motion.p
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.6, delay: 0.4 }}
-                  className="text-xl text-gray-600 leading-relaxed max-w-lg"
-                >
-                  {t('landing.hero.description')}
-                </motion.p>
-              </div>
-
-              {/* CTA Buttons */}
-              <motion.div
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.6, delay: 0.6 }}
-                className="flex flex-col sm:flex-row gap-4"
-              >
-                <Button
-                  onClick={handleGuestAccess}
-                  className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white px-8 py-3 text-lg font-semibold rounded-xl shadow-lg hover:shadow-xl transition-all duration-300"
-                  disabled={guestMutation.isPending}
-                >
-                  {guestMutation.isPending && <Loader2 className="mr-2 h-5 w-5 animate-spin" />}
-                  {t('landing.cta.tryNow')}
-                </Button>
-                <Button
-                  variant="outline"
-                  className="border-2 border-gray-300 hover:border-blue-500 text-gray-700 hover:text-blue-600 px-8 py-3 text-lg font-semibold rounded-xl hover:bg-blue-50 transition-all duration-300"
-                  onClick={() => document.getElementById('auth-section')?.scrollIntoView({ behavior: 'smooth' })}
-                >
-                  {t('landing.cta.getStarted')}
-                </Button>
-              </motion.div>
-
-              {/* Quick Stats */}
-              <motion.div
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.6, delay: 0.8 }}
-                className="grid grid-cols-3 gap-8 pt-8"
-              >
-                <div className="text-center">
-                  <div className="text-3xl font-bold text-blue-600">3+</div>
-                  <div className="text-sm text-gray-600">Analysis Plugins</div>
-                </div>
-                <div className="text-center">
-                  <div className="text-3xl font-bold text-green-600">Real-time</div>
-                  <div className="text-sm text-gray-600">Processing</div>
-                </div>
-                <div className="text-center">
-                  <div className="text-3xl font-bold text-purple-600">Multi-lang</div>
-                  <div className="text-sm text-gray-600">Support</div>
-                </div>
-              </motion.div>
-            </div>
-
-            {/* Right Column - Interactive Demo */}
-            <motion.div
-              initial={{ opacity: 0, x: 20 }}
-              animate={{ opacity: 1, x: 0 }}
-              transition={{ duration: 0.8, delay: 0.4 }}
-              className="relative"
-            >
-              <div className="relative bg-white/80 backdrop-blur-sm rounded-2xl shadow-2xl p-8 border border-white/20">
-                <div className="absolute -top-4 -right-4 bg-gradient-to-r from-blue-500 to-purple-500 text-white px-4 py-2 rounded-full text-sm font-semibold shadow-lg">
-                  {t('svg.liveDemo')}
-                </div>
-                <ClickToUseDemoSVG className="w-full h-64" instructionText={t('svg.clickToUpload')} />
-              </div>
-              
-              {/* Floating Elements */}
-              <div className="absolute -top-8 -left-8 z-10">
-                <AnimatedDataFlowSVG className="w-32 h-32 opacity-60" />
-              </div>
-              <div className="absolute -bottom-8 -right-8 z-10">
-                <InteractiveDashboardSVG className="w-40 h-32 opacity-60" />
-              </div>
-            </motion.div>
-          </div>
-        </div>
+      {/* Carousel Hero Banner */}
+      <section className="relative z-10 w-full h-[600px] md:h-[700px] overflow-hidden">
+        <Carousel slides={carouselSlides} autoPlay={false} />
       </section>
 
-      {/* Features Section */}
+      {/* Portal Interface Cards */}
       <section className="relative z-10 py-20 px-4 bg-white/50 backdrop-blur-sm">
         <div className="container mx-auto">
           <motion.div
@@ -309,80 +439,166 @@ export default function HomePage() {
             viewport={{ once: true }}
             className="text-center mb-16"
           >
-            <h2 className="text-4xl font-bold text-gray-900 mb-4">{t('landing.features.title')}</h2>
+            <h2 className="text-4xl font-bold text-gray-900 mb-4">{t('home.portal.title')}</h2>
             <p className="text-xl text-gray-600 max-w-2xl mx-auto">
-              {t('landing.features.subtitle')}
+              {t('home.portal.subtitle')}
             </p>
           </motion.div>
 
-          <div className="grid md:grid-cols-3 gap-8">
+          <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6">
+            {/* Dashboard Card */}
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               whileInView={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.6, delay: 0.1 }}
               viewport={{ once: true }}
             >
-              <Card className="group hover:shadow-xl transition-all duration-300 border-0 bg-white/90 backdrop-blur-sm h-full">
+              <Card 
+                className="group hover:shadow-xl transition-all duration-300 border-0 bg-white/90 backdrop-blur-sm h-full cursor-pointer"
+                onClick={() => router.push('/dashboard')}
+              >
                 <CardHeader className="text-center pb-4">
                   <div className="flex justify-center mb-4">
                     <div className="p-4 bg-blue-100 rounded-2xl group-hover:bg-blue-200 transition-colors duration-300">
-                      <DataUploadSVG className="w-16 h-16" />
+                      <DashboardIconSVG className="w-20 h-20" />
                     </div>
                   </div>
-                  <CardTitle className="text-xl font-semibold text-gray-900">{t('landing.features.easyUpload.title')}</CardTitle>
+                  <CardTitle className="text-xl font-semibold text-gray-900">{t('home.portal.dashboard.title')}</CardTitle>
                   <CardDescription className="text-gray-600 leading-relaxed">
-                    {t('landing.features.easyUpload.description')}
+                    {t('home.portal.dashboard.description')}
                   </CardDescription>
                 </CardHeader>
+                <CardContent>
+                  <Button 
+                    className="w-full bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      router.push('/dashboard')
+                    }}
+                  >
+                    {t('home.portal.dashboard.cta')}
+                    <ArrowRight className="ml-2 h-4 w-4" />
+                  </Button>
+                </CardContent>
               </Card>
             </motion.div>
-            
+
+            {/* Workspaces Card */}
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               whileInView={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.6, delay: 0.2 }}
               viewport={{ once: true }}
             >
-              <Card className="group hover:shadow-xl transition-all duration-300 border-0 bg-white/90 backdrop-blur-sm h-full">
+              <Card 
+                className="group hover:shadow-xl transition-all duration-300 border-0 bg-white/90 backdrop-blur-sm h-full cursor-pointer"
+                onClick={() => router.push('/workspace')}
+              >
                 <CardHeader className="text-center pb-4">
                   <div className="flex justify-center mb-4">
                     <div className="p-4 bg-green-100 rounded-2xl group-hover:bg-green-200 transition-colors duration-300">
-                      <RealTimeProcessingSVG className="w-16 h-16" />
+                      <WorkspacesIconSVG className="w-20 h-20" />
                     </div>
                   </div>
-                  <CardTitle className="text-xl font-semibold text-gray-900">{t('landing.features.realTime.title')}</CardTitle>
+                  <CardTitle className="text-xl font-semibold text-gray-900">{t('home.portal.workspaces.title')}</CardTitle>
                   <CardDescription className="text-gray-600 leading-relaxed">
-                    {t('landing.features.realTime.description.custom')}
+                    {t('home.portal.workspaces.description')}
                   </CardDescription>
                 </CardHeader>
+                <CardContent>
+                  <Button 
+                    className="w-full bg-gradient-to-r from-green-600 to-blue-600 hover:from-green-700 hover:to-blue-700 text-white"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      router.push('/workspace')
+                    }}
+                  >
+                    {t('home.portal.workspaces.cta')}
+                    <ArrowRight className="ml-2 h-4 w-4" />
+                  </Button>
+                </CardContent>
               </Card>
             </motion.div>
-            
+
+            {/* Workflows Card */}
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               whileInView={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.6, delay: 0.3 }}
               viewport={{ once: true }}
             >
-              <Card className="group hover:shadow-xl transition-all duration-300 border-0 bg-white/90 backdrop-blur-sm h-full">
+              <Card 
+                className="group hover:shadow-xl transition-all duration-300 border-0 bg-white/90 backdrop-blur-sm h-full cursor-pointer"
+                onClick={() => router.push('/workflows')}
+              >
                 <CardHeader className="text-center pb-4">
                   <div className="flex justify-center mb-4">
                     <div className="p-4 bg-purple-100 rounded-2xl group-hover:bg-purple-200 transition-colors duration-300">
-                      <ShareCollaborateSVG className="w-16 h-16" />
+                      <WorkflowsIconSVG className="w-20 h-20" />
                     </div>
                   </div>
-                  <CardTitle className="text-xl font-semibold text-gray-900">{t('landing.features.share.title')}</CardTitle>
+                  <CardTitle className="text-xl font-semibold text-gray-900">{t('home.portal.workflows.title')}</CardTitle>
                   <CardDescription className="text-gray-600 leading-relaxed">
-                    {t('landing.features.share.description')}
+                    {t('home.portal.workflows.description')}
                   </CardDescription>
                 </CardHeader>
+                <CardContent>
+                  <Button 
+                    className="w-full bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      router.push('/workflows')
+                    }}
+                  >
+                    {t('home.portal.workflows.cta')}
+                    <ArrowRight className="ml-2 h-4 w-4" />
+                  </Button>
+                </CardContent>
+              </Card>
+            </motion.div>
+
+            {/* Modules Card */}
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.6, delay: 0.4 }}
+              viewport={{ once: true }}
+            >
+              <Card 
+                className="group hover:shadow-xl transition-all duration-300 border-0 bg-white/90 backdrop-blur-sm h-full cursor-pointer"
+                onClick={() => router.push('/modules')}
+              >
+                <CardHeader className="text-center pb-4">
+                  <div className="flex justify-center mb-4">
+                    <div className="p-4 bg-orange-100 rounded-2xl group-hover:bg-orange-200 transition-colors duration-300">
+                      <ModulesIconSVG className="w-20 h-20" />
+                    </div>
+                  </div>
+                  <CardTitle className="text-xl font-semibold text-gray-900">{t('home.portal.modules.title')}</CardTitle>
+                  <CardDescription className="text-gray-600 leading-relaxed">
+                    {t('home.portal.modules.description')}
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <Button 
+                    className="w-full bg-gradient-to-r from-orange-600 to-red-600 hover:from-orange-700 hover:to-red-700 text-white"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      router.push('/modules')
+                    }}
+                  >
+                    {t('home.portal.modules.cta')}
+                    <ArrowRight className="ml-2 h-4 w-4" />
+                  </Button>
+                </CardContent>
               </Card>
             </motion.div>
           </div>
         </div>
       </section>
 
-      {/* Auth Section */}
+      {/* Auth Section - Only show for non-logged-in users */}
+      {!user && (
       <section id="auth-section" className="relative z-10 py-20 px-4">
         <div className="container mx-auto max-w-lg">
           <motion.div
@@ -521,6 +737,7 @@ export default function HomePage() {
           </motion.div>
         </div>
       </section>
+      )}
 
       {/* Footer */}
       <footer className="relative z-10 bg-white/50 backdrop-blur-sm border-t border-white/20 py-8">

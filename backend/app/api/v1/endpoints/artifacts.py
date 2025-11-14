@@ -92,6 +92,21 @@ async def check_project_access(db: AsyncSession, project_id: str, user: Optional
             raise HTTPException(status_code=401, detail="Authentication required")
         return project, "guest"
     
+    # Admins have full access to all projects
+    if user.is_admin:
+        result = await db.execute(
+            select(Project).where(
+                and_(
+                    Project.id == uuid.UUID(project_id),
+                    Project.deleted_at.is_(None)
+                )
+            )
+        )
+        project = result.scalar_one_or_none()
+        if not project:
+            raise HTTPException(status_code=404, detail="Project not found")
+        return project, "admin"
+    
     # Check if user is project owner
     result = await db.execute(
         select(Project).where(

@@ -103,6 +103,10 @@ async def check_project_access_for_drawing(
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
     
+    # Admins have full access to all projects
+    if user and user.is_admin:
+        return project
+    
     # Check if user is authenticated
     if not user:
         if project.allow_guest:

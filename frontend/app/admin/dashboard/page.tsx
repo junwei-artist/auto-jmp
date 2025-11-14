@@ -250,6 +250,13 @@ export default function AdminDashboard() {
               <div className="font-medium text-gray-900">Community Zones</div>
               <div className="text-sm text-gray-600">Manage community zones</div>
             </button>
+            <button 
+              onClick={() => router.push('/admin/announcements')}
+              className="p-4 border border-gray-300 rounded-lg hover:bg-gray-50 text-left transition-colors"
+            >
+              <div className="font-medium text-gray-900">Broadcast Announcements</div>
+              <div className="text-sm text-gray-600">Send messages to all users and webhooks</div>
+            </button>
           </div>
         </div>
       </div>

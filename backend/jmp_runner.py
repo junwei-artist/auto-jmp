@@ -61,11 +61,21 @@ class JMPRunner:
         Initialize JMP Runner.
         
         Args:
-            base_task_dir: Directory to store task files (default: ./tasks)
+            base_task_dir: Directory to store task files (default: uses settings.TASKS_DIRECTORY)
             max_wait_time: Maximum time to wait for JMP completion (seconds)
             jmp_start_delay: Delay after opening JMP before running script (seconds)
         """
-        self.base_task_dir = Path(base_task_dir) if base_task_dir else Path("/Users/lytech/Documents/service/auto-jmp/backend/tasks")
+        if base_task_dir:
+            self.base_task_dir = Path(base_task_dir)
+        else:
+            # Use hardcoded path from settings
+            try:
+                from app.core.config import settings
+                self.base_task_dir = Path(settings.TASKS_DIRECTORY)
+            except ImportError:
+                # Fallback if settings not available (e.g., when running standalone)
+                self.base_task_dir = Path("/Users/lytech/Documents/service/auto-jmp/backend/tasks")
+        
         self.max_wait_time = max_wait_time
         self.jmp_start_delay = jmp_start_delay
         

@@ -4,11 +4,19 @@ from sqlalchemy import select, func, update
 from pydantic import BaseModel
 from typing import List, Optional
 import uuid
+import json
+import httpx
+import time
+import hmac
+import hashlib
+import base64
+import urllib.parse
 
 from app.core.database import get_db
 from app.core.auth import get_current_user, get_password_hash
-from app.models import AppUser, Project, Run, Artifact, AuditLog, ProjectMember, AppSetting
+from app.models import AppUser, Project, Run, Artifact, AuditLog, ProjectMember, AppSetting, NotificationType, ScheduledNotification
 from app.core.extensions import ExtensionManager
+from app.services.notification_service import NotificationService
 
 router = APIRouter()
 
@@ -32,12 +40,17 @@ class ProjectAdminResponse(BaseModel):
     name: str
     description: str
     owner_id: str
+    owner_email: Optional[str] = None
+    owner_display_name: Optional[str] = None
     created_at: str
     run_count: int
 
 class RunAdminResponse(BaseModel):
     id: str
     project_id: str
+    project_name: Optional[str] = None
+    project_owner_email: Optional[str] = None
+    project_owner_display_name: Optional[str] = None
     status: str
     task_name: str
     message: Optional[str]
@@ -156,11 +169,25 @@ async def list_projects_admin(
             select(func.count(Run.id)).where(Run.project_id == project.id)
         )
         
+        # Get owner details
+        owner_email = None
+        owner_display_name = None
+        if project.owner_id:
+            owner_result = await db.execute(
+                select(AppUser).where(AppUser.id == project.owner_id)
+            )
+            owner = owner_result.scalar_one_or_none()
+            if owner:
+                owner_email = owner.email
+                owner_display_name = owner.display_name
+        
         projects.append(ProjectAdminResponse(
             id=str(project.id),
             name=project.name,
             description=project.description or "",
-            owner_id=str(project.owner_id),
+            owner_id=str(project.owner_id) if project.owner_id else "",
+            owner_email=owner_email,
+            owner_display_name=owner_display_name,
             created_at=project.created_at.isoformat(),
             run_count=run_count or 0
         ))
@@ -179,9 +206,33 @@ async def list_runs_admin(
     
     runs = []
     for run in result.scalars().all():
+        # Get project name and owner information
+        project_name = None
+        project_owner_email = None
+        project_owner_display_name = None
+        if run.project_id:
+            project_result = await db.execute(
+                select(Project).where(Project.id == run.project_id)
+            )
+            project = project_result.scalar_one_or_none()
+            if project:
+                project_name = project.name
+                # Get owner details
+                if project.owner_id:
+                    owner_result = await db.execute(
+                        select(AppUser).where(AppUser.id == project.owner_id)
+                    )
+                    owner = owner_result.scalar_one_or_none()
+                    if owner:
+                        project_owner_email = owner.email
+                        project_owner_display_name = owner.display_name
+        
         runs.append(RunAdminResponse(
             id=str(run.id),
             project_id=str(run.project_id),
+            project_name=project_name,
+            project_owner_email=project_owner_email,
+            project_owner_display_name=project_owner_display_name,
             status=run.status.value,
             task_name=run.task_name,
             message=run.message,
@@ -952,3 +1003,640 @@ async def update_plugin_descriptions(
     await db.commit()
     
     return {"message": f"Plugin descriptions updated for {description_update.plugin_id} in {description_update.language}"}
+
+# Broadcast Announcements and Webhook Management
+
+class BroadcastAnnouncementRequest(BaseModel):
+    title: str
+    message: str
+
+class WebhookResult(BaseModel):
+    url: str
+    name: Optional[str] = None
+    success: bool
+    status_code: Optional[int] = None
+    response: Optional[dict] = None
+    error: Optional[str] = None
+
+class BroadcastAnnouncementResponse(BaseModel):
+    message: str
+    users_notified: int
+    webhooks_notified: int
+    webhook_results: List[WebhookResult] = []
+
+class WebhookRequest(BaseModel):
+    url: str
+    name: Optional[str] = None
+    secret: Optional[str] = None  # For DingTalk webhook signing
+
+class WebhookResponse(BaseModel):
+    id: str
+    url: str
+    name: Optional[str]
+    has_secret: bool = False  # Indicate if secret is set (don't expose the actual secret)
+    created_at: str
+
+class WebhookListResponse(BaseModel):
+    webhooks: List[WebhookResponse]
+
+def get_dingtalk_sign_and_timestamp(secret: str) -> tuple:
+    """
+    Generate DingTalk webhook signature and timestamp.
+    
+    DingTalk signing process:
+    1. Use timestamp and secret as signature string (timestamp\nsecret)
+    2. Calculate signature using HmacSHA256 algorithm
+    3. Base64 encode the signature
+    4. URL encode the signature (using UTF-8 charset)
+    
+    This matches the exact implementation from DingTalk documentation.
+    """
+    timestamp = str(round(time.time() * 1000))
+    # Step 1: Create signature string: timestamp\nsecret
+    string_to_sign = f"{timestamp}\n{secret}"
+    
+    # Step 2: Calculate HMAC-SHA256 signature
+    hmac_code = hmac.new(
+        secret.encode('utf-8'),
+        string_to_sign.encode('utf-8'),
+        digestmod=hashlib.sha256
+    ).digest()
+    
+    # Step 3: Base64 encode (returns bytes)
+    # Step 4: URL encode - quote_plus can accept bytes directly
+    # This exactly matches: urllib.parse.quote_plus(base64.b64encode(hmac_code))
+    sign = urllib.parse.quote_plus(base64.b64encode(hmac_code))
+    
+    return sign, timestamp
+
+async def send_to_webhook(webhook_url: str, title: str, message: str, secret: Optional[str] = None) -> dict:
+    """Send message to a webhook (DingTalk format with optional signing). Returns response info."""
+    try:
+        # DingTalk webhook format
+        payload = {
+            "msgtype": "text",
+            "text": {
+                "content": f"{title}\n\n{message}"
+            },
+            "at": {
+                "isAtAll": False
+            }
+        }
+        
+        # If secret is provided, add signature and timestamp to URL
+        final_url = webhook_url
+        if secret:
+            sign, timestamp = get_dingtalk_sign_and_timestamp(secret)
+            # Add timestamp and sign parameters to the URL
+            # Use simple string concatenation to match DingTalk's expected format
+            # Format: original_url&timestamp=xxx&sign=xxx
+            separator = '&' if '?' in webhook_url else '?'
+            final_url = f"{webhook_url}{separator}timestamp={timestamp}&sign={sign}"
+        
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            response = await client.post(final_url, json=payload, headers={"Content-Type": "application/json"})
+            response.raise_for_status()
+            
+            # Get response data
+            try:
+                response_data = response.json()
+            except:
+                response_data = {"text": response.text, "status_code": response.status_code}
+            
+            return {
+                "success": True,
+                "status_code": response.status_code,
+                "response": response_data,
+                "url": webhook_url
+            }
+    except Exception as e:
+        error_info = {
+            "success": False,
+            "error": str(e),
+            "url": webhook_url
+        }
+        # Try to get response if available
+        if hasattr(e, 'response') and e.response is not None:
+            try:
+                error_info["status_code"] = e.response.status_code
+                error_info["response"] = e.response.json() if e.response.headers.get("content-type", "").startswith("application/json") else e.response.text
+            except:
+                pass
+        print(f"Failed to send to webhook {webhook_url}: {e}")
+        return error_info
+
+async def get_webhooks_from_settings(db: AsyncSession) -> List[dict]:
+    """Get all webhooks from AppSetting."""
+    result = await db.execute(
+        select(AppSetting).where(AppSetting.k.like("webhook_%"))
+    )
+    settings = result.scalars().all()
+    
+    webhooks = []
+    for setting in settings:
+        try:
+            # Parse setting key: webhook_{id}
+            webhook_id = setting.k.replace("webhook_", "")
+            webhook_data = json.loads(setting.v)
+            webhooks.append({
+                "id": webhook_id,
+                "url": webhook_data.get("url"),
+                "name": webhook_data.get("name"),
+                "secret": webhook_data.get("secret"),  # Include secret for sending
+                "has_secret": bool(webhook_data.get("secret")),  # For display
+                "created_at": webhook_data.get("created_at", "")
+            })
+        except (json.JSONDecodeError, KeyError) as e:
+            print(f"Error parsing webhook setting {setting.k}: {e}")
+            continue
+    
+    return webhooks
+
+async def ensure_default_webhook(db: AsyncSession):
+    """Ensure the default DingTalk webhook exists in the database."""
+    import datetime
+    
+    DEFAULT_WEBHOOK_URL = "https://oapi.dingtalk.com/robot/send?access_token=993d0001ebc2a6e4013eaf76136e058571e8b73f94e9366c11d9ed989a8cf8ea"
+    DEFAULT_WEBHOOK_SECRET = "SEC8d905dbb955c7a0ec5cba6b39dc59649981d1546179028a98444eb3a082fb0f1"
+    DEFAULT_WEBHOOK_NAME = "DingTalk Default Webhook"
+    DEFAULT_WEBHOOK_ID = "default-dingtalk-webhook"
+    
+    # Check if default webhook already exists
+    setting_key = f"webhook_{DEFAULT_WEBHOOK_ID}"
+    result = await db.execute(
+        select(AppSetting).where(AppSetting.k == setting_key)
+    )
+    existing_setting = result.scalar_one_or_none()
+    
+    if existing_setting:
+        # Check if it needs to be updated
+        try:
+            webhook_data = json.loads(existing_setting.v)
+            if webhook_data.get("url") != DEFAULT_WEBHOOK_URL or webhook_data.get("secret") != DEFAULT_WEBHOOK_SECRET:
+                # Update existing webhook
+                webhook_data.update({
+                    "url": DEFAULT_WEBHOOK_URL,
+                    "name": DEFAULT_WEBHOOK_NAME,
+                    "secret": DEFAULT_WEBHOOK_SECRET,
+                    "updated_at": datetime.datetime.now().isoformat()
+                })
+                existing_setting.v = json.dumps(webhook_data)
+                await db.commit()
+                print(f"Updated default webhook: {DEFAULT_WEBHOOK_ID}")
+        except:
+            pass
+        return
+    
+    # Check if URL already exists in another webhook
+    all_webhooks = await get_webhooks_from_settings(db)
+    for wh in all_webhooks:
+        if wh.get("url") == DEFAULT_WEBHOOK_URL:
+            # URL already exists, don't create duplicate
+            return
+    
+    # Create default webhook
+    webhook_data = {
+        "url": DEFAULT_WEBHOOK_URL,
+        "name": DEFAULT_WEBHOOK_NAME,
+        "secret": DEFAULT_WEBHOOK_SECRET,
+        "created_at": datetime.datetime.now().isoformat(),
+        "is_default": True
+    }
+    
+    new_setting = AppSetting(
+        k=setting_key,
+        v=json.dumps(webhook_data)
+    )
+    db.add(new_setting)
+    await db.commit()
+    print(f"Created default webhook: {DEFAULT_WEBHOOK_ID}")
+
+@router.post("/broadcast-announcement", response_model=BroadcastAnnouncementResponse)
+async def broadcast_announcement(
+    request: BroadcastAnnouncementRequest,
+    db: AsyncSession = Depends(get_db),
+    admin_user: AppUser = Depends(require_admin)
+):
+    """Broadcast an important announcement to all users and webhooks."""
+    # Get all users
+    result = await db.execute(select(AppUser))
+    users = result.scalars().all()
+    
+    # Create notifications for all users
+    notifications_created = 0
+    enum_error_occurred = False
+    
+    for user in users:
+        try:
+            await NotificationService.create_notification(
+                db=db,
+                user_id=user.id,
+                notification_type=NotificationType.ANNOUNCEMENT,
+                title=request.title,
+                message=request.message
+            )
+            notifications_created += 1
+        except Exception as e:
+            error_str = str(e)
+            # Check if it's an enum error
+            if "ANNOUNCEMENT" in error_str or "invalid input value for enum" in error_str or "InvalidTextRepresentationError" in error_str:
+                await db.rollback()
+                enum_error_occurred = True
+                break  # Stop trying - all will fail with same error
+            else:
+                # For other errors, rollback and continue with next user
+                await db.rollback()
+                print(f"Failed to create notification for user {user.id}: {e}")
+                continue
+    
+    # If enum error occurred, return helpful error message
+    if enum_error_occurred:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="ANNOUNCEMENT enum value not found in database. Please run: alembic upgrade head, or execute the SQL in backend/add_announcement_enum.sql"
+        )
+    
+    # Ensure default webhook exists before broadcasting
+    await ensure_default_webhook(db)
+    
+    # Get all webhooks and send to them
+    webhooks = await get_webhooks_from_settings(db)
+    webhooks_notified = 0
+    webhook_results = []
+    
+    for webhook in webhooks:
+        result = await send_to_webhook(
+            webhook["url"], 
+            request.title, 
+            request.message,
+            secret=webhook.get("secret")
+        )
+        if result.get("success"):
+            webhooks_notified += 1
+        
+        webhook_results.append(WebhookResult(
+            url=webhook["url"],
+            name=webhook.get("name"),
+            success=result.get("success", False),
+            status_code=result.get("status_code"),
+            response=result.get("response"),
+            error=result.get("error")
+        ))
+    
+    # Log the action
+    audit_log = AuditLog(
+        user_id=admin_user.id,
+        action="broadcast_announcement",
+        target="all_users",
+        meta=json.dumps({
+            "title": request.title,
+            "users_notified": notifications_created,
+            "webhooks_notified": webhooks_notified
+        })
+    )
+    db.add(audit_log)
+    await db.commit()
+    
+    return BroadcastAnnouncementResponse(
+        message="Announcement broadcast successfully",
+        users_notified=notifications_created,
+        webhooks_notified=webhooks_notified,
+        webhook_results=webhook_results
+    )
+
+@router.get("/webhooks", response_model=WebhookListResponse)
+async def get_webhooks(
+    db: AsyncSession = Depends(get_db),
+    admin_user: AppUser = Depends(require_admin)
+):
+    """Get all configured webhooks."""
+    # Ensure default webhook exists
+    await ensure_default_webhook(db)
+    
+    webhooks = await get_webhooks_from_settings(db)
+    
+    return WebhookListResponse(
+        webhooks=[
+            WebhookResponse(
+                id=wh["id"],
+                url=wh["url"],
+                name=wh.get("name"),
+                has_secret=wh.get("has_secret", False),
+                created_at=wh.get("created_at", "")
+            )
+            for wh in webhooks
+        ]
+    )
+
+@router.post("/webhooks", response_model=WebhookResponse)
+async def add_webhook(
+    request: WebhookRequest,
+    db: AsyncSession = Depends(get_db),
+    admin_user: AppUser = Depends(require_admin)
+):
+    """Add a new webhook."""
+    import datetime
+    
+    # Generate webhook ID
+    webhook_id = str(uuid.uuid4())
+    setting_key = f"webhook_{webhook_id}"
+    
+    # Check if URL already exists
+    existing_webhooks = await get_webhooks_from_settings(db)
+    for wh in existing_webhooks:
+        if wh["url"] == request.url:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Webhook URL already exists"
+            )
+    
+    # Create webhook setting
+    webhook_data = {
+        "url": request.url,
+        "name": request.name,
+        "secret": request.secret,  # Store secret if provided
+        "created_at": datetime.datetime.now().isoformat()
+    }
+    
+    new_setting = AppSetting(
+        k=setting_key,
+        v=json.dumps(webhook_data)
+    )
+    db.add(new_setting)
+    await db.commit()
+    
+    # Log the action
+    audit_log = AuditLog(
+        user_id=admin_user.id,
+        action="add_webhook",
+        target=f"webhook:{webhook_id}",
+        meta=json.dumps({"url": request.url, "name": request.name})
+    )
+    db.add(audit_log)
+    await db.commit()
+    
+    return WebhookResponse(
+        id=webhook_id,
+        url=request.url,
+        name=request.name,
+        has_secret=bool(request.secret),
+        created_at=webhook_data["created_at"]
+    )
+
+@router.delete("/webhooks/{webhook_id}")
+async def delete_webhook(
+    webhook_id: str,
+    db: AsyncSession = Depends(get_db),
+    admin_user: AppUser = Depends(require_admin)
+):
+    """Delete a webhook."""
+    setting_key = f"webhook_{webhook_id}"
+    
+    result = await db.execute(
+        select(AppSetting).where(AppSetting.k == setting_key)
+    )
+    setting = result.scalar_one_or_none()
+    
+    if not setting:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Webhook not found"
+        )
+    
+    # Get webhook data for logging
+    try:
+        webhook_data = json.loads(setting.v)
+        webhook_url = webhook_data.get("url", "")
+    except:
+        webhook_url = ""
+    
+    # Delete setting
+    await db.delete(setting)
+    await db.commit()
+    
+    # Log the action
+    audit_log = AuditLog(
+        user_id=admin_user.id,
+        action="delete_webhook",
+        target=f"webhook:{webhook_id}",
+        meta=json.dumps({"url": webhook_url})
+    )
+    db.add(audit_log)
+    await db.commit()
+    
+    return {"message": "Webhook deleted successfully"}
+
+# Scheduled Daily Notifications
+
+class ScheduledNotificationCreate(BaseModel):
+    title: str
+    message: str
+    scheduled_time: str  # Format: "HH:MM" (e.g., "09:00")
+    timezone: Optional[str] = "UTC"
+    is_active: bool = True
+
+class ScheduledNotificationUpdate(BaseModel):
+    title: Optional[str] = None
+    message: Optional[str] = None
+    scheduled_time: Optional[str] = None
+    timezone: Optional[str] = None
+    is_active: Optional[bool] = None
+
+class ScheduledNotificationResponse(BaseModel):
+    id: str
+    title: str
+    message: str
+    scheduled_time: str
+    timezone: str
+    is_active: bool
+    created_by: str
+    created_at: str
+    updated_at: str
+    last_sent_at: Optional[str] = None
+
+@router.get("/scheduled-notifications", response_model=List[ScheduledNotificationResponse])
+async def get_scheduled_notifications(
+    db: AsyncSession = Depends(get_db),
+    admin_user: AppUser = Depends(require_admin)
+):
+    """Get all scheduled notifications."""
+    result = await db.execute(
+        select(ScheduledNotification).order_by(ScheduledNotification.created_at.desc())
+    )
+    notifications = result.scalars().all()
+    
+    return [
+        ScheduledNotificationResponse(
+            id=str(n.id),
+            title=n.title,
+            message=n.message,
+            scheduled_time=n.scheduled_time,
+            timezone=n.timezone,
+            is_active=n.is_active,
+            created_by=str(n.created_by),
+            created_at=n.created_at.isoformat(),
+            updated_at=n.updated_at.isoformat() if n.updated_at else "",
+            last_sent_at=n.last_sent_at.isoformat() if n.last_sent_at else None
+        )
+        for n in notifications
+    ]
+
+@router.post("/scheduled-notifications", response_model=ScheduledNotificationResponse)
+async def create_scheduled_notification(
+    request: ScheduledNotificationCreate,
+    db: AsyncSession = Depends(get_db),
+    admin_user: AppUser = Depends(require_admin)
+):
+    """Create a new scheduled notification."""
+    # Validate time format (HH:MM)
+    import re
+    if not re.match(r'^([0-1][0-9]|2[0-3]):[0-5][0-9]$', request.scheduled_time):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="scheduled_time must be in HH:MM format (24-hour)"
+        )
+    
+    notification = ScheduledNotification(
+        title=request.title,
+        message=request.message,
+        scheduled_time=request.scheduled_time,
+        timezone=request.timezone,
+        is_active=request.is_active,
+        created_by=admin_user.id
+    )
+    
+    db.add(notification)
+    await db.commit()
+    await db.refresh(notification)
+    
+    # Log the action
+    audit_log = AuditLog(
+        user_id=admin_user.id,
+        action="create_scheduled_notification",
+        target=f"scheduled_notification:{notification.id}",
+        meta=json.dumps({
+            "title": request.title,
+            "scheduled_time": request.scheduled_time,
+            "timezone": request.timezone
+        })
+    )
+    db.add(audit_log)
+    await db.commit()
+    
+    return ScheduledNotificationResponse(
+        id=str(notification.id),
+        title=notification.title,
+        message=notification.message,
+        scheduled_time=notification.scheduled_time,
+        timezone=notification.timezone,
+        is_active=notification.is_active,
+        created_by=str(notification.created_by),
+        created_at=notification.created_at.isoformat(),
+        updated_at=notification.updated_at.isoformat() if notification.updated_at else "",
+        last_sent_at=notification.last_sent_at.isoformat() if notification.last_sent_at else None
+    )
+
+@router.put("/scheduled-notifications/{notification_id}", response_model=ScheduledNotificationResponse)
+async def update_scheduled_notification(
+    notification_id: str,
+    request: ScheduledNotificationUpdate,
+    db: AsyncSession = Depends(get_db),
+    admin_user: AppUser = Depends(require_admin)
+):
+    """Update a scheduled notification."""
+    notification_uuid = uuid.UUID(notification_id)
+    
+    result = await db.execute(
+        select(ScheduledNotification).where(ScheduledNotification.id == notification_uuid)
+    )
+    notification = result.scalar_one_or_none()
+    
+    if not notification:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Scheduled notification not found"
+        )
+    
+    # Validate time format if provided
+    if request.scheduled_time:
+        import re
+        if not re.match(r'^([0-1][0-9]|2[0-3]):[0-5][0-9]$', request.scheduled_time):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="scheduled_time must be in HH:MM format (24-hour)"
+            )
+    
+    # Update fields
+    if request.title is not None:
+        notification.title = request.title
+    if request.message is not None:
+        notification.message = request.message
+    if request.scheduled_time is not None:
+        notification.scheduled_time = request.scheduled_time
+    if request.timezone is not None:
+        notification.timezone = request.timezone
+    if request.is_active is not None:
+        notification.is_active = request.is_active
+    
+    await db.commit()
+    await db.refresh(notification)
+    
+    # Log the action
+    audit_log = AuditLog(
+        user_id=admin_user.id,
+        action="update_scheduled_notification",
+        target=f"scheduled_notification:{notification_id}",
+        meta=json.dumps({
+            "title": notification.title,
+            "scheduled_time": notification.scheduled_time
+        })
+    )
+    db.add(audit_log)
+    await db.commit()
+    
+    return ScheduledNotificationResponse(
+        id=str(notification.id),
+        title=notification.title,
+        message=notification.message,
+        scheduled_time=notification.scheduled_time,
+        timezone=notification.timezone,
+        is_active=notification.is_active,
+        created_by=str(notification.created_by),
+        created_at=notification.created_at.isoformat(),
+        updated_at=notification.updated_at.isoformat() if notification.updated_at else "",
+        last_sent_at=notification.last_sent_at.isoformat() if notification.last_sent_at else None
+    )
+
+@router.delete("/scheduled-notifications/{notification_id}")
+async def delete_scheduled_notification(
+    notification_id: str,
+    db: AsyncSession = Depends(get_db),
+    admin_user: AppUser = Depends(require_admin)
+):
+    """Delete a scheduled notification."""
+    notification_uuid = uuid.UUID(notification_id)
+    
+    result = await db.execute(
+        select(ScheduledNotification).where(ScheduledNotification.id == notification_uuid)
+    )
+    notification = result.scalar_one_or_none()
+    
+    if not notification:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Scheduled notification not found"
+        )
+    
+    # Log the action
+    audit_log = AuditLog(
+        user_id=admin_user.id,
+        action="delete_scheduled_notification",
+        target=f"scheduled_notification:{notification_id}",
+        meta=json.dumps({"title": notification.title})
+    )
+    db.add(audit_log)
+    
+    await db.delete(notification)
+    await db.commit()
+    
+    return {"message": "Scheduled notification deleted successfully"}

@@ -67,6 +67,10 @@ async def check_project_access_for_powerpoint(
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
     
+    # Admins have full access to all projects
+    if user and user.is_admin:
+        return project
+    
     # Check if user is owner
     if user and project.owner_id == user.id:
         return project
