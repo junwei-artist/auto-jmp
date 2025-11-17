@@ -12,6 +12,7 @@ from app.models import (
     Artifact, ArtifactComment, AppUser, Project, ProjectMember, RoleEnum
 )
 from app.services.notification_service import NotificationService
+from app.core.websocket import publish_run_update
 from pydantic import BaseModel
 
 router = APIRouter()
@@ -286,6 +287,20 @@ async def create_artifact_comment(
         artifact_filename=artifact.filename
     )
     
+    # Publish websocket update if artifact has a run_id
+    if artifact.run_id:
+        await publish_run_update(str(artifact.run_id), {
+            "type": "artifact_comment_created",
+            "run_id": str(artifact.run_id),
+            "artifact_id": artifact_id,
+            "comment_id": str(comment.id),
+            "user_id": str(current_user.id),
+            "user_email": current_user.email,
+            "content": comment_data.content,
+            "parent_id": comment_data.parent_id,
+            "created_at": comment.created_at.isoformat() if comment.created_at else None
+        })
+    
     return {"message": "Comment created successfully", "comment_id": str(comment.id)}
 
 @router.put("/{artifact_id}/comments/{comment_id}")
@@ -334,6 +349,18 @@ async def update_artifact_comment(
     # Update comment
     comment.content = comment_data.content
     await db.commit()
+    await db.refresh(comment)
+    
+    # Publish websocket update if artifact has a run_id
+    if artifact.run_id:
+        await publish_run_update(str(artifact.run_id), {
+            "type": "artifact_comment_updated",
+            "run_id": str(artifact.run_id),
+            "artifact_id": artifact_id,
+            "comment_id": comment_id,
+            "content": comment_data.content,
+            "updated_at": comment.updated_at.isoformat() if comment.updated_at else None
+        })
     
     return {"message": "Comment updated successfully"}
 
@@ -382,6 +409,15 @@ async def delete_artifact_comment(
     # Soft delete comment
     comment.deleted_at = datetime.utcnow()
     await db.commit()
+    
+    # Publish websocket update if artifact has a run_id
+    if artifact.run_id:
+        await publish_run_update(str(artifact.run_id), {
+            "type": "artifact_comment_deleted",
+            "run_id": str(artifact.run_id),
+            "artifact_id": artifact_id,
+            "comment_id": comment_id
+        })
     
     return {"message": "Comment deleted successfully"}
 

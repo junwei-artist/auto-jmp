@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Textarea } from '@/components/ui/textarea'
@@ -8,6 +8,7 @@ import { Badge } from '@/components/ui/badge'
 import { MessageSquare, Reply, Edit, Trash2, Send, X } from 'lucide-react'
 import { useAuth } from '@/lib/auth'
 import { useLanguage } from '@/lib/language'
+import { useSocket } from '@/lib/socket'
 import toast from 'react-hot-toast'
 
 interface ArtifactComment {
@@ -26,11 +27,13 @@ interface ArtifactCommentsProps {
   artifactId: string
   currentUserRole: 'owner' | 'member' | 'watcher'
   onCommentCountChange?: (count: number) => void
+  runId?: string
 }
 
-export default function ArtifactComments({ artifactId, currentUserRole, onCommentCountChange }: ArtifactCommentsProps) {
+export default function ArtifactComments({ artifactId, currentUserRole, onCommentCountChange, runId }: ArtifactCommentsProps) {
   const { user } = useAuth()
   const { t } = useLanguage()
+  const { subscribeToRun, unsubscribeFromRun } = useSocket()
   const [comments, setComments] = useState<ArtifactComment[]>([])
   const [loading, setLoading] = useState(true)
   const [newComment, setNewComment] = useState('')
@@ -48,7 +51,7 @@ export default function ArtifactComments({ artifactId, currentUserRole, onCommen
   }
 
   // Fetch comments
-  const fetchComments = async () => {
+  const fetchComments = useCallback(async () => {
     try {
       const token = getAuthToken()
       if (!token) return
@@ -70,7 +73,7 @@ export default function ArtifactComments({ artifactId, currentUserRole, onCommen
     } finally {
       setLoading(false)
     }
-  }
+  }, [artifactId, onCommentCountChange])
 
   // Create new comment
   const createComment = async () => {
@@ -212,7 +215,30 @@ export default function ArtifactComments({ artifactId, currentUserRole, onCommen
 
   useEffect(() => {
     fetchComments()
-  }, [artifactId])
+  }, [fetchComments])
+
+  // Subscribe to websocket updates for real-time comment updates
+  useEffect(() => {
+    if (!runId) return
+
+    const handleWebSocketUpdate = (data: any) => {
+      // Only handle updates for this specific artifact
+      if (data.artifact_id === artifactId) {
+        if (data.type === 'artifact_comment_created' || 
+            data.type === 'artifact_comment_updated' || 
+            data.type === 'artifact_comment_deleted') {
+          // Refetch comments to get the latest state
+          fetchComments()
+        }
+      }
+    }
+
+    subscribeToRun(runId, handleWebSocketUpdate)
+
+    return () => {
+      unsubscribeFromRun(runId)
+    }
+  }, [runId, artifactId, subscribeToRun, unsubscribeFromRun, fetchComments])
 
   if (loading) {
     return (

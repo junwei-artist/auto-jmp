@@ -182,10 +182,8 @@ export default function ProjectPage() {
   useEffect(() => {
     if (!runs || runs.length === 0) return
 
-    // Subscribe to all running runs for real-time updates
-    const runningRuns = runs.filter(run => run.status === 'running' || run.status === 'queued')
-    
-    runningRuns.forEach(run => {
+    // Subscribe to all runs for real-time updates (including comment updates)
+    runs.forEach(run => {
       subscribeToRun(run.id, (update: any) => {
         if (update.type === 'run_progress' && update.image_count !== undefined) {
           // Update the run's image_count in the query cache
@@ -207,15 +205,44 @@ export default function ProjectPage() {
                 : r
             )
           })
-          // Unsubscribe from completed runs
-          unsubscribeFromRun(run.id)
+        } else if (update.type === 'artifact_comment_created' || 
+                   update.type === 'artifact_comment_updated' || 
+                   update.type === 'artifact_comment_deleted') {
+          // Refetch artifact comment counts when comments change
+          if (update.run_id === run.id) {
+            // Fetch artifact comments for this run
+            const fetchArtifactComments = async () => {
+              try {
+                const token = getAuthToken()
+                if (!token) return
+
+                const response = await fetch(`/api/v1/runs/${run.id}/artifacts-with-comments`, {
+                  headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json',
+                  },
+                })
+
+                if (response.ok) {
+                  const artifacts = await response.json()
+                  setRunArtifactComments(prev => ({
+                    ...prev,
+                    [run.id]: artifacts
+                  }))
+                }
+              } catch (error) {
+                console.error('Failed to fetch artifact comments:', error)
+              }
+            }
+            fetchArtifactComments()
+          }
         }
       })
     })
 
     // Cleanup: unsubscribe when component unmounts or runs change
     return () => {
-      runningRuns.forEach(run => {
+      runs.forEach(run => {
         unsubscribeFromRun(run.id)
       })
     }

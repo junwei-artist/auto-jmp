@@ -2238,7 +2238,9 @@ async def upload_node_file(
     # Check file size (50MB max)
     max_size = 50 * 1024 * 1024
     if len(content) > max_size:
-        raise HTTPException(status_code=400, detail=f"File size exceeds limit of {max_size} bytes")
+        file_size_mb = len(content) / (1024 * 1024)
+        max_size_mb = max_size / (1024 * 1024)
+        raise HTTPException(status_code=400, detail=f"File size ({file_size_mb:.2f} MB) exceeds limit of {max_size_mb} MB")
     
     # Ensure workflow folder structure exists (workflows are now top-level)
     # Note: workspace_id is still in the URL for backward compatibility, but workflows are stored at top level
@@ -4059,6 +4061,7 @@ async def get_excel_data(
     node_id: str,
     file_path: Optional[str] = Query(None, description="Path to Excel file (relative to node folder)"),
     version: Optional[str] = Query("original", description="Version: 'original' or 'processed'"),
+    load_all: Optional[bool] = Query(False, description="Load all rows (default: False, loads first 50 rows)"),
     db: AsyncSession = Depends(get_db),
     current_user: Optional[AppUser] = Depends(get_current_user)
 ):
@@ -4105,6 +4108,71 @@ async def get_excel_data(
                     "message": f"No processed Excel file found - output folder does not exist"
                 }
             excel_files = list(output_path.glob("*.xlsx")) + list(output_path.glob("*.xls"))
+            
+            # When viewing processed files, file_path refers to the input file filename
+            # We need to find the processed file that matches this input file
+            if file_path:
+                # file_path is the input file filename, find matching processed file via metadata
+                input_path = node_path / "input"
+                input_file_path = input_path / file_path
+                if input_file_path.exists():
+                    current_input_file = str(input_file_path.relative_to(local_storage.base_path))
+                    
+                    # Find processed file that matches this input file
+                    matched_files = []
+                    for excel_file in excel_files:
+                        # Check metadata to see if this processed file matches the input file
+                        try:
+                            file_stem = excel_file.stem
+                            metadata_file = output_path / f"{file_stem}_metadata.json"
+                            if metadata_file.exists():
+                                with open(metadata_file, 'r', encoding='utf-8') as f:
+                                    metadata = json.load(f)
+                                    processed_input_file = metadata.get("input_file")
+                                    # Compare relative paths - normalize both for comparison
+                                    # Both should be relative to base_path
+                                    if processed_input_file:
+                                        # Normalize paths for comparison (handle different separators)
+                                        processed_path_normalized = str(Path(processed_input_file)).replace('\\', '/')
+                                        current_path_normalized = str(Path(current_input_file)).replace('\\', '/')
+                                        
+                                        # Also compare just the filenames as a fallback
+                                        processed_filename = Path(processed_input_file).name
+                                        current_filename = Path(current_input_file).name
+                                        
+                                        # Match if full paths match OR if filenames match
+                                        if processed_path_normalized == current_path_normalized or processed_filename == current_filename:
+                                            matched_files.append(excel_file)
+                                            print(f"✓ Matched processed file {excel_file.name} with input file {current_input_file}")
+                                        else:
+                                            # Only log mismatch if we're debugging, don't spam logs
+                                            pass
+                        except Exception as e:
+                            # If metadata read fails, skip this file
+                            print(f"Warning: Could not read metadata for {excel_file}: {e}")
+                            continue
+                    
+                    # If we found matching files, use them; otherwise return early with message
+                    if matched_files:
+                        excel_files = matched_files
+                    else:
+                        # No processed file found for this input file
+                        return {
+                            "workflow_id": workflow_id,
+                            "node_id": node_id,
+                            "sheets": [],
+                            "message": f"No processed file found for the current input file. Please process the file first.",
+                            "version": version
+                        }
+                else:
+                    # Input file doesn't exist, try to use file_path as processed file name directly
+                    file_path_obj = Path(file_path)
+                    if file_path_obj.is_absolute():
+                        excel_file_path = file_path_obj
+                    else:
+                        excel_file_path = output_path / file_path
+                    if excel_file_path.exists() and excel_file_path.is_file():
+                        excel_files = [excel_file_path]
         else:
             # Look for original file in input folder or from config
             input_path = node_path / "input"
@@ -4177,8 +4245,11 @@ async def get_excel_data(
                     df = pd.read_excel(excel_file, sheet_name=sheet_name)
                     
                     # Convert DataFrame to JSON-serializable format
-                    # Limit to first 1000 rows for performance
-                    df_display = df.head(1000)
+                    # Limit to first 50 rows by default for performance, or load all if requested
+                    if load_all:
+                        df_display = df
+                    else:
+                        df_display = df.head(50)
                     
                     # Convert data to JSON-serializable format
                     # Handle NaN values and non-serializable types
@@ -4866,6 +4937,7 @@ async def load_node_config(
 class OutlierRemoverRequest(BaseModel):
     outlier_rules: List[Dict[str, Any]]
     selected_columns: Dict[str, List[str]]
+    file_key: Optional[str] = None  # Optional: specify which input file to process
 
 @router.post("/workflows/{workflow_id}/nodes/{node_id}/process-outlier-remover")
 async def process_outlier_remover(
@@ -4912,13 +4984,57 @@ async def process_outlier_remover(
         input_path = node_path / "input"
         output_path = node_path / "output"
         
+        # Get the current input file from request or node config
+        # Priority: request.file_key > node.config.file_key > config file
+        file_key = request.file_key
+        print(f"Processing request - file_key from request: {file_key}")
+        if not file_key:
+            node_config = node.config or {}
+            file_key = node_config.get("file_key")
+            print(f"file_key from node.config: {file_key}")
+            # If still not found, try loading from config file
+            if not file_key:
+                try:
+                    config_file = local_storage.load_node_config(workflow_id, node_id)
+                    if config_file:
+                        file_key = config_file.get("file_key")
+                        print(f"file_key from config file: {file_key}")
+                except Exception as e:
+                    print(f"Warning: Could not load config file: {e}")
+        
         # Find Excel file in input folder
         excel_files = list(input_path.glob("*.xlsx")) + list(input_path.glob("*.xls"))
+        print(f"Found {len(excel_files)} Excel files in input folder: {[f.name for f in excel_files]}")
         
         if not excel_files:
             raise HTTPException(status_code=404, detail="No Excel file found in input folder")
         
-        excel_file_path = excel_files[0]
+        # If file_key is specified, use that file; otherwise use first file
+        excel_file_path = None
+        if file_key:
+            # Extract filename from file_key path
+            # file_key format: workflows/{workflow_id}/nodes/{node_id}/input/{filename}
+            filename_from_key = file_key.split('/')[-1] if '/' in file_key else file_key
+            print(f"Extracted filename from file_key: {filename_from_key}")
+            potential_path = input_path / filename_from_key
+            print(f"Looking for file at: {potential_path} (exists: {potential_path.exists()}, is_file: {potential_path.is_file() if potential_path.exists() else False})")
+            if potential_path.exists() and potential_path.is_file():
+                excel_file_path = potential_path
+                print(f"✓ Using file from file_key: {filename_from_key}")
+            else:
+                print(f"✗ File not found at expected path, will fall back to first file")
+        
+        # Fallback to first file if file_key not found or not specified
+        if not excel_file_path:
+            excel_file_path = excel_files[0]
+            print(f"Using first file found: {excel_file_path.name}")
+            if file_key:
+                # If file_key was provided but file not found, this is an error
+                raise HTTPException(
+                    status_code=404, 
+                    detail=f"File specified in file_key ({file_key}) not found in input folder. Available files: {[f.name for f in excel_files]}"
+                )
+        
         filename = excel_file_path.name
         
         # Read Excel file
@@ -5067,6 +5183,19 @@ async def process_outlier_remover(
                 summary_sheet_name = f"Removal_Summary_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
                 processed_sheets[summary_sheet_name] = summary_df
             
+            # Get input file's original filename from metadata
+            input_original_filename = filename  # Default to UUID filename
+            try:
+                # Try to find metadata file for the input file
+                input_file_stem = excel_file_path.stem
+                metadata_file = input_path / f"{input_file_stem}_metadata.json"
+                if metadata_file.exists():
+                    with open(metadata_file, 'r', encoding='utf-8') as f:
+                        input_metadata = json.load(f)
+                        input_original_filename = input_metadata.get("original_filename", filename)
+            except Exception as e:
+                print(f"Warning: Could not read input file metadata: {e}")
+            
             # Save processed Excel to output folder
             output_filename = f"processed_{filename}"
             output_file_path = output_path / output_filename
@@ -5074,6 +5203,38 @@ async def process_outlier_remover(
             with pd.ExcelWriter(str(output_file_path), engine='openpyxl') as writer:
                 for sheet_name, df in processed_sheets.items():
                     df.to_excel(writer, sheet_name=sheet_name, index=False)
+            
+            # Create metadata JSON file for processed file
+            try:
+                from datetime import timezone
+                processed_time = datetime.now(timezone.utc).isoformat()
+                output_file_stem = output_file_path.stem
+                
+                processed_metadata = {
+                    "original_filename": f"processed_{input_original_filename}",
+                    "input_filename": input_original_filename,
+                    "input_file": str(excel_file_path.relative_to(local_storage.base_path)),
+                    "file_type": output_file_path.suffix.lstrip(".") if output_file_path.suffix else "xlsx",
+                    "processed_time": processed_time,
+                    "workflow_id": workflow_id,
+                    "node_id": node_id,
+                    "uuid_filename": output_filename,
+                    "file_size": output_file_path.stat().st_size if output_file_path.exists() else 0,
+                    "total_removals": len(removal_summary),
+                    "sheets_processed": list(processed_sheets.keys()),
+                    "summary_sheet": summary_sheet_name
+                }
+                
+                # Save metadata JSON file alongside the processed file
+                metadata_filename = f"{output_file_stem}_metadata.json"
+                metadata_file_path = output_path / metadata_filename
+                with open(metadata_file_path, 'w', encoding='utf-8') as f:
+                    json.dump(processed_metadata, f, indent=2)
+                print(f"Saved processed file metadata: {metadata_file_path}")
+            except Exception as e:
+                import traceback
+                print(f"Warning: Could not save processed file metadata: {e}\n{traceback.format_exc()}")
+                # Don't fail the processing if metadata save fails
             
             # Update node config
             node_config = node.config or {}

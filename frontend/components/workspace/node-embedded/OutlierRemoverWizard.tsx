@@ -53,6 +53,7 @@ export default function OutlierRemoverWizard({
   }>>(node.config?.outlier_rules || [])
   const [selectedSheet, setSelectedSheet] = useState<string>('')
   const [selectedColumn, setSelectedColumn] = useState<string>('')
+  const [loadAllRows, setLoadAllRows] = useState<Record<string, boolean>>({}) // Track which sheets have all rows loaded
 
   // Fetch Excel data
   type ExcelDataResponse = {
@@ -72,9 +73,11 @@ export default function OutlierRemoverWizard({
   }
   
   const { data: excelData, isLoading: loadingData, refetch: refetchData } = useQuery<ExcelDataResponse>({
-    queryKey: ['excel-data', workflowId, node.id, 'original'],
+    queryKey: ['excel-data', workflowId, node.id, 'original', loadAllRows],
     queryFn: async () => {
-      return apiClient.get<ExcelDataResponse>(`/v1/workflows/${workflowId}/nodes/${node.id}/excel-data?version=original`)
+      // Determine if we should load all rows for any sheet
+      const shouldLoadAll = Object.values(loadAllRows).some(v => v === true)
+      return apiClient.get<ExcelDataResponse>(`/v1/workflows/${workflowId}/nodes/${node.id}/excel-data?version=original&load_all=${shouldLoadAll}`)
     },
     enabled: !!(open && (uploadedFileKey || hasInputSource) && currentStep !== 'upload'),
     staleTime: 30000
@@ -157,6 +160,25 @@ export default function OutlierRemoverWizard({
       setCurrentStep('upload')
     }
   }, [hasInputSource, uploadedFileKey])
+
+  // Reset loadAllRows when file changes
+  useEffect(() => {
+    setLoadAllRows({})
+  }, [uploadedFileKey])
+
+  // Handle loading all rows for a sheet
+  const handleLoadAllRows = () => {
+    if (selectedSheet) {
+      setLoadAllRows(prev => ({
+        ...prev,
+        [selectedSheet]: true
+      }))
+      // Refetch data after a short delay to ensure state is updated
+      setTimeout(() => {
+        refetchData()
+      }, 100)
+    }
+  }
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -381,7 +403,28 @@ export default function OutlierRemoverWizard({
                     </CardHeader>
                     <CardContent>
                       {selectedSheet && excelData.sheets.find(s => s.name === selectedSheet) && (
-                        <div className="overflow-x-auto max-h-96 overflow-y-auto">
+                        <div className="space-y-2">
+                          {/* Load All Rows Button */}
+                          {(() => {
+                            const sheet = excelData.sheets.find(s => s.name === selectedSheet)!
+                            return !loadAllRows[selectedSheet] && sheet.total_rows > sheet.displayed_rows ? (
+                              <div className="bg-gray-50 px-3 py-2 rounded border border-gray-200 flex items-center justify-between">
+                                <span className="text-xs text-gray-600">
+                                  Showing first {sheet.displayed_rows} of {sheet.total_rows} rows
+                                </span>
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={handleLoadAllRows}
+                                  disabled={loadingData}
+                                  className="text-xs h-7"
+                                >
+                                  {loadingData ? 'Loading...' : `Load All ${sheet.total_rows} Rows`}
+                                </Button>
+                              </div>
+                            ) : null
+                          })()}
+                          <div className="overflow-x-auto max-h-96 overflow-y-auto">
                           {(() => {
                             const sheet = excelData.sheets.find(s => s.name === selectedSheet)!
                             return (
@@ -407,6 +450,16 @@ export default function OutlierRemoverWizard({
                                   ))}
                                 </tbody>
                               </table>
+                              )
+                            })()}
+                          </div>
+                          {(() => {
+                            const sheet = excelData.sheets.find(s => s.name === selectedSheet)!
+                            const isAllLoaded = loadAllRows[selectedSheet] || sheet.displayed_rows >= sheet.total_rows
+                            return (
+                              <div className="text-xs text-gray-500 px-2">
+                                Showing {sheet.displayed_rows} of {sheet.total_rows} rows{isAllLoaded ? ' (all loaded)' : ''}
+                              </div>
                             )
                           })()}
                         </div>

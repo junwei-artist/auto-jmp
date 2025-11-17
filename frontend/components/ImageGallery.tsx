@@ -1,7 +1,7 @@
 'use client'
 
-import React, { useState, useEffect, useCallback } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import React, { useState, useEffect, useCallback, useRef } from 'react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -9,6 +9,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Input } from '@/components/ui/input'
 import { Download, Eye, RefreshCw, X, ChevronLeft, ChevronRight, ZoomIn, ZoomOut, MessageCircle, Maximize2, Minimize2, RotateCw, RotateCcw, MessageSquare, Search } from 'lucide-react'
 import { useAuth } from '@/lib/auth'
+import { useSocket } from '@/lib/socket'
 import ArtifactComments from './ArtifactComments'
 
 interface Artifact {
@@ -47,6 +48,8 @@ interface ImageGalleryProps {
 
 export function ImageGallery({ runId, projectId, run, onClose }: ImageGalleryProps) {
   const { user } = useAuth()
+  const { subscribeToRun, unsubscribeFromRun } = useSocket()
+  const queryClient = useQueryClient()
   
   // Helper function to get auth token
   const getAuthToken = () => {
@@ -118,11 +121,15 @@ export function ImageGallery({ runId, projectId, run, onClose }: ImageGalleryPro
     enabled: run.status === 'succeeded',
   })
 
+  // Create stable artifact IDs array for query key - use all artifacts, not filtered
+  const allArtifactIds = allImageArtifacts.map(a => a.id).sort().join(',')
+  const artifactIds = imageArtifacts.map(a => a.id).sort().join(',')
+
   // Fetch comment counts for all image artifacts
-  const { data: commentCounts } = useQuery({
-    queryKey: ['artifact-comment-counts', imageArtifacts.map(a => a.id)],
+  const { data: commentCounts, refetch: refetchCommentCounts } = useQuery({
+    queryKey: ['artifact-comment-counts', runId, allArtifactIds],
     queryFn: async () => {
-      if (imageArtifacts.length === 0) return []
+      if (allImageArtifacts.length === 0) return []
       
       const response = await fetch('/api/v1/artifacts/comment-counts', {
         method: 'POST',
@@ -130,14 +137,15 @@ export function ImageGallery({ runId, projectId, run, onClose }: ImageGalleryPro
           'Authorization': `Bearer ${getAuthToken()}`,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify(imageArtifacts.map(a => a.id)),
+        body: JSON.stringify(allImageArtifacts.map(a => a.id)),
       })
       if (!response.ok) {
         throw new Error('Failed to fetch comment counts')
       }
       return response.json() as Promise<ArtifactCommentCount[]>
     },
-    enabled: imageArtifacts.length > 0,
+    enabled: allImageArtifacts.length > 0,
+    refetchOnWindowFocus: false,
   })
 
   // Helper function to get comment count for an artifact
@@ -260,6 +268,71 @@ export function ImageGallery({ runId, projectId, run, onClose }: ImageGalleryPro
     }
   }, [searchQuery, imageArtifacts.length])
 
+  // Store artifact IDs in a ref to avoid re-subscribing when artifacts change
+  const artifactIdsRef = useRef<Set<string>>(new Set())
+  useEffect(() => {
+    artifactIdsRef.current = new Set(imageArtifacts.map(a => a.id))
+  }, [imageArtifacts])
+
+  // Subscribe to websocket updates for comment changes
+  useEffect(() => {
+    if (!runId) return
+
+    const handleWebSocketUpdate = async (data: any) => {
+      // Handle artifact comment events
+      if (data.type === 'artifact_comment_created' || 
+          data.type === 'artifact_comment_updated' || 
+          data.type === 'artifact_comment_deleted') {
+        // Check if the event is for one of our artifacts
+        if (artifactIdsRef.current.has(data.artifact_id)) {
+          // Use a small delay to ensure the backend has committed the change
+          setTimeout(async () => {
+            try {
+              // Fetch updated comment counts for all artifacts
+              const artifactIdsArray = Array.from(artifactIdsRef.current)
+              if (artifactIdsArray.length === 0) return
+
+              const response = await fetch('/api/v1/artifacts/comment-counts', {
+                method: 'POST',
+                headers: {
+                  'Authorization': `Bearer ${getAuthToken()}`,
+                  'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(artifactIdsArray),
+              })
+
+              if (response.ok) {
+                const updatedCounts = await response.json()
+                // Update the query cache directly for immediate UI update
+                // Use the same key format as the query
+                const sortedIds = artifactIdsArray.sort().join(',')
+                queryClient.setQueryData(
+                  ['artifact-comment-counts', runId, sortedIds],
+                  updatedCounts
+                )
+                // Also invalidate all related queries to ensure consistency
+                queryClient.invalidateQueries({ 
+                  queryKey: ['artifact-comment-counts', runId],
+                  exact: false 
+                })
+              }
+            } catch (error) {
+              console.error('Failed to update comment counts:', error)
+              // Fallback to refetch if direct update fails
+              refetchCommentCounts()
+            }
+          }, 200)
+        }
+      }
+    }
+
+    subscribeToRun(runId, handleWebSocketUpdate)
+
+    return () => {
+      unsubscribeFromRun(runId)
+    }
+  }, [runId, subscribeToRun, unsubscribeFromRun, refetchCommentCounts, queryClient])
+
   // Handle keyboard navigation
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -290,14 +363,15 @@ export function ImageGallery({ runId, projectId, run, onClose }: ImageGalleryPro
         case 'F':
           toggleFullscreen()
           break
-        case 'r':
-        case 'R':
-          rotateImage('right')
-          break
-        case 'l':
-        case 'L':
-          rotateImage('left')
-          break
+        // Rotation disabled via keyboard
+        // case 'r':
+        // case 'R':
+        //   rotateImage('right')
+        //   break
+        // case 'l':
+        // case 'L':
+        //   rotateImage('left')
+        //   break
         case 'c':
         case 'C':
           setShowComments(prev => !prev)
@@ -356,7 +430,10 @@ export function ImageGallery({ runId, projectId, run, onClose }: ImageGalleryPro
           <Button
             variant="outline"
             size="sm"
-            onClick={() => refetch()}
+            onClick={() => {
+              refetch()
+              refetchCommentCounts()
+            }}
             disabled={isLoading}
           >
             <RefreshCw className={`h-4 w-4 mr-2 ${isLoading ? 'animate-spin' : ''}`} />
@@ -651,6 +728,7 @@ export function ImageGallery({ runId, projectId, run, onClose }: ImageGalleryPro
                 <ArtifactComments 
                   artifactId={imageArtifacts[selectedImageIndex]?.id || ''} 
                   currentUserRole="member" // You might want to pass the actual role from props
+                  runId={runId}
                 />
               </div>
             )}
@@ -674,6 +752,7 @@ export function ImageGallery({ runId, projectId, run, onClose }: ImageGalleryPro
                     <ArtifactComments 
                       artifactId={imageArtifacts[selectedImageIndex]?.id || ''} 
                       currentUserRole="member"
+                      runId={runId}
                     />
                   </div>
                 </div>

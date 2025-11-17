@@ -74,7 +74,7 @@ class Settings(BaseSettings):
         return v if isinstance(v, list) else list(v) if v else []
     
     # File Upload
-    MAX_FILE_SIZE: int = 100 * 1024 * 1024  # 100MB
+    MAX_FILE_SIZE: int = 50 * 1024 * 1024  # 50MB
     MAX_ATTACHMENT_SIZE: int = 200 * 1024 * 1024  # 200MB for project attachments
     ALLOWED_FILE_TYPES: List[str] = ["text/csv", "text/plain", "application/octet-stream", "application/x-javascript", "text/x-jmp-script"]
     ALLOWED_ATTACHMENT_TYPES: List[str] = ["application/pdf", "application/msword", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "application/vnd.ms-excel", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "text/plain", "text/csv", "image/jpeg", "image/png", "image/gif", "application/zip", "application/x-zip-compressed", "application/x-rar-compressed", "application/octet-stream"]

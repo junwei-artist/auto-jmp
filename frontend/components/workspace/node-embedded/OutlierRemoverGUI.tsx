@@ -8,6 +8,7 @@ import { Label } from '@/components/ui/label'
 import { Checkbox } from '@/components/ui/checkbox'
 import { FileSpreadsheet, Upload, Play, Plus, X, Download, FolderOpen, Save, Search, FileText } from 'lucide-react'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { apiClient } from '@/lib/api'
 import toast from 'react-hot-toast'
@@ -36,15 +37,17 @@ export default function OutlierRemoverGUI({
 }: OutlierRemoverGUIProps) {
   const queryClient = useQueryClient()
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const lastValidatedFileRef = useRef<string | null>(null) // Track last validated file to avoid duplicate validations
+  const justUpdatedRulesRef = useRef<boolean>(false) // Track if we just updated rules to prevent config from overwriting
   
   // Load config from file on mount
-  const { data: loadedConfig } = useQuery({
+  const { data: loadedConfig, refetch: refetchConfig } = useQuery({
     queryKey: ['node-config', workflowId, node.id],
     queryFn: async () => {
       return apiClient.get<{ config: any }>(`/v1/workflows/${workflowId}/nodes/${node.id}/config`)
     },
     enabled: !!workflowId && !!node.id,
-    staleTime: 30000
+    staleTime: 0 // Always refetch to get latest config
   })
 
   // Use loaded config or fallback to node.config
@@ -65,6 +68,25 @@ export default function OutlierRemoverGUI({
   const [viewVersion, setViewVersion] = useState<'original' | 'processed'>('original')
   const [searchQuery, setSearchQuery] = useState<string>('')
   const [showInputFileDialog, setShowInputFileDialog] = useState(false)
+  const [loadAllRows, setLoadAllRows] = useState<Record<string, boolean>>({}) // Track which sheets have all rows loaded
+  const [validationAlert, setValidationAlert] = useState<{
+    open: boolean
+    invalidRules: Array<{
+      ruleIndex: number
+      rule: typeof outlierRules[0]
+      missingSheet?: string
+      missingColumn?: string
+    }>
+    onUpdate: (selectedIndices: number[]) => void
+    onKeep: () => void
+  }>({
+    open: false,
+    invalidRules: [],
+    onUpdate: () => {},
+    onKeep: () => {}
+  })
+  const [selectedRulesToUpdate, setSelectedRulesToUpdate] = useState<Set<number>>(new Set())
+  const [ruleUpdates, setRuleUpdates] = useState<Map<number, { sheet?: string; column?: string; remove?: boolean }>>(new Map())
 
   // Fetch input files with metadata
   const { data: inputFilesData, refetch: refetchInputFiles } = useQuery({
@@ -98,9 +120,24 @@ export default function OutlierRemoverGUI({
 
   // Fetch Excel data
   const { data: excelData, isLoading: loadingData, refetch: refetchData } = useQuery({
-    queryKey: ['excel-data', workflowId, node.id, viewVersion],
+    queryKey: ['excel-data', workflowId, node.id, viewVersion, loadAllRows, uploadedFileKey],
     queryFn: async () => {
-      return apiClient.get<{
+      // Determine if we should load all rows for any sheet
+      const shouldLoadAll = Object.values(loadAllRows).some(v => v === true)
+      // Build query parameters
+      const params = new URLSearchParams({
+        version: viewVersion,
+        load_all: shouldLoadAll.toString()
+      })
+      // Always pass the input file path so backend can match processed files to input files
+      // Path format: workflows/{workflow_id}/nodes/{node_id}/input/{filename}
+      // Backend expects just the filename relative to input folder
+      if (uploadedFileKey) {
+        // Extract filename from path (last part after /)
+        const filename = uploadedFileKey.split('/').pop() || uploadedFileKey
+        params.append('file_path', filename)
+      }
+      const response = await apiClient.get<{
         workflow_id: string
         node_id: string
         file_path: string
@@ -114,10 +151,13 @@ export default function OutlierRemoverGUI({
           total_rows: number
           displayed_rows: number
         }>
-      }>(`/v1/workflows/${workflowId}/nodes/${node.id}/excel-data?version=${viewVersion}`)
+        message?: string
+      }>(`/v1/workflows/${workflowId}/nodes/${node.id}/excel-data?${params.toString()}`)
+      console.log('Excel data response:', { version: viewVersion, sheetsCount: response.sheets?.length, message: response.message })
+      return response
     },
     enabled: !!uploadedFileKey,
-    staleTime: 30000
+    staleTime: 0 // Set to 0 to always refetch when switching versions
   })
 
   // File upload mutation
@@ -171,6 +211,13 @@ export default function OutlierRemoverGUI({
   // Process mutation
   const processMutation = useMutation({
     mutationFn: async (data: { rules: any[], columns: Record<string, string[]> }) => {
+      // Extract filename from uploadedFileKey if it's a full path
+      let fileKeyToSend = uploadedFileKey
+      if (uploadedFileKey && uploadedFileKey.includes('/')) {
+        // Extract just the filename from the path
+        fileKeyToSend = uploadedFileKey.split('/').pop() || uploadedFileKey
+      }
+      console.log('Processing with file_key:', fileKeyToSend, 'from uploadedFileKey:', uploadedFileKey)
       return apiClient.post<{
         workflow_id: string
         node_id: string
@@ -183,7 +230,8 @@ export default function OutlierRemoverGUI({
         removal_summary: any[]
       }>(`/v1/workflows/${workflowId}/nodes/${node.id}/process-outlier-remover`, {
         outlier_rules: data.rules,
-        selected_columns: data.columns
+        selected_columns: data.columns,
+        file_key: fileKeyToSend // Pass the current file_key explicitly (just filename)
       })
     },
     onSuccess: (data) => {
@@ -257,23 +305,60 @@ export default function OutlierRemoverGUI({
 
   const handleSelectInputFile = async (file: { name: string; path: string; metadata?: any }) => {
     try {
-      // Update config with the selected file
+      // Step 1: Update file key and filename FIRST
       const fileKey = file.path
       const originalFilename = file.metadata?.original_filename || file.name
       
+      // Update state immediately
       setUploadedFileKey(fileKey)
       setFilename(originalFilename)
       
-      // Save to config
-      await saveConfigToFile({
-        file_key: fileKey,
-        filename: originalFilename,
-        selected_columns: selectedColumns,
-        outlier_rules: outlierRules
+      // Step 2: Save file_key and filename to config FIRST (before other operations)
+      const currentRules = outlierRules.map(rule => {
+        const ruleObj: any = {
+          condition: rule.condition,
+          value: rule.value,
+          action: rule.action || 'clear_cell'
+        }
+        // Always include sheet and column fields
+        ruleObj.sheet = (rule.sheet && rule.sheet.trim() !== '') ? rule.sheet : null
+        ruleObj.column = (rule.column && rule.column.trim() !== '') ? rule.column : null
+        return ruleObj
       })
       
-      // Invalidate queries to reload data
+      const configToSave = {
+        file_key: fileKey,
+        filename: originalFilename,
+        outlier_rules: currentRules
+      }
+      
+      await saveConfigToFile(configToSave)
+      
+      // Also update parent component's config
+      if (onConfigUpdate) {
+        onConfigUpdate({
+          ...node.config,
+          ...configToSave
+        })
+      }
+      
+      // Step 3: Reset state for new file - column selections reset, but keep rules
+      setLoadAllRows({})
+      setSelectedSheet('')
+      setSearchQuery('')
+      setViewVersion('original') // Reset to original view when switching files
+      setSelectedColumns({}) // Reset column selections for new file (will auto-select all)
+      
+      // Reset validation tracking for new file
+      lastValidatedFileRef.current = null
+      
+      // Step 4: Invalidate queries to reload data - the query will automatically refetch because uploadedFileKey changed
       queryClient.invalidateQueries({ queryKey: ['excel-data', workflowId, node.id] })
+      queryClient.invalidateQueries({ queryKey: ['node-files', workflowId, node.id] })
+      queryClient.invalidateQueries({ queryKey: ['node-config', workflowId, node.id] })
+      
+      // Wait for excel data to load before validating
+      // We'll validate in a useEffect that watches excelData
       
       setShowInputFileDialog(false)
       toast.success(`Switched to file: ${originalFilename}`)
@@ -314,13 +399,7 @@ export default function OutlierRemoverGUI({
         [sheetName]: [...sheet.columns]
       }
       setSelectedColumns(updated)
-      // Auto-save config
-      saveConfigToFile({
-        file_key: uploadedFileKey,
-        filename: filename,
-        selected_columns: updated,
-        outlier_rules: outlierRules
-      })
+      // Don't save column selections to config - they default to all
     }
   }
 
@@ -330,13 +409,7 @@ export default function OutlierRemoverGUI({
       [sheetName]: []
     }
     setSelectedColumns(updated)
-    // Auto-save config
-    saveConfigToFile({
-      file_key: uploadedFileKey,
-      filename: filename,
-      selected_columns: updated,
-      outlier_rules: outlierRules
-    })
+    // Don't save column selections to config - they default to all
   }
 
   const handleToggleColumn = (sheetName: string, columnName: string) => {
@@ -349,13 +422,7 @@ export default function OutlierRemoverGUI({
         : [...current, columnName]
     }
     setSelectedColumns(updated)
-    // Auto-save config when columns change
-    saveConfigToFile({
-      file_key: uploadedFileKey,
-      filename: filename,
-      selected_columns: updated,
-      outlier_rules: outlierRules
-    })
+    // Don't save column selections to config - they default to all
   }
 
   const handleAddRule = () => {
@@ -366,66 +433,219 @@ export default function OutlierRemoverGUI({
       value: string
       action?: 'clear_cell' | 'remove_row'
     }> = [...outlierRules, { 
-      sheet: selectedSheet || undefined,
-      column: selectedColumn || undefined,
+      // Don't set sheet/column - defaults to all sheets and all selected columns
       condition: 'greater_than', 
       value: '',
       action: 'clear_cell' as const  // Default action: clear cell
     }]
     setOutlierRules(newRules)
     setSelectedColumn('')
-    // Auto-save config
-    saveConfigToFile({
-      file_key: uploadedFileKey,
-      filename: filename,
-      selected_columns: selectedColumns,
-      outlier_rules: newRules
-    })
+    // Save only conditions (condition, value, action) to config
+    saveRulesToConfig(newRules)
   }
 
   const handleRemoveRule = (index: number) => {
     const newRules = outlierRules.filter((_, i) => i !== index)
     setOutlierRules(newRules)
-    // Auto-save config
-    saveConfigToFile({
-      file_key: uploadedFileKey,
-      filename: filename,
-      selected_columns: selectedColumns,
-      outlier_rules: newRules
-    })
+    // Save only conditions to config
+    saveRulesToConfig(newRules)
   }
 
   const handleUpdateRule = (index: number, field: string, value: string | undefined) => {
     const updated = [...outlierRules]
     updated[index] = { ...updated[index], [field]: value }
     setOutlierRules(updated)
-    // Auto-save config when rules change
-    saveConfigToFile({
-      file_key: uploadedFileKey,
-      filename: filename,
-      selected_columns: selectedColumns,
-      outlier_rules: updated
-    })
+    
+    // Save all rule fields to config (condition, value, action, sheet, column)
+    saveRulesToConfig(updated)
   }
 
-  const handleApply = () => {
+  // Helper function to save rules (including sheet and column) to config
+  const saveRulesToConfig = async (rules: typeof outlierRules) => {
+    if (!uploadedFileKey) return
+    
+    // Save condition, value, action, sheet, and column
+    // Use null instead of undefined so fields are preserved in JSON
+    const rulesToSave = rules.map(rule => {
+      const ruleObj: any = {
+        condition: rule.condition,
+        value: rule.value,
+        action: rule.action || 'clear_cell'
+      }
+      // Always include sheet and column fields
+      // Use null for empty/undefined, otherwise use the actual value
+      ruleObj.sheet = (rule.sheet && rule.sheet.trim() !== '') ? rule.sheet : null
+      ruleObj.column = (rule.column && rule.column.trim() !== '') ? rule.column : null
+      return ruleObj
+    })
+    
+    try {
+      const configToSave = {
+        file_key: uploadedFileKey,
+        filename: filename,
+        outlier_rules: rulesToSave
+        // Don't save selected_columns
+      }
+      await saveConfigToFile(configToSave)
+      
+      // Also update parent component's config
+      if (onConfigUpdate) {
+        onConfigUpdate({
+          ...node.config,
+          ...configToSave
+        })
+      }
+    } catch (error: any) {
+      console.error('Failed to save rules to config:', error)
+    }
+  }
+
+  const handleApply = async () => {
     if (outlierRules.length === 0) {
       toast.error('Please add at least one outlier removal rule')
       return
     }
+    
+    if (!uploadedFileKey) {
+      toast.error('Please select an input file first')
+      return
+    }
+    
+    // Save rules (including sheet and column) before processing - don't save column selections
+    // Use null instead of undefined so fields are preserved in JSON
+    const rulesToSave = outlierRules.map(rule => {
+      const ruleObj: any = {
+        condition: rule.condition,
+        value: rule.value,
+        action: rule.action || 'clear_cell'
+      }
+      // Always include sheet and column fields
+      // Use null for empty/undefined, otherwise use the actual value
+      ruleObj.sheet = (rule.sheet && rule.sheet.trim() !== '') ? rule.sheet : null
+      ruleObj.column = (rule.column && rule.column.trim() !== '') ? rule.column : null
+      return ruleObj
+    })
+    
+    const configToSave = {
+      file_key: uploadedFileKey,
+      filename: filename,
+      outlier_rules: rulesToSave
+      // Don't save selected_columns - they default to all
+    }
+    
+    try {
+      // Save to file and database
+      await saveConfigToFile(configToSave)
+      
+      // Also update parent component's config
+      if (onConfigUpdate) {
+        onConfigUpdate({
+          ...node.config,
+          ...configToSave
+        })
+      }
+      
+      console.log('Config saved before processing:', configToSave)
+    } catch (error: any) {
+      console.error('Failed to save config before processing:', error)
+      toast.error('Failed to save settings. Please try again.')
+      return
+    }
+    
+    // Proceed with processing after config is saved
     processMutation.mutate({ rules: outlierRules, columns: selectedColumns })
   }
 
   // Load config when component mounts or config is loaded
+  // Load rules (including sheet and column) regardless of file - they persist across files
   useEffect(() => {
     if (loadedConfig?.config) {
       const config = loadedConfig.config
-      if (config.file_key) setUploadedFileKey(config.file_key)
-      if (config.filename) setFilename(config.filename)
-      if (config.selected_columns) setSelectedColumns(config.selected_columns)
-      if (config.outlier_rules) setOutlierRules(config.outlier_rules)
+      const configFileKey = config.file_key
+      
+      // Always load rules (including sheet and column) from config - they persist across files
+      // Skip loading if we just updated rules to prevent overwriting the update
+      if (justUpdatedRulesRef.current) {
+        console.log('Skipping config load - rules were just updated')
+        return
+      }
+      
+      if (config.outlier_rules && Array.isArray(config.outlier_rules) && config.outlier_rules.length > 0) {
+        const loadedRules = config.outlier_rules.map((rule: any) => ({
+          sheet: rule.sheet && rule.sheet !== null ? rule.sheet : undefined,
+          column: rule.column && rule.column !== null ? rule.column : undefined,
+          condition: rule.condition || 'greater_than',
+          value: rule.value || '',
+          action: rule.action || 'clear_cell'
+        }))
+        // Only update if rules have changed to avoid unnecessary re-renders
+        // Use a more robust comparison that handles object order
+        const normalizeRules = (rules: typeof outlierRules) => {
+          return JSON.stringify(rules.map(r => ({
+            sheet: r.sheet || '',
+            column: r.column || '',
+            condition: r.condition,
+            value: r.value,
+            action: r.action || 'clear_cell'
+          })).sort((a, b) => {
+            // Sort by condition, then value for consistent comparison
+            if (a.condition !== b.condition) return a.condition.localeCompare(b.condition)
+            return a.value.localeCompare(b.value)
+          }))
+        }
+        
+        const currentRulesStr = normalizeRules(outlierRules)
+        const loadedRulesStr = normalizeRules(loadedRules)
+        
+        // Only update if rules are actually different
+        // Skip update if we just updated rules (they should match what we saved)
+        if (currentRulesStr !== loadedRulesStr) {
+          // Check if the difference is significant enough to warrant an update
+          // If current rules are empty or count differs, definitely update
+          if (outlierRules.length === 0 || outlierRules.length !== loadedRules.length) {
+            console.log('Loading rules from config (count differs):', loadedRules)
+            setOutlierRules(loadedRules.map((r: typeof outlierRules[0]) => ({ ...r })))
+          } else {
+            // Rules count matches - check if content is significantly different
+            // Only update if there are meaningful differences (not just order)
+            const currentRulesMap = new Map(outlierRules.map((r: typeof outlierRules[0], i: number) => [i, normalizeRules([r])]))
+            const loadedRulesMap = new Map(loadedRules.map((r: typeof outlierRules[0], i: number) => [i, normalizeRules([r])]))
+            
+            let hasSignificantDiff = false
+            for (let i = 0; i < Math.max(outlierRules.length, loadedRules.length); i++) {
+              const currentRule = currentRulesMap.get(i)
+              const loadedRule = loadedRulesMap.get(i)
+              if (currentRule !== loadedRule) {
+                hasSignificantDiff = true
+                break
+              }
+            }
+            
+            if (hasSignificantDiff) {
+              console.log('Loading rules from config (content differs):', loadedRules)
+              setOutlierRules(loadedRules.map((r: typeof outlierRules[0]) => ({ ...r })))
+            } else {
+              console.log('Skipping config load - rules match current state')
+            }
+          }
+        }
+      } else if (!config.outlier_rules || config.outlier_rules.length === 0) {
+        // If no rules in config, keep current rules (don't clear them)
+        // This allows rules to persist even if config doesn't have them yet
+      }
+      
+      // Only load file-specific settings if config matches current file
+      if (configFileKey && configFileKey === uploadedFileKey) {
+        if (config.filename) setFilename(config.filename)
+        // Don't load selected_columns - they default to all
+      } else if (configFileKey && !uploadedFileKey) {
+        // If no file is currently selected, load the file info
+        if (config.file_key) setUploadedFileKey(config.file_key)
+        if (config.filename) setFilename(config.filename)
+        // Don't load selected_columns - they default to all
+      }
     }
-  }, [loadedConfig])
+  }, [loadedConfig, uploadedFileKey])
 
   // Auto-select first sheet when data loads
   useEffect(() => {
@@ -433,6 +653,272 @@ export default function OutlierRemoverGUI({
       setSelectedSheet(excelData.sheets[0].name)
     }
   }, [excelData, selectedSheet])
+
+  // Auto-select all columns for all sheets when excelData loads (default behavior)
+  useEffect(() => {
+    if (excelData && excelData.sheets.length > 0) {
+      const allColumnsSelected: Record<string, string[]> = {}
+      let hasChanges = false
+      
+      excelData.sheets.forEach(sheet => {
+        // Only set if not already set (preserve user's manual selections)
+        if (!selectedColumns[sheet.name] || selectedColumns[sheet.name].length === 0) {
+          allColumnsSelected[sheet.name] = [...sheet.columns]
+          hasChanges = true
+        } else {
+          allColumnsSelected[sheet.name] = selectedColumns[sheet.name]
+        }
+      })
+      
+      // Only update if there are changes
+      if (hasChanges) {
+        setSelectedColumns(allColumnsSelected)
+      }
+    }
+  }, [excelData, uploadedFileKey]) // Re-run when file changes
+
+  // Validate rules when excelData loads after file switch
+  // This validates ALL rules to ensure they can be applied to the current file
+  useEffect(() => {
+    if (!excelData || !excelData.sheets || excelData.sheets.length === 0) return
+    if (outlierRules.length === 0) return
+    if (!uploadedFileKey) return
+    
+    // Skip validation if we've already validated this file (unless validation dialog was just closed)
+    // We'll reset this when validation completes
+    if (lastValidatedFileRef.current === uploadedFileKey) return
+    
+    const availableSheetNames = new Set(excelData.sheets.map(s => s.name))
+    const sheetColumnsMap = new Map<string, Set<string>>()
+    excelData.sheets.forEach(sheet => {
+      sheetColumnsMap.set(sheet.name, new Set(sheet.columns))
+    })
+    
+    const invalidRules: Array<{
+      ruleIndex: number
+      rule: typeof outlierRules[0]
+      missingSheet?: string
+      missingColumn?: string
+    }> = []
+    
+    outlierRules.forEach((rule, index) => {
+      let missingSheet: string | undefined
+      let missingColumn: string | undefined
+      
+      // Check if sheet exists
+      if (rule.sheet && !availableSheetNames.has(rule.sheet)) {
+        missingSheet = rule.sheet
+      }
+      
+      // Check if column exists in the specified sheet (or all sheets if no sheet specified)
+      if (rule.column) {
+        if (rule.sheet) {
+          // Column must exist in the specified sheet
+          const columns = sheetColumnsMap.get(rule.sheet)
+          if (!columns || !columns.has(rule.column)) {
+            missingColumn = rule.column
+          }
+        } else {
+          // Column must exist in at least one sheet
+          let found = false
+          for (const sheetName of Array.from(sheetColumnsMap.keys())) {
+            const columns = sheetColumnsMap.get(sheetName)
+            if (columns && columns.has(rule.column)) {
+              found = true
+              break
+            }
+          }
+          if (!found) {
+            missingColumn = rule.column
+          }
+        }
+      }
+      
+      // If this rule has invalid references, add it to the list
+      if (missingSheet || missingColumn) {
+        invalidRules.push({
+          ruleIndex: index,
+          rule,
+          missingSheet,
+          missingColumn
+        })
+      }
+    })
+    
+    // If there are invalid rules, show alert
+    // Don't mark as validated yet - wait until user resolves issues
+    if (invalidRules.length > 0) {
+      // Select all rules by default
+      setSelectedRulesToUpdate(new Set(invalidRules.map(ir => ir.ruleIndex)))
+      // Reset rule updates
+      setRuleUpdates(new Map())
+      
+      setValidationAlert({
+        open: true,
+        invalidRules,
+        onUpdate: async (selectedIndices: number[]) => {
+          // Apply updates: remove rules marked for removal, update others with new sheet/column
+          const rulesToRemove = new Set<number>()
+          
+          // First, identify all rules to remove
+          ruleUpdates.forEach((update, index) => {
+            if (update.remove) {
+              rulesToRemove.add(index)
+            }
+          })
+          
+          // Track which rules have user updates (sheet/column changes)
+          const rulesWithUserUpdates = new Set<number>()
+          ruleUpdates.forEach((update, index) => {
+            if (update && !update.remove && ('sheet' in update || 'column' in update)) {
+              rulesWithUserUpdates.add(index)
+            }
+          })
+          
+          const updatedRules = outlierRules.map((rule, index) => {
+            // Check if this rule should be removed
+            if (rulesToRemove.has(index)) {
+              return null // Mark for removal
+            }
+            
+            let updatedRule = { ...rule }
+            
+            // Apply user's updates if any (regardless of selection - user explicitly changed it)
+            const userUpdate = ruleUpdates.get(index)
+            if (userUpdate && !userUpdate.remove) {
+              // Apply sheet update if it exists in the update (even if undefined - user cleared it)
+              if ('sheet' in userUpdate) {
+                updatedRule.sheet = userUpdate.sheet || undefined
+              }
+              // Apply column update if it exists in the update (even if undefined - user cleared it)
+              if ('column' in userUpdate) {
+                updatedRule.column = userUpdate.column || undefined
+              }
+            }
+            
+            // For selected rules without user updates, apply fallback: remove invalid references
+            if (selectedIndices.includes(index) && !rulesWithUserUpdates.has(index)) {
+              // Find the invalid rule info
+              const invalidRule = invalidRules.find(ir => ir.ruleIndex === index)
+              if (invalidRule) {
+                // Fallback: remove invalid sheet/column if no user update
+                if (invalidRule.missingSheet) {
+                  updatedRule.sheet = undefined
+                }
+                if (invalidRule.missingColumn) {
+                  updatedRule.column = undefined
+                }
+              }
+            }
+            
+            return updatedRule
+          }).filter((rule) => rule !== null) as typeof outlierRules
+          
+          // Save updated rules to config first
+          if (uploadedFileKey) {
+            const configToSave = {
+              file_key: uploadedFileKey,
+              filename: filename,
+              outlier_rules: updatedRules.map(rule => {
+                const ruleObj: any = {
+                  condition: rule.condition,
+                  value: rule.value,
+                  action: rule.action || 'clear_cell'
+                }
+                // Always include sheet and column fields
+                // Use null for empty/undefined, otherwise use the actual value
+                ruleObj.sheet = (rule.sheet && rule.sheet.trim() !== '') ? rule.sheet : null
+                ruleObj.column = (rule.column && rule.column.trim() !== '') ? rule.column : null
+                return ruleObj
+              })
+            }
+            
+            await saveConfigToFile(configToSave)
+            
+            // Also update parent component's config
+            if (onConfigUpdate) {
+              onConfigUpdate({
+                ...node.config,
+                ...configToSave
+              })
+            }
+          }
+          
+          // Update rules state AFTER saving to config
+          // This ensures the state matches what's saved and triggers re-render
+          // Create new references for both array and each rule object to ensure React detects the change
+          console.log('Updating rules in state:', updatedRules)
+          console.log('Rule updates applied:', Array.from(ruleUpdates.entries()))
+          const newRules = updatedRules.map(rule => ({ ...rule }))
+          
+          // Mark that we just updated rules to prevent config loading from overwriting
+          justUpdatedRulesRef.current = true
+          setOutlierRules(newRules)
+          
+          // Mark file as validated after successful update
+          lastValidatedFileRef.current = uploadedFileKey
+          
+          // Reset validation state
+          setValidationAlert({ ...validationAlert, open: false })
+          setSelectedRulesToUpdate(new Set())
+          setRuleUpdates(new Map())
+          
+          // Clear the flag after a short delay to allow state to settle
+          setTimeout(() => {
+            justUpdatedRulesRef.current = false
+          }, 500)
+          
+          // Invalidate config query in background (don't await) to sync with server
+          // But don't refetch immediately to avoid overwriting our just-updated state
+          queryClient.invalidateQueries({ queryKey: ['node-config', workflowId, node.id] })
+          
+          const removedCount = rulesToRemove.size
+          // Count rules that are updated but not removed
+          const updatedCount = rulesWithUserUpdates.size + selectedIndices.filter(idx => !rulesToRemove.has(idx) && !rulesWithUserUpdates.has(idx)).length
+          if (removedCount > 0 && updatedCount > 0) {
+            toast.success(`Removed ${removedCount} rule(s) and updated ${updatedCount} rule(s)`)
+          } else if (removedCount > 0) {
+            toast.success(`Removed ${removedCount} rule(s)`)
+          } else {
+            toast.success(`Updated ${updatedCount} rule(s)`)
+          }
+        },
+        onKeep: () => {
+          // Keep the rules as-is (user chose to keep invalid references)
+          // Mark as validated even though there are issues - user chose to keep them
+          lastValidatedFileRef.current = uploadedFileKey
+          
+          setValidationAlert({ ...validationAlert, open: false })
+          setSelectedRulesToUpdate(new Set())
+          setRuleUpdates(new Map())
+          toast('Keeping rules as-is. Please update manually if needed.', { icon: 'ℹ️' })
+        }
+      })
+    } else {
+      // No invalid rules - all rules are valid for this file
+      // Mark as validated
+      lastValidatedFileRef.current = uploadedFileKey
+    }
+  }, [excelData, outlierRules, uploadedFileKey]) // Validate when excelData or rules change
+
+  // Reset loadAllRows when version changes or file changes
+  useEffect(() => {
+    setLoadAllRows({})
+  }, [viewVersion, uploadedFileKey])
+
+  // Handle loading all rows for a sheet
+  const handleLoadAllRows = () => {
+    if (selectedSheet) {
+      setLoadAllRows(prev => ({
+        ...prev,
+        [selectedSheet]: true
+      }))
+      // Refetch data after a short delay to ensure state is updated
+      setTimeout(() => {
+        refetchData()
+      }, 100)
+    }
+  }
 
   const currentSheet = excelData?.sheets.find(s => s.name === selectedSheet)
 
@@ -538,6 +1024,58 @@ export default function OutlierRemoverGUI({
             </div>
           ) : (
             <div className="flex-1 flex flex-col overflow-hidden min-h-0">
+              {/* Save Rules Button */}
+              <div className="border-b border-gray-200 p-3 bg-gray-50">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={async () => {
+                    if (!uploadedFileKey) {
+                      toast.error('Please select an input file first')
+                      return
+                    }
+                    try {
+                      // Save all rule fields including sheet and column
+                      // Use null instead of undefined so fields are preserved in JSON
+                      const rulesToSave = outlierRules.map(rule => {
+                        const ruleObj: any = {
+                          condition: rule.condition,
+                          value: rule.value,
+                          action: rule.action || 'clear_cell'
+                        }
+                        // Always include sheet and column fields
+                        // Use null for empty/undefined, otherwise use the actual value
+                        ruleObj.sheet = (rule.sheet && rule.sheet.trim() !== '') ? rule.sheet : null
+                        ruleObj.column = (rule.column && rule.column.trim() !== '') ? rule.column : null
+                        return ruleObj
+                      })
+                      const configToSave = {
+                        file_key: uploadedFileKey,
+                        filename: filename,
+                        outlier_rules: rulesToSave
+                        // Don't save selected_columns - they default to all
+                      }
+                      await saveConfigToFile(configToSave)
+                      if (onConfigUpdate) {
+                        onConfigUpdate({
+                          ...node.config,
+                          ...configToSave
+                        })
+                      }
+                      toast.success('Rules saved successfully')
+                    } catch (error: any) {
+                      console.error('Failed to save settings:', error)
+                      toast.error('Failed to save settings. Please try again.')
+                    }
+                  }}
+                  className="w-full flex items-center justify-center space-x-2"
+                  disabled={!uploadedFileKey}
+                >
+                  <Save className="h-4 w-4" />
+                  <span>Save Rules</span>
+                </Button>
+              </div>
+              
               {/* Column Selection */}
               <div className="border-b border-gray-200 p-4 overflow-y-auto flex-shrink-0" style={{ maxHeight: '40%' }}>
                 <h3 className="text-sm font-semibold mb-3 sticky top-0 bg-white pb-2">Column Selection</h3>
@@ -722,7 +1260,14 @@ export default function OutlierRemoverGUI({
           ) : !excelData || excelData.sheets.length === 0 ? (
             <div className="flex-1 flex items-center justify-center">
               <div className="text-center">
-                <p className="text-gray-600">No data available</p>
+                <p className="text-gray-600">
+                  {excelData?.message || 'No data available'}
+                </p>
+                {viewVersion === 'processed' && !excelData?.sheets?.length && (
+                  <p className="text-sm text-gray-400 mt-2">
+                    Please process the file first to view the processed version.
+                  </p>
+                )}
               </div>
             </div>
           ) : (
@@ -759,6 +1304,23 @@ export default function OutlierRemoverGUI({
               <div className="flex-1 overflow-auto p-4">
                 {currentSheet ? (
                   <div className="border border-gray-200 rounded-lg overflow-hidden">
+                    {/* Load All Rows Button */}
+                    {!loadAllRows[selectedSheet] && currentSheet.total_rows > currentSheet.displayed_rows && (
+                      <div className="bg-gray-50 px-4 py-2 border-b border-gray-200 flex items-center justify-between">
+                        <span className="text-sm text-gray-600">
+                          Showing first {currentSheet.displayed_rows} of {currentSheet.total_rows} rows
+                        </span>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={handleLoadAllRows}
+                          disabled={loadingData}
+                          className="text-xs"
+                        >
+                          {loadingData ? 'Loading...' : `Load All ${currentSheet.total_rows} Rows`}
+                        </Button>
+                      </div>
+                    )}
                     <table className="w-full text-sm border-collapse">
                       <thead className="bg-gray-50 sticky top-0">
                         <tr>
@@ -839,12 +1401,14 @@ export default function OutlierRemoverGUI({
                           }).length
                         : currentSheet.displayed_rows
                       
+                      const isAllLoaded = loadAllRows[selectedSheet] || currentSheet.displayed_rows >= currentSheet.total_rows
+                      
                       return (
                         <div className="bg-gray-50 px-4 py-2 text-xs text-gray-500 border-t border-gray-200">
                           {searchQuery.trim() ? (
                             <>Showing {filteredCount} matching row{filteredCount !== 1 ? 's' : ''} (of {currentSheet.displayed_rows} displayed, {currentSheet.total_rows} total)</>
                           ) : (
-                            <>Showing {currentSheet.displayed_rows} of {currentSheet.total_rows} rows</>
+                            <>Showing {currentSheet.displayed_rows} of {currentSheet.total_rows} rows{isAllLoaded ? ' (all loaded)' : ''}</>
                           )}
                         </div>
                       )
@@ -924,6 +1488,272 @@ export default function OutlierRemoverGUI({
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* Validation Alert Dialog */}
+      <AlertDialog open={validationAlert.open} onOpenChange={(open) => {
+        if (!open) {
+          setValidationAlert({ ...validationAlert, open: false })
+          setSelectedRulesToUpdate(new Set())
+          setRuleUpdates(new Map())
+        }
+      }}>
+        <AlertDialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Invalid Sheet/Column References</AlertDialogTitle>
+            <AlertDialogDescription>
+              Some rules reference sheets or columns that don't exist in the current file.
+              Select which rules you want to update:
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          
+          <div className="mt-4 space-y-3 max-h-[400px] overflow-y-auto">
+            {validationAlert.invalidRules.map((invalidRule) => {
+              const rule = invalidRule.rule
+              const isSelected = selectedRulesToUpdate.has(invalidRule.ruleIndex)
+              const update = ruleUpdates.get(invalidRule.ruleIndex)
+              const isMarkedForRemoval = update?.remove === true
+              
+              // Get current sheet/column (user update or original)
+              // Check if property exists in update (even if value is undefined - user cleared it)
+              const currentSheet = update && 'sheet' in update ? update.sheet : rule.sheet
+              const currentColumn = update && 'column' in update ? update.column : rule.column
+              
+              // Get available columns for the selected sheet
+              const selectedSheetData = excelData?.sheets.find(s => s.name === currentSheet)
+              const availableColumns = selectedSheetData?.columns || []
+              
+              return (
+                <div
+                  key={invalidRule.ruleIndex}
+                  className={`border rounded-lg p-3 ${isMarkedForRemoval ? 'bg-red-50 border-red-200' : 'bg-gray-50'}`}
+                >
+                  <div className="flex items-start space-x-3">
+                    <Checkbox
+                      checked={isSelected && !isMarkedForRemoval}
+                      disabled={isMarkedForRemoval}
+                      onCheckedChange={(checked) => {
+                        const newSelected = new Set(selectedRulesToUpdate)
+                        if (checked) {
+                          newSelected.add(invalidRule.ruleIndex)
+                        } else {
+                          newSelected.delete(invalidRule.ruleIndex)
+                        }
+                        setSelectedRulesToUpdate(newSelected)
+                      }}
+                      className="mt-1"
+                    />
+                    <div className="flex-1">
+                      <div className="flex items-center justify-between mb-2">
+                        <div className="font-medium text-sm text-gray-900">
+                          Rule {invalidRule.ruleIndex + 1}
+                        </div>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => {
+                            const newUpdates = new Map(ruleUpdates)
+                            if (isMarkedForRemoval) {
+                              // Unmark for removal
+                              const existing = newUpdates.get(invalidRule.ruleIndex)
+                              if (existing) {
+                                const { remove, ...rest } = existing
+                                if (Object.keys(rest).length > 0) {
+                                  newUpdates.set(invalidRule.ruleIndex, rest)
+                                } else {
+                                  newUpdates.delete(invalidRule.ruleIndex)
+                                }
+                              } else {
+                                newUpdates.delete(invalidRule.ruleIndex)
+                              }
+                            } else {
+                              // Mark for removal
+                              newUpdates.set(invalidRule.ruleIndex, { ...update, remove: true })
+                              // Also deselect from update
+                              const newSelected = new Set(selectedRulesToUpdate)
+                              newSelected.delete(invalidRule.ruleIndex)
+                              setSelectedRulesToUpdate(newSelected)
+                            }
+                            setRuleUpdates(newUpdates)
+                          }}
+                          className={`h-6 px-2 text-xs ${isMarkedForRemoval ? 'text-red-600 hover:text-red-700' : 'text-gray-600 hover:text-red-600'}`}
+                        >
+                          {isMarkedForRemoval ? 'Restore' : 'Remove Rule'}
+                        </Button>
+                      </div>
+                      
+                      {!isMarkedForRemoval && (
+                        <>
+                          <div className="mt-1 text-xs text-gray-600 space-y-1 mb-3">
+                            <div>
+                              <span className="font-medium">Condition:</span> {rule.condition.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}
+                            </div>
+                            <div>
+                              <span className="font-medium">Value:</span> {rule.value || '(empty)'}
+                            </div>
+                            <div>
+                              <span className="font-medium">Action:</span> {(rule.action || 'clear_cell').replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}
+                            </div>
+                          </div>
+                          
+                          {/* Sheet Selection */}
+                          <div className="mt-2">
+                            <Label className="text-xs font-medium">Sheet (optional)</Label>
+                            <select
+                              value={currentSheet || ''}
+                              onChange={(e) => {
+                                const newSheet = e.target.value || undefined
+                                const newUpdates = new Map(ruleUpdates)
+                                const existing = newUpdates.get(invalidRule.ruleIndex) || {}
+                                newUpdates.set(invalidRule.ruleIndex, {
+                                  ...existing,
+                                  sheet: newSheet,
+                                  // Clear column if sheet changes and column doesn't exist in new sheet
+                                  column: newSheet ? existing.column : undefined
+                                })
+                                setRuleUpdates(newUpdates)
+                              }}
+                              className="mt-1 w-full rounded-md border border-gray-300 px-2 py-1 text-xs"
+                            >
+                              <option value="">All Sheets</option>
+                              {excelData?.sheets.map((sheet, idx) => (
+                                <option key={idx} value={sheet.name}>{sheet.name}</option>
+                              ))}
+                            </select>
+                            {invalidRule.missingSheet && !currentSheet && (
+                              <span className="text-xs text-red-600 mt-1 block">
+                                Original sheet "{invalidRule.missingSheet}" not found
+                              </span>
+                            )}
+                          </div>
+                          
+                          {/* Column Selection */}
+                          <div className="mt-2">
+                            <Label className="text-xs font-medium">Column (optional)</Label>
+                            <select
+                              value={currentColumn || ''}
+                              onChange={(e) => {
+                                const newColumn = e.target.value || undefined
+                                const newUpdates = new Map(ruleUpdates)
+                                const existing = newUpdates.get(invalidRule.ruleIndex) || {}
+                                newUpdates.set(invalidRule.ruleIndex, {
+                                  ...existing,
+                                  column: newColumn
+                                })
+                                setRuleUpdates(newUpdates)
+                              }}
+                              className="mt-1 w-full rounded-md border border-gray-300 px-2 py-1 text-xs"
+                              disabled={!currentSheet}
+                            >
+                              <option value="">All Selected Columns</option>
+                              {currentSheet && availableColumns.map((col, idx) => (
+                                <option key={idx} value={col}>{col}</option>
+                              ))}
+                              {!currentSheet && excelData?.sheets.flatMap(sheet => 
+                                (selectedColumns[sheet.name] || []).map((col, idx) => (
+                                  <option key={`${sheet.name}-${idx}`} value={col}>
+                                    {col} ({sheet.name})
+                                  </option>
+                                ))
+                              )}
+                            </select>
+                            {invalidRule.missingColumn && !currentColumn && (
+                              <span className="text-xs text-red-600 mt-1 block">
+                                Original column "{invalidRule.missingColumn}" not found{currentSheet ? ` in "${currentSheet}"` : ' in any sheet'}
+                              </span>
+                            )}
+                          </div>
+                        </>
+                      )}
+                      
+                      {isMarkedForRemoval && (
+                        <div className="mt-2 text-sm text-red-600 font-medium">
+                          This rule will be removed
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+
+          <div className="mt-4 flex items-center justify-between">
+            <div className="text-sm text-gray-600">
+              {(() => {
+                const removedCount = Array.from(ruleUpdates.values()).filter(u => u.remove).length
+                const selectedCount = selectedRulesToUpdate.size
+                const totalActions = removedCount + selectedCount
+                
+                if (totalActions === 0) {
+                  return <span className="text-orange-600">Please select rules to update or remove</span>
+                }
+                
+                const parts: string[] = []
+                if (selectedCount > 0) {
+                  parts.push(`${selectedCount} to update`)
+                }
+                if (removedCount > 0) {
+                  parts.push(`${removedCount} to remove`)
+                }
+                return <span>{parts.join(', ')} of {validationAlert.invalidRules.length} rule(s)</span>
+              })()}
+            </div>
+            <div className="flex space-x-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  // Select all
+                  setSelectedRulesToUpdate(new Set(validationAlert.invalidRules.map(ir => ir.ruleIndex)))
+                }}
+              >
+                Select All
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  // Deselect all
+                  setSelectedRulesToUpdate(new Set())
+                }}
+              >
+                Deselect All
+              </Button>
+            </div>
+          </div>
+
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={validationAlert.onKeep}>
+              Keep As-Is
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                const selectedIndices = Array.from(selectedRulesToUpdate)
+                const removedCount = Array.from(ruleUpdates.values()).filter(u => u.remove).length
+                
+                if (selectedIndices.length > 0 || removedCount > 0) {
+                  validationAlert.onUpdate(selectedIndices)
+                } else {
+                  toast.error('Please select at least one rule to update or remove')
+                }
+              }}
+              disabled={selectedRulesToUpdate.size === 0 && Array.from(ruleUpdates.values()).filter(u => u.remove).length === 0}
+            >
+              {(() => {
+                const removedCount = Array.from(ruleUpdates.values()).filter(u => u.remove).length
+                const selectedCount = selectedRulesToUpdate.size
+                if (removedCount > 0 && selectedCount > 0) {
+                  return `Apply Changes (${selectedCount} update, ${removedCount} remove)`
+                } else if (removedCount > 0) {
+                  return `Remove ${removedCount} Rule(s)`
+                } else {
+                  return `Update ${selectedCount} Rule(s)`
+                }
+              })()}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }
