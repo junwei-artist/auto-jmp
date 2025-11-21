@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Debug Authentication</title>
+</head>
+<body>
+    <h1>Authentication Debug</h1>
+    <div id="debug-info"></div>
+    
+    <script>
+        function debugAuth() {
+            const token = localStorage.getItem('access_token');
+            const userId = localStorage.getItem('user_id');
+            const isGuest = localStorage.getItem('is_guest');
+            
+            const debugDiv = document.getElementById('debug-info');
+            debugDiv.innerHTML = `
+                <h3>Local Storage:</h3>
+                <p><strong>Access Token:</strong> ${token ? token.substring(0, 50) + '...' : 'Not found'}</p>
+                <p><strong>User ID:</strong> ${userId || 'Not found'}</p>
+                <p><strong>Is Guest:</strong> ${isGuest || 'Not found'}</p>
+                
+                <h3>Test API Call:</h3>
+                <button onclick="testApi()">Test Members API</button>
+                <div id="api-result"></div>
+            `;
+        }
+        
+        async function testApi() {
+            const token = localStorage.getItem('access_token');
+            const projectId = '262e4307-9911-457e-8cb0-7878c5ef315c';
+            
+            try {
+                const response = await fetch(`http://10.5.216.11:4700/api/v1/members/projects/${projectId}/members`, {
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json'
+                    }
+                });
+                
+                const result = await response.json();
+                document.getElementById('api-result').innerHTML = `
+                    <p><strong>Status:</strong> ${response.status}</p>
+                    <p><strong>Response:</strong> <pre>${JSON.stringify(result, null, 2)}</pre></p>
+                `;
+            } catch (error) {
+                document.getElementById('api-result').innerHTML = `
+                    <p><strong>Error:</strong> ${error.message}</p>
+                `;
+            }
+        }
+        
+        // Run debug on page load
+        debugAuth();
+    </script>
+</body>
+</html>

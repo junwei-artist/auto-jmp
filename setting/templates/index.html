@@ -1,0 +1,1848 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Auto-JMP Settings</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+        
+        .header {
+            background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+        
+        .header h1 {
+            font-size: 2.5rem;
+            margin-bottom: 10px;
+            font-weight: 700;
+        }
+        
+        .header p {
+            opacity: 0.9;
+            font-size: 1.1rem;
+        }
+        
+        .content {
+            padding: 40px;
+        }
+        
+        .tabs {
+            display: flex;
+            border-bottom: 2px solid #e5e7eb;
+            margin-bottom: 30px;
+        }
+        
+        .tab {
+            padding: 15px 25px;
+            cursor: pointer;
+            border-bottom: 3px solid transparent;
+            font-weight: 600;
+            color: #6b7280;
+            transition: all 0.3s ease;
+        }
+        
+        .tab.active {
+            color: #4f46e5;
+            border-bottom-color: #4f46e5;
+        }
+        
+        .tab:hover {
+            color: #4f46e5;
+            background: #f8fafc;
+        }
+        
+        .tab-content {
+            display: none;
+        }
+        
+        .tab-content.active {
+            display: block;
+        }
+        
+        .section {
+            background: #f8fafc;
+            border-radius: 8px;
+            padding: 25px;
+            margin-bottom: 25px;
+        }
+        
+        .section h3 {
+            color: #374151;
+            margin-bottom: 20px;
+            font-size: 1.3rem;
+            font-weight: 600;
+        }
+        
+        .form-group {
+            margin-bottom: 20px;
+        }
+        
+        .form-group label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 600;
+            color: #374151;
+        }
+        
+        .form-group input, .form-group select, .form-group textarea {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #d1d5db;
+            border-radius: 6px;
+            font-size: 14px;
+            transition: border-color 0.3s ease;
+        }
+        
+        .form-group input:focus, .form-group select:focus, .form-group textarea:focus {
+            outline: none;
+            border-color: #4f46e5;
+            box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1);
+        }
+        
+        .btn {
+            background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%);
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 6px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            margin-right: 10px;
+            margin-bottom: 10px;
+        }
+        
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 20px rgba(79, 70, 229, 0.3);
+        }
+        
+        .btn-secondary {
+            background: #6b7280;
+        }
+        
+        .btn-success {
+            background: #10b981;
+        }
+        
+        .btn-danger {
+            background: #ef4444;
+        }
+        
+        .status-indicator {
+            display: inline-block;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            margin-right: 8px;
+        }
+        
+        .status-running {
+            background: #10b981;
+        }
+        
+        .status-stopped {
+            background: #ef4444;
+        }
+        
+        .status-unknown {
+            background: #6b7280;
+        }
+        
+        .alert {
+            padding: 15px;
+            border-radius: 6px;
+            margin-bottom: 20px;
+            font-weight: 500;
+        }
+        
+        .alert-success {
+            background: #d1fae5;
+            color: #065f46;
+            border: 1px solid #a7f3d0;
+        }
+        
+        .alert-error {
+            background: #fee2e2;
+            color: #991b1b;
+            border: 1px solid #fca5a5;
+        }
+        
+        .alert-info {
+            background: #dbeafe;
+            color: #1e40af;
+            border: 1px solid #93c5fd;
+        }
+        
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+        }
+        
+        .service-card {
+            background: white;
+            border: 2px solid #e5e7eb;
+            border-radius: 8px;
+            padding: 20px;
+            text-align: center;
+        }
+        
+        .service-card h4 {
+            margin-bottom: 15px;
+            color: #374151;
+        }
+        
+        .loading {
+            display: none;
+            text-align: center;
+            padding: 20px;
+        }
+        
+        .spinner {
+            border: 3px solid #f3f4f6;
+            border-top: 3px solid #4f46e5;
+            border-radius: 50%;
+            width: 30px;
+            height: 30px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 10px;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        .config-display {
+            background: #1f2937;
+            color: #f9fafb;
+            padding: 20px;
+            border-radius: 6px;
+            font-family: 'Monaco', 'Menlo', monospace;
+            font-size: 13px;
+            overflow-x: auto;
+            white-space: pre-wrap;
+        }
+        
+        .test-methodology {
+            margin-top: 15px;
+            padding: 15px;
+            background: #f8fafc;
+            border-radius: 6px;
+            border-left: 4px solid #4f46e5;
+        }
+        
+        .test-methodology h5 {
+            margin: 0 0 10px 0;
+            color: #374151;
+            font-size: 14px;
+            font-weight: 600;
+        }
+        
+        .test-methodology p {
+            margin: 8px 0;
+            color: #6b7280;
+            font-size: 13px;
+            line-height: 1.4;
+        }
+        
+        .test-methodology ul {
+            margin: 8px 0;
+            padding-left: 20px;
+        }
+        
+        .test-methodology li {
+            margin: 4px 0;
+            color: #6b7280;
+            font-size: 13px;
+            line-height: 1.4;
+        }
+        
+        .test-methodology code {
+            background: #e5e7eb;
+            color: #374151;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: 'Monaco', 'Menlo', monospace;
+            font-size: 12px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🧰 Auto-JMP Settings</h1>
+            <p>Manage your backend and frontend configuration</p>
+        </div>
+        
+        <div class="content">
+            <div class="tabs">
+                <div class="tab active" onclick="showTab('overview')">Overview</div>
+                <div class="tab" onclick="showTab('backend')">Backend</div>
+                <div class="tab" onclick="showTab('frontend')">Frontend</div>
+                <div class="tab" onclick="showTab('database')">Database</div>
+                <div class="tab" onclick="showTab('redis-celery')">Redis & Celery</div>
+                <div class="tab" onclick="showTab('admin')">Admin</div>
+                <div class="tab" onclick="showTab('diagnostics')">Diagnostics</div>
+            </div>
+            
+            <div id="overview" class="tab-content active">
+                <div class="section">
+                    <h3>Service Status</h3>
+                    <div class="grid">
+                        <div class="service-card">
+                            <h4>Backend Service</h4>
+                            <div id="backend-status">
+                                <span class="status-indicator status-unknown"></span>
+                                <span>Checking...</span>
+                            </div>
+                            <div id="backend-instances" style="margin-top: 10px; display: none;">
+                                <!-- Multiple instances will be displayed here -->
+                            </div>
+                            <div style="margin-top: 15px;">
+                                <button class="btn btn-success" onclick="restartService('backend')">Restart All</button>
+                                <button class="btn btn-secondary" onclick="testService('backend')">Test</button>
+                            </div>
+                            <div class="test-methodology">
+                                <h5>🔍 Detection Method:</h5>
+                                <p>Uses <code>pgrep -f</code> to find processes matching patterns:</p>
+                                <ul>
+                                    <li><code>python.*main.py</code> - Direct Python execution</li>
+                                    <li><code>uvicorn.*main:app</code> - Uvicorn server</li>
+                                    <li><code>python.*uvicorn.*main</code> - Python module execution</li>
+                                    <li><code>fastapi.*main</code> - FastAPI CLI</li>
+                                    <li><code>python.*fastapi.*main</code> - Python FastAPI module</li>
+                                </ul>
+                                <p>Shows all running instances with PID, port, and command details.</p>
+                            </div>
+                        </div>
+                        <div class="service-card">
+                            <h4>Frontend Service</h4>
+                            <div id="frontend-status">
+                                <span class="status-indicator status-unknown"></span>
+                                <span>Checking...</span>
+                            </div>
+                            <div id="frontend-instances" style="margin-top: 10px; display: none;">
+                                <!-- Multiple instances will be displayed here -->
+                            </div>
+                            <div style="margin-top: 15px;">
+                                <button class="btn btn-success" onclick="restartService('frontend')">Restart All</button>
+                                <button class="btn btn-secondary" onclick="testService('frontend')">Test</button>
+                            </div>
+                            <div class="test-methodology">
+                                <h5>🔍 Detection Method:</h5>
+                                <p>Uses <code>pgrep -f</code> to find processes matching patterns:</p>
+                                <ul>
+                                    <li><code>next.*dev</code> - Next.js development server</li>
+                                    <li><code>npm.*run.*dev</code> - NPM development script</li>
+                                    <li><code>yarn.*dev</code> - Yarn development script</li>
+                                    <li><code>node.*next</code> - Node.js Next.js execution</li>
+                                </ul>
+                                <p>Shows all running instances with PID, port, and command details.</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="section">
+                    <h3>Quick Actions</h3>
+                    <button class="btn" onclick="loadConfig()">Refresh Configuration</button>
+                    <button class="btn btn-secondary" onclick="exportConfig()">Export Config</button>
+                    <button class="btn btn-danger" onclick="resetConfig()">Reset to Defaults</button>
+                </div>
+            </div>
+            
+            <div id="backend" class="tab-content">
+                <div class="section">
+                    <h3>Backend Configuration</h3>
+                    <div class="form-group">
+                        <label for="backend-port">Backend Port</label>
+                        <input type="number" id="backend-port" placeholder="4700">
+                    </div>
+                    <div class="form-group">
+                        <label for="database-url">Database URL</label>
+                        <input type="text" id="database-url" placeholder="postgresql+asyncpg://user:pass@localhost:5432/db">
+                    </div>
+                    <div class="form-group">
+                        <label for="redis-url">Redis URL</label>
+                        <input type="text" id="redis-url" placeholder="redis://localhost:6379">
+                    </div>
+                    <div class="form-group">
+                        <label for="secret-key">Secret Key</label>
+                        <input type="password" id="secret-key" placeholder="your-secret-key">
+                    </div>
+                    <div class="form-group">
+                        <label for="environment">Environment</label>
+                        <select id="environment">
+                            <option value="development">Development</option>
+                            <option value="production">Production</option>
+                            <option value="testing">Testing</option>
+                        </select>
+                    </div>
+                    <button class="btn" onclick="saveBackendConfig()">Save Backend Config</button>
+                    <button class="btn btn-secondary" onclick="testBackendConnections()">Test Connections</button>
+                    
+                    <div class="test-methodology">
+                        <h5>🔍 Backend Configuration Testing:</h5>
+                        <p><strong>Configuration Files Checked:</strong></p>
+                        <ul>
+                            <li><code>/Users/lytech/Documents/GitHub/auto-jmp/backend/.env</code> - Main backend configuration</li>
+                            <li><code>/Users/lytech/Documents/GitHub/auto-jmp/backend/env.example</code> - Example configuration template</li>
+                        </ul>
+                        <p><strong>Connection Tests:</strong></p>
+                        <ul>
+                            <li><strong>Database:</strong> Parses <code>DATABASE_URL</code> and tests PostgreSQL connection using <code>psycopg2</code></li>
+                            <li><strong>Redis:</strong> Tests Redis connection using <code>redis-py</code> library</li>
+                            <li><strong>API Health:</strong> Sends HTTP GET request to <code>/health</code> endpoint</li>
+                        </ul>
+                        <p><strong>Configuration Validation:</strong></p>
+                        <ul>
+                            <li>Checks for required environment variables</li>
+                            <li>Validates URL formats and port numbers</li>
+                            <li>Verifies file permissions and accessibility</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+            
+            <div id="frontend" class="tab-content">
+                <div class="section">
+                    <h3>Frontend Configuration</h3>
+                    <div class="form-group">
+                        <label for="frontend-port">Frontend Port</label>
+                        <input type="number" id="frontend-port" placeholder="4800">
+                    </div>
+                    <div class="form-group">
+                        <label for="backend-url">Backend URL</label>
+                        <input type="text" id="backend-url" placeholder="http://localhost:4700">
+                    </div>
+                    <div class="form-group">
+                        <label for="ws-url">WebSocket URL</label>
+                        <input type="text" id="ws-url" placeholder="ws://localhost:4700">
+                    </div>
+                    <button class="btn" onclick="saveFrontendConfig()">Save Frontend Config</button>
+                    <button class="btn btn-secondary" onclick="testFrontendConnections()">Test Connections</button>
+                    
+                    <div class="test-methodology">
+                        <h5>🔍 Frontend Configuration Testing:</h5>
+                        <p><strong>Configuration Files Checked:</strong></p>
+                        <ul>
+                            <li><code>/Users/lytech/Documents/GitHub/auto-jmp/frontend/.env.local</code> - Main frontend configuration</li>
+                            <li><code>/Users/lytech/Documents/GitHub/auto-jmp/frontend/env.example</code> - Example configuration template</li>
+                            <li><code>/Users/lytech/Documents/GitHub/auto-jmp/frontend/next.config.js</code> - Next.js configuration</li>
+                        </ul>
+                        <p><strong>Connection Tests:</strong></p>
+                        <ul>
+                            <li><strong>Frontend Server:</strong> Sends HTTP GET request to frontend URL</li>
+                            <li><strong>Backend API:</strong> Tests connection to backend API endpoints</li>
+                            <li><strong>WebSocket:</strong> Tests WebSocket connection using <code>websocket-client</code></li>
+                            <li><strong>CORS:</strong> Sends OPTIONS request to test CORS configuration</li>
+                        </ul>
+                        <p><strong>Configuration Validation:</strong></p>
+                        <ul>
+                            <li>Validates <code>NEXT_PUBLIC_*</code> environment variables</li>
+                            <li>Checks URL formats and port consistency</li>
+                            <li>Verifies frontend-backend URL alignment</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+            
+            <div id="database" class="tab-content">
+                <div class="section">
+                    <h3>Database Management</h3>
+                    <div class="form-group">
+                        <label for="db-host">Database Host</label>
+                        <input type="text" id="db-host" placeholder="localhost">
+                    </div>
+                    <div class="form-group">
+                        <label for="db-port">Database Port</label>
+                        <input type="number" id="db-port" placeholder="5432">
+                    </div>
+                    <div class="form-group">
+                        <label for="db-name">Database Name</label>
+                        <input type="text" id="db-name" placeholder="data_analysis">
+                    </div>
+                    <div class="form-group">
+                        <label for="db-user">Database User</label>
+                        <input type="text" id="db-user" placeholder="username">
+                    </div>
+                    <div class="form-group">
+                        <label for="db-password">Database Password</label>
+                        <input type="password" id="db-password" placeholder="password">
+                    </div>
+                    <button class="btn" onclick="testDatabaseConnection()">Test Connection</button>
+                    <button class="btn btn-secondary" onclick="testCurrentDatabaseConnection()">Test Current Config</button>
+                    <button class="btn btn-danger" onclick="resetDatabase()">Reset Database</button>
+                    
+                    <div class="test-methodology">
+                        <h5>🔍 Database Connection Testing:</h5>
+                        <p><strong>Configuration Files Checked:</strong></p>
+                        <ul>
+                            <li><code>/Users/lytech/Documents/GitHub/auto-jmp/backend/.env</code> - Contains <code>DATABASE_URL</code></li>
+                            <li><code>/Users/lytech/Documents/GitHub/auto-jmp/backend/env.example</code> - Example database configuration</li>
+                        </ul>
+                        <p><strong>Connection Process:</strong></p>
+                        <ul>
+                            <li><strong>URL Parsing:</strong> Converts <code>postgresql+asyncpg://</code> to <code>postgresql://</code> format</li>
+                            <li><strong>Component Extraction:</strong> Extracts user, password, host, port, and database name</li>
+                            <li><strong>Connection Test:</strong> Uses <code>psycopg2.connect()</code> to test PostgreSQL connection</li>
+                            <li><strong>Validation:</strong> Verifies database exists and credentials are correct</li>
+                        </ul>
+                        <p><strong>Current Configuration:</strong></p>
+                        <ul>
+                            <li><strong>Database:</strong> <code>data_analysis</code></li>
+                            <li><strong>User:</strong> <code>lytech</code></li>
+                            <li><strong>Host:</strong> <code>localhost:5432</code></li>
+                            <li><strong>Driver:</strong> <code>postgresql+asyncpg</code> (converted to <code>psycopg2</code> for testing)</li>
+                        </ul>
+                    </div>
+                </div>
+                
+                <div class="section">
+                    <h3>PostgreSQL System Check</h3>
+                    <p>Enter PostgreSQL superuser credentials to check all users and databases:</p>
+                    
+                    <div class="form-group">
+                        <label for="pg-superuser">PostgreSQL Superuser</label>
+                        <input type="text" id="pg-superuser" placeholder="lytech" value="lytech">
+                        <small style="color: #6b7280; font-size: 12px;">Your backend uses 'lytech' as the database user</small>
+                    </div>
+                    <div class="form-group">
+                        <label for="pg-password">Password</label>
+                        <input type="password" id="pg-password" placeholder="Enter superuser password">
+                    </div>
+                    <div class="form-group">
+                        <label for="pg-host">Host</label>
+                        <input type="text" id="pg-host" placeholder="localhost" value="localhost">
+                    </div>
+                    <div class="form-group">
+                        <label for="pg-port">Port</label>
+                        <input type="number" id="pg-port" placeholder="5432" value="5432">
+                    </div>
+                    
+                    <button class="btn btn-primary" onclick="checkPostgreSQLSystem()">Check PostgreSQL System</button>
+                    
+                    <div id="postgresql-results" class="config-display" style="margin-top: 20px; display: none;">
+                        PostgreSQL system check results will appear here...
+                    </div>
+                    
+                    <div class="test-methodology">
+                        <h5>🔍 PostgreSQL System Check:</h5>
+                        <p><strong>Security Note:</strong> Superuser credentials are required for comprehensive system analysis. Your backend uses 'lytech' as the database user.</p>
+                        <p><strong>Information Retrieved:</strong></p>
+                        <ul>
+                            <li><strong>System Info:</strong> PostgreSQL version, server address, current user</li>
+                            <li><strong>Users/Roles:</strong> All database users with permissions and privileges</li>
+                            <li><strong>Databases:</strong> All databases with size, owner, encoding, and settings</li>
+                            <li><strong>Role Memberships:</strong> User-role relationships and admin privileges</li>
+                            <li><strong>Permissions:</strong> Database-level permissions for current user</li>
+                        </ul>
+                        <p><strong>SQL Queries Used:</strong></p>
+                        <ul>
+                            <li><code>SELECT version()</code> - PostgreSQL version information</li>
+                            <li><code>SELECT * FROM pg_roles</code> - All users and roles</li>
+                            <li><code>SELECT * FROM pg_database</code> - All databases</li>
+                            <li><code>SELECT * FROM pg_auth_members</code> - Role memberships</li>
+                            <li><code>has_database_privilege()</code> - Permission checks</li>
+                        </ul>
+                        <p><strong>Security:</strong> Credentials are not stored and are only used for the current check.</p>
+                    </div>
+                </div>
+            </div>
+            
+            <div id="redis-celery" class="tab-content">
+                <div class="section">
+                    <h3>Redis & Celery Health Status</h3>
+                    <div class="grid">
+                        <div class="service-card">
+                            <h4>Redis Status</h4>
+                            <div id="redis-status">
+                                <span class="status-indicator status-unknown"></span>
+                                <span>Checking...</span>
+                            </div>
+                            <div style="margin-top: 15px;">
+                                <button class="btn btn-success" onclick="testRedisConnection()">Test Connection</button>
+                                <button class="btn btn-secondary" onclick="getRedisStatus()">Get Status</button>
+                            </div>
+                            <div class="test-methodology">
+                                <h5>🔍 Redis Detection Method:</h5>
+                                <p>Uses <code>redis-py</code> library to connect and test:</p>
+                                <ul>
+                                    <li><code>redis.from_url()</code> - Connect to Redis server</li>
+                                    <li><code>r.ping()</code> - Test basic connectivity</li>
+                                    <li><code>r.info()</code> - Get server information</li>
+                                    <li><code>r.keys()</code> - Check for Celery task keys</li>
+                                </ul>
+                                <p>Configuration: <code>REDIS_URL</code> from backend .env file</p>
+                            </div>
+                        </div>
+                        <div class="service-card">
+                            <h4>Celery Status</h4>
+                            <div id="celery-status">
+                                <span class="status-indicator status-unknown"></span>
+                                <span>Checking...</span>
+                            </div>
+                            <div style="margin-top: 15px;">
+                                <button class="btn btn-success" onclick="testCeleryConnection()">Test Connection</button>
+                                <button class="btn btn-secondary" onclick="getCeleryStatus()">Get Status</button>
+                            </div>
+                            <div class="test-methodology">
+                                <h5>🔍 Celery Detection Method:</h5>
+                                <p>Checks Redis for Celery task metadata:</p>
+                                <ul>
+                                    <li><code>celery-task-meta-*</code> - Task result keys</li>
+                                    <li><code>celery-*</code> - Queue and worker keys</li>
+                                    <li>Task status analysis (SUCCESS, FAILURE, PENDING)</li>
+                                    <li>Worker activity detection</li>
+                                </ul>
+                                <p>Configuration: <code>CELERY_BROKER_URL</code> from backend .env file</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="section">
+                    <h3>Redis & Celery Health Check</h3>
+                    <button class="btn" onclick="getRedisCeleryHealth()">Run Health Check</button>
+                    <button class="btn btn-secondary" onclick="refreshRedisCeleryStatus()">Refresh Status</button>
+                    
+                    <div id="redis-celery-health" class="config-display" style="margin-top: 20px; display: none;">
+                        Redis & Celery health check results will appear here...
+                    </div>
+                    
+                    <div class="test-methodology">
+                        <h5>🔍 Redis & Celery Health Check:</h5>
+                        <p><strong>Redis Health Indicators:</strong></p>
+                        <ul>
+                            <li><strong>Connection:</strong> Basic ping test and info retrieval</li>
+                            <li><strong>Version:</strong> Redis server version information</li>
+                            <li><strong>Memory Usage:</strong> Current memory consumption</li>
+                            <li><strong>Connected Clients:</strong> Number of active connections</li>
+                            <li><strong>Uptime:</strong> Server uptime in seconds</li>
+                            <li><strong>Keys Count:</strong> Number of keys in database 0</li>
+                        </ul>
+                        <p><strong>Celery Health Indicators:</strong></p>
+                        <ul>
+                            <li><strong>Workers Running:</strong> Detection of active Celery workers</li>
+                            <li><strong>Task Statistics:</strong> Count of active, queued, completed, and failed tasks</li>
+                            <li><strong>Queue Information:</strong> Celery queue status and contents</li>
+                            <li><strong>Broker Connection:</strong> Redis broker connectivity</li>
+                        </ul>
+                        <p><strong>Overall Health Assessment:</strong></p>
+                        <ul>
+                            <li><strong>Healthy:</strong> Redis running + Celery workers active</li>
+                            <li><strong>Degraded:</strong> Redis running but no Celery workers</li>
+                            <li><strong>Unhealthy:</strong> Redis not running</li>
+                        </ul>
+                        <p><strong>Recommendations:</strong> Automatic suggestions for fixing issues</p>
+                    </div>
+                </div>
+                
+                <div class="section">
+                    <h3>Redis Configuration</h3>
+                    <div class="form-group">
+                        <label for="redis-url-config">Redis URL</label>
+                        <input type="text" id="redis-url-config" placeholder="redis://localhost:6379">
+                    </div>
+                    <div class="form-group">
+                        <label for="celery-broker-url">Celery Broker URL</label>
+                        <input type="text" id="celery-broker-url" placeholder="redis://localhost:6379/0">
+                    </div>
+                    <div class="form-group">
+                        <label for="celery-result-backend">Celery Result Backend</label>
+                        <input type="text" id="celery-result-backend" placeholder="redis://localhost:6379/0">
+                    </div>
+                    <button class="btn" onclick="saveRedisCeleryConfig()">Save Configuration</button>
+                    <button class="btn btn-secondary" onclick="testRedisCeleryConfig()">Test Configuration</button>
+                    
+                    <div class="test-methodology">
+                        <h5>🔍 Redis & Celery Configuration:</h5>
+                        <p><strong>Configuration Files:</strong></p>
+                        <ul>
+                            <li><code>/Users/lytech/Documents/GitHub/auto-jmp/backend/.env</code> - Main configuration</li>
+                            <li><code>REDIS_URL</code> - Redis server connection string</li>
+                            <li><code>CELERY_BROKER_URL</code> - Celery message broker URL</li>
+                            <li><code>CELERY_RESULT_BACKEND</code> - Celery result backend URL</li>
+                        </ul>
+                        <p><strong>Default Configuration:</strong></p>
+                        <ul>
+                            <li><strong>Redis:</strong> <code>redis://localhost:6379</code></li>
+                            <li><strong>Celery Broker:</strong> <code>redis://localhost:6379/0</code></li>
+                            <li><strong>Celery Backend:</strong> <code>redis://localhost:6379/0</code></li>
+                        </ul>
+                        <p><strong>Database Separation:</strong> Uses database 0 for Celery to separate from other Redis usage</p>
+                    </div>
+                </div>
+            </div>
+            
+            <div id="admin" class="tab-content">
+                <div class="section">
+                    <h3>Admin User Management</h3>
+                    <div class="form-group">
+                        <label for="admin-username">Username</label>
+                        <input type="text" id="admin-username" placeholder="admin">
+                    </div>
+                    <div class="form-group">
+                        <label for="admin-password">Password</label>
+                        <input type="password" id="admin-password" placeholder="secure-password">
+                    </div>
+                    <div class="form-group">
+                        <label for="admin-email">Email</label>
+                        <input type="email" id="admin-email" placeholder="admin@example.com">
+                    </div>
+                    <button class="btn btn-success" onclick="createAdminUser()">Create Admin User</button>
+                    
+                    <div class="test-methodology">
+                        <h5>🔍 Admin User Creation Process:</h5>
+                        <p><strong>Configuration Files Used:</strong></p>
+                        <ul>
+                            <li><code>/Users/lytech/Documents/GitHub/auto-jmp/backend/.env</code> - Database connection settings</li>
+                            <li><code>/Users/lytech/Documents/GitHub/auto-jmp/backend/create_admin.py</code> - Admin creation script</li>
+                        </ul>
+                        <p><strong>Creation Process:</strong></p>
+                        <ul>
+                            <li><strong>Database Connection:</strong> Uses configured <code>DATABASE_URL</code> to connect to PostgreSQL</li>
+                            <li><strong>User Validation:</strong> Checks if admin user already exists in database</li>
+                            <li><strong>Password Hashing:</strong> Uses secure password hashing (bcrypt/PBKDF2)</li>
+                            <li><strong>Database Insert:</strong> Creates new admin user record in users table</li>
+                            <li><strong>Role Assignment:</strong> Assigns admin privileges and permissions</li>
+                        </ul>
+                        <p><strong>Security Features:</strong></p>
+                        <ul>
+                            <li>Password strength validation</li>
+                            <li>Email format verification</li>
+                            <li>Duplicate user prevention</li>
+                            <li>Secure password storage</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+            
+            <div id="diagnostics" class="tab-content">
+                <div class="section">
+                    <h3>System Diagnostics</h3>
+                    <button class="btn" onclick="loadSystemInfo()">Load System Info</button>
+                    <button class="btn btn-secondary" onclick="testCommunication()">Test Communication</button>
+                    <button class="btn btn-secondary" onclick="checkConsistency()">Check Consistency</button>
+                    <button class="btn btn-secondary" onclick="loadNetworkInfo()">Load Network Info</button>
+                    <button class="btn btn-secondary" onclick="loadFilePaths()">Show File Paths</button>
+                    <button class="btn btn-secondary" onclick="loadConfigSummary()">Config Summary</button>
+                    <button class="btn btn-success" onclick="runFullDiagnostics()">Run Full Diagnostics</button>
+                    
+                    <div class="test-methodology">
+                        <h5>🔍 Diagnostic Testing Methods:</h5>
+                        <p><strong>System Information:</strong></p>
+                        <ul>
+                            <li><strong>Hostname:</strong> Uses <code>socket.gethostname()</code> and <code>platform.node()</code></li>
+                            <li><strong>Platform:</strong> Uses <code>platform.platform()</code> for OS details</li>
+                            <li><strong>Python Version:</strong> Uses <code>sys.version</code></li>
+                            <li><strong>IP Addresses:</strong> Uses <code>netifaces</code> library to get network interfaces</li>
+                            <li><strong>Firewall:</strong> Checks macOS firewall status using system commands</li>
+                        </ul>
+                        <p><strong>Network Analysis:</strong></p>
+                        <ul>
+                            <li><strong>Network Interfaces:</strong> Uses <code>netifaces.interfaces()</code> and <code>netifaces.ifaddresses()</code></li>
+                            <li><strong>Connectivity Tests:</strong> Uses <code>requests</code> to test external services (GitHub, NPM, PyPI)</li>
+                            <li><strong>DNS Resolution:</strong> Tests DNS using <code>socket.gethostbyname()</code></li>
+                        </ul>
+                        <p><strong>Communication Testing:</strong></p>
+                        <ul>
+                            <li><strong>Backend Health:</strong> HTTP GET to <code>/health</code> endpoint</li>
+                            <li><strong>Frontend Access:</strong> HTTP GET to frontend URL</li>
+                            <li><strong>CORS Test:</strong> OPTIONS request with CORS headers</li>
+                            <li><strong>WebSocket:</strong> Uses <code>websocket-client</code> for connection test</li>
+                            <li><strong>Database:</strong> PostgreSQL connection using <code>psycopg2</code></li>
+                            <li><strong>Redis:</strong> Redis connection using <code>redis-py</code></li>
+                        </ul>
+                        <p><strong>Configuration Consistency:</strong></p>
+                        <ul>
+                            <li>Compares frontend and backend URL configurations</li>
+                            <li>Validates port consistency and availability</li>
+                            <li>Checks environment variable completeness</li>
+                            <li>Verifies database and Redis configuration alignment</li>
+                        </ul>
+                    </div>
+                </div>
+                
+                <div class="section">
+                    <h3>Configuration File Paths</h3>
+                    <div id="file-paths" class="config-display">Click "Show File Paths" to see all configuration file locations</div>
+                </div>
+                
+                <div class="section">
+                    <h3>Configuration Summary</h3>
+                    <div id="config-summary" class="config-display">Click "Config Summary" to see configuration overview with file paths</div>
+                </div>
+                
+                <div class="section">
+                    <h3>System Information</h3>
+                    <div id="system-info" class="config-display">Click "Load System Info" to see system details</div>
+                </div>
+                
+                <div class="section">
+                    <h3>Network Information</h3>
+                    <div id="network-info" class="config-display">Click "Load Network Info" to see network details</div>
+                </div>
+                
+                <div class="section">
+                    <h3>Communication Test</h3>
+                    <div id="communication-test" class="config-display">Click "Test Communication" to see test results</div>
+                </div>
+                
+                <div class="section">
+                    <h3>Configuration Consistency</h3>
+                    <div id="consistency-check" class="config-display">Click "Check Consistency" to see consistency report</div>
+                </div>
+                
+                <div class="section">
+                    <h3>Full Diagnostics Report</h3>
+                    <div id="full-diagnostics" class="config-display">Click "Run Full Diagnostics" to see comprehensive report</div>
+                </div>
+            </div>
+            
+            <div id="alerts"></div>
+            
+            <div class="loading" id="loading">
+                <div class="spinner"></div>
+                <p>Processing...</p>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        let currentConfig = {};
+        
+        // Tab switching
+        function showTab(tabName) {
+            // Hide all tab contents
+            document.querySelectorAll('.tab-content').forEach(content => {
+                content.classList.remove('active');
+            });
+            
+            // Remove active class from all tabs
+            document.querySelectorAll('.tab').forEach(tab => {
+                tab.classList.remove('active');
+            });
+            
+            // Show selected tab content
+            document.getElementById(tabName).classList.add('active');
+            
+            // Add active class to clicked tab
+            event.target.classList.add('active');
+        }
+        
+        // Show loading
+        function showLoading() {
+            document.getElementById('loading').style.display = 'block';
+        }
+        
+        // Hide loading
+        function hideLoading() {
+            document.getElementById('loading').style.display = 'none';
+        }
+        
+        // Show alert
+        function showAlert(message, type = 'info') {
+            const alertsDiv = document.getElementById('alerts');
+            const alert = document.createElement('div');
+            alert.className = `alert alert-${type}`;
+            alert.textContent = message;
+            alertsDiv.appendChild(alert);
+            
+            // Auto-remove after 5 seconds
+            setTimeout(() => {
+                alert.remove();
+            }, 5000);
+        }
+        
+        // Load current configuration
+        async function loadConfig() {
+            showLoading();
+            try {
+                const response = await fetch('/api/config');
+                currentConfig = await response.json();
+                populateForms();
+                updateServiceStatus();
+                showAlert('Configuration loaded successfully', 'success');
+            } catch (error) {
+                showAlert('Failed to load configuration: ' + error.message, 'error');
+            } finally {
+                hideLoading();
+            }
+        }
+        
+        // Populate forms with current config
+        function populateForms() {
+            // Backend config
+            if (currentConfig.backend) {
+                document.getElementById('backend-port').value = extractPort(currentConfig.backend.NEXT_PUBLIC_BACKEND_URL) || '';
+                document.getElementById('database-url').value = currentConfig.backend.DATABASE_URL || '';
+                document.getElementById('redis-url').value = currentConfig.backend.REDIS_URL || '';
+                document.getElementById('secret-key').value = currentConfig.backend.SECRET_KEY || '';
+                document.getElementById('environment').value = currentConfig.backend.ENVIRONMENT || 'development';
+            }
+            
+            // Frontend config
+            if (currentConfig.frontend) {
+                document.getElementById('frontend-port').value = extractPort(currentConfig.frontend.NEXT_PUBLIC_FRONTEND_URL) || '';
+                document.getElementById('backend-url').value = currentConfig.frontend.NEXT_PUBLIC_BACKEND_URL || '';
+                document.getElementById('ws-url').value = currentConfig.frontend.NEXT_PUBLIC_WS_URL || '';
+            }
+            
+            // Redis & Celery config
+            if (currentConfig.backend) {
+                document.getElementById('redis-url-config').value = currentConfig.backend.REDIS_URL || '';
+                document.getElementById('celery-broker-url').value = currentConfig.backend.CELERY_BROKER_URL || '';
+                document.getElementById('celery-result-backend').value = currentConfig.backend.CELERY_RESULT_BACKEND || '';
+            }
+        }
+        
+        // Extract port from URL
+        function extractPort(url) {
+            if (!url) return null;
+            const match = url.match(/:(\d+)/);
+            return match ? match[1] : null;
+        }
+        
+        // Update service status
+        function updateServiceStatus() {
+            if (currentConfig.status) {
+                const backendStatus = document.getElementById('backend-status');
+                const frontendStatus = document.getElementById('frontend-status');
+                const backendInstances = document.getElementById('backend-instances');
+                const frontendInstances = document.getElementById('frontend-instances');
+                
+                // Update backend status
+                const backendIndicator = backendStatus.querySelector('.status-indicator');
+                const backendText = backendStatus.querySelector('span:last-child');
+                if (currentConfig.status.backend.running) {
+                    backendIndicator.className = 'status-indicator status-running';
+                    const instanceCount = currentConfig.status.backend.instances.length;
+                    backendText.textContent = `${instanceCount} instance(s) running`;
+                    
+                    // Display all backend instances
+                    backendInstances.style.display = 'block';
+                    backendInstances.innerHTML = '<h5>Running Instances:</h5>';
+                    currentConfig.status.backend.instances.forEach((instance, index) => {
+                        const instanceDiv = document.createElement('div');
+                        instanceDiv.className = 'instance-item';
+                        instanceDiv.style.cssText = 'margin: 5px 0; padding: 8px; background: #f5f5f5; border-radius: 4px; font-size: 12px;';
+                        instanceDiv.innerHTML = `
+                            <strong>Instance ${index + 1}:</strong><br>
+                            PID: ${instance.pid} | Port: ${instance.port || 'unknown'}<br>
+                            <code style="font-size: 10px;">${instance.command}</code>
+                        `;
+                        backendInstances.appendChild(instanceDiv);
+                    });
+                } else {
+                    backendIndicator.className = 'status-indicator status-stopped';
+                    backendText.textContent = 'Stopped';
+                    backendInstances.style.display = 'none';
+                }
+                
+                // Update frontend status
+                const frontendIndicator = frontendStatus.querySelector('.status-indicator');
+                const frontendText = frontendStatus.querySelector('span:last-child');
+                if (currentConfig.status.frontend.running) {
+                    frontendIndicator.className = 'status-indicator status-running';
+                    const instanceCount = currentConfig.status.frontend.instances.length;
+                    frontendText.textContent = `${instanceCount} instance(s) running`;
+                    
+                    // Display all frontend instances
+                    frontendInstances.style.display = 'block';
+                    frontendInstances.innerHTML = '<h5>Running Instances:</h5>';
+                    currentConfig.status.frontend.instances.forEach((instance, index) => {
+                        const instanceDiv = document.createElement('div');
+                        instanceDiv.className = 'instance-item';
+                        instanceDiv.style.cssText = 'margin: 5px 0; padding: 8px; background: #f5f5f5; border-radius: 4px; font-size: 12px;';
+                        instanceDiv.innerHTML = `
+                            <strong>Instance ${index + 1}:</strong><br>
+                            PID: ${instance.pid} | Port: ${instance.port || 'unknown'}<br>
+                            <code style="font-size: 10px;">${instance.command}</code>
+                        `;
+                        frontendInstances.appendChild(instanceDiv);
+                    });
+                } else {
+                    frontendIndicator.className = 'status-indicator status-stopped';
+                    frontendText.textContent = 'Stopped';
+                    frontendInstances.style.display = 'none';
+                }
+            }
+        }
+        
+        // Save backend configuration
+        async function saveBackendConfig() {
+            showLoading();
+            try {
+                const config = {
+                    DATABASE_URL: document.getElementById('database-url').value,
+                    REDIS_URL: document.getElementById('redis-url').value,
+                    SECRET_KEY: document.getElementById('secret-key').value,
+                    ENVIRONMENT: document.getElementById('environment').value
+                };
+                
+                const response = await fetch('/api/config/backend', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(config)
+                });
+                
+                const result = await response.json();
+                if (result.success) {
+                    showAlert('Backend configuration saved successfully', 'success');
+                } else {
+                    showAlert('Failed to save backend configuration: ' + result.message, 'error');
+                }
+            } catch (error) {
+                showAlert('Error saving backend configuration: ' + error.message, 'error');
+            } finally {
+                hideLoading();
+            }
+        }
+        
+        // Save frontend configuration
+        async function saveFrontendConfig() {
+            showLoading();
+            try {
+                const frontendPort = document.getElementById('frontend-port').value;
+                const backendPort = document.getElementById('backend-port').value;
+                
+                const config = {
+                    NEXT_PUBLIC_FRONTEND_URL: `http://localhost:${frontendPort}`,
+                    NEXT_PUBLIC_BACKEND_URL: `http://localhost:${backendPort}`,
+                    NEXT_PUBLIC_WS_URL: `ws://localhost:${backendPort}`
+                };
+                
+                const response = await fetch('/api/config/frontend', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(config)
+                });
+                
+                const result = await response.json();
+                if (result.success) {
+                    showAlert('Frontend configuration saved successfully', 'success');
+                } else {
+                    showAlert('Failed to save frontend configuration: ' + result.message, 'error');
+                }
+            } catch (error) {
+                showAlert('Error saving frontend configuration: ' + error.message, 'error');
+            } finally {
+                hideLoading();
+            }
+        }
+        
+        // Test backend connections
+        async function testBackendConnections() {
+            showLoading();
+            try {
+                const response = await fetch('/api/test/backend');
+                const result = await response.json();
+                
+                if (result.success) {
+                    showAlert('Backend connections test passed', 'success');
+                } else {
+                    showAlert('Backend connections test failed: ' + result.message, 'error');
+                }
+            } catch (error) {
+                showAlert('Error testing backend connections: ' + error.message, 'error');
+            } finally {
+                hideLoading();
+            }
+        }
+        
+        // Test frontend connections
+        async function testFrontendConnections() {
+            showLoading();
+            try {
+                const response = await fetch('/api/test/frontend');
+                const result = await response.json();
+                
+                if (result.success) {
+                    showAlert('Frontend connections test passed', 'success');
+                } else {
+                    showAlert('Frontend connections test failed: ' + result.message, 'error');
+                }
+            } catch (error) {
+                showAlert('Error testing frontend connections: ' + error.message, 'error');
+            } finally {
+                hideLoading();
+            }
+        }
+        
+        // Test current database connection
+        async function testCurrentDatabaseConnection() {
+            showLoading();
+            try {
+                const response = await fetch('/api/test/database-simple');
+                const result = await response.json();
+                
+                if (result.success) {
+                    showAlert('Current database connection test passed: ' + result.message, 'success');
+                } else {
+                    showAlert('Current database connection test failed: ' + result.message, 'error');
+                }
+            } catch (error) {
+                showAlert('Error testing current database connection: ' + error.message, 'error');
+            } finally {
+                hideLoading();
+            }
+        }
+        
+        // Test database connection
+        async function testDatabaseConnection() {
+            showLoading();
+            try {
+                const dbConfig = {
+                    host: document.getElementById('db-host').value,
+                    port: document.getElementById('db-port').value,
+                    name: document.getElementById('db-name').value,
+                    user: document.getElementById('db-user').value,
+                    password: document.getElementById('db-password').value
+                };
+                
+                const response = await fetch('/api/test/database', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(dbConfig)
+                });
+                
+                const result = await response.json();
+                if (result.success) {
+                    showAlert('Database connection test passed', 'success');
+                } else {
+                    showAlert('Database connection test failed: ' + result.message, 'error');
+                }
+            } catch (error) {
+                showAlert('Error testing database connection: ' + error.message, 'error');
+            } finally {
+                hideLoading();
+            }
+        }
+        
+        // Restart service
+        async function restartService(service) {
+            showLoading();
+            try {
+                const response = await fetch(`/api/restart/${service}`, {
+                    method: 'POST'
+                });
+                
+                const result = await response.json();
+                if (result.success) {
+                    showAlert(`${service} restart initiated`, 'success');
+                    setTimeout(() => loadConfig(), 2000); // Refresh status after restart
+                } else {
+                    showAlert(`Failed to restart ${service}: ` + result.message, 'error');
+                }
+            } catch (error) {
+                showAlert(`Error restarting ${service}: ` + error.message, 'error');
+            } finally {
+                hideLoading();
+            }
+        }
+        
+        // Test service
+        async function testService(service) {
+            showLoading();
+            try {
+                const response = await fetch(`/api/test/${service}`);
+                const result = await response.json();
+                
+                if (result.success) {
+                    showAlert(`${service} service test passed`, 'success');
+                } else {
+                    showAlert(`${service} service test failed: ` + result.message, 'error');
+                }
+            } catch (error) {
+                showAlert(`Error testing ${service}: ` + error.message, 'error');
+            } finally {
+                hideLoading();
+            }
+        }
+        
+        // Create admin user
+        async function createAdminUser() {
+            showLoading();
+            try {
+                const adminData = {
+                    username: document.getElementById('admin-username').value,
+                    password: document.getElementById('admin-password').value,
+                    email: document.getElementById('admin-email').value
+                };
+                
+                const response = await fetch('/api/admin/create', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(adminData)
+                });
+                
+                const result = await response.json();
+                if (result.success) {
+                    showAlert('Admin user created successfully', 'success');
+                    // Clear form
+                    document.getElementById('admin-username').value = '';
+                    document.getElementById('admin-password').value = '';
+                    document.getElementById('admin-email').value = '';
+                } else {
+                    showAlert('Failed to create admin user: ' + result.message, 'error');
+                }
+            } catch (error) {
+                showAlert('Error creating admin user: ' + error.message, 'error');
+            } finally {
+                hideLoading();
+            }
+        }
+        
+        // Export configuration
+        function exportConfig() {
+            const dataStr = JSON.stringify(currentConfig, null, 2);
+            const dataBlob = new Blob([dataStr], {type: 'application/json'});
+            const url = URL.createObjectURL(dataBlob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = 'auto-jmp-config.json';
+            link.click();
+            URL.revokeObjectURL(url);
+            showAlert('Configuration exported successfully', 'success');
+        }
+        
+        // Reset configuration
+        async function resetConfig() {
+            if (!confirm('Are you sure you want to reset all configuration to defaults? This action cannot be undone.')) {
+                return;
+            }
+            
+            showLoading();
+            try {
+                const response = await fetch('/api/config/reset', {
+                    method: 'POST'
+                });
+                
+                const result = await response.json();
+                if (result.success) {
+                    showAlert('Configuration reset to defaults', 'success');
+                    loadConfig(); // Reload the default config
+                } else {
+                    showAlert('Failed to reset configuration: ' + result.message, 'error');
+                }
+            } catch (error) {
+                showAlert('Error resetting configuration: ' + error.message, 'error');
+            } finally {
+                hideLoading();
+            }
+        }
+        
+        // Load file paths
+        async function loadFilePaths() {
+            showLoading();
+            try {
+                const response = await fetch('/api/file-paths');
+                const result = await response.json();
+                
+                if (result.success) {
+                    let displayText = 'Configuration File Paths:\n\n';
+                    
+                    // File paths
+                    displayText += 'FILE PATHS:\n';
+                    displayText += '===========\n';
+                    for (const [name, path] of Object.entries(result.file_paths)) {
+                        displayText += `${name}: ${path}\n`;
+                    }
+                    
+                    displayText += '\nFILE STATUS:\n';
+                    displayText += '============\n';
+                    for (const [name, status] of Object.entries(result.file_status)) {
+                        const exists = status.exists ? '✅' : '❌';
+                        const readable = status.readable ? 'R' : '-';
+                        const writable = status.writable ? 'W' : '-';
+                        const size = status.size > 0 ? `${status.size} bytes` : '0 bytes';
+                        displayText += `${exists} ${name}: ${status.path}\n`;
+                        displayText += `   Permissions: ${readable}${writable} | Size: ${size}\n`;
+                    }
+                    
+                    document.getElementById('file-paths').textContent = displayText;
+                    showAlert('File paths loaded successfully', 'success');
+                } else {
+                    showAlert('Failed to load file paths: ' + result.message, 'error');
+                }
+            } catch (error) {
+                showAlert('Error loading file paths: ' + error.message, 'error');
+            } finally {
+                hideLoading();
+            }
+        }
+        
+        // Check PostgreSQL system
+        async function checkPostgreSQLSystem() {
+            const superuser = document.getElementById('pg-superuser').value;
+            const password = document.getElementById('pg-password').value;
+            const host = document.getElementById('pg-host').value;
+            const port = parseInt(document.getElementById('pg-port').value);
+            
+            if (!superuser || !password) {
+                showAlert('Please enter superuser credentials', 'error');
+                return;
+            }
+            
+            showLoading();
+            try {
+                const response = await fetch('/api/postgresql-system-check', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        superuser: superuser,
+                        password: password,
+                        host: host,
+                        port: port
+                    })
+                });
+                
+                const result = await response.json();
+                
+                if (result.success) {
+                    const results = result.results;
+                    let displayText = 'PostgreSQL System Check Results:\n\n';
+                    
+                    if (results.connection_successful) {
+                        displayText += '✅ CONNECTION SUCCESSFUL\n';
+                        displayText += '========================\n\n';
+                        
+                        // System Info
+                        displayText += 'SYSTEM INFORMATION:\n';
+                        displayText += '===================\n';
+                        displayText += `Version: ${results.system_info.version}\n`;
+                        displayText += `Current Database: ${results.system_info.current_database}\n`;
+                        displayText += `Current User: ${results.system_info.current_user}\n`;
+                        displayText += `Server Address: ${results.system_info.server_address}\n`;
+                        displayText += `Server Port: ${results.system_info.server_port}\n\n`;
+                        
+                        // Users
+                        displayText += 'USERS/ROLES:\n';
+                        displayText += '============\n';
+                        for (const user of results.users) {
+                            displayText += `User: ${user.username}\n`;
+                            displayText += `  Superuser: ${user.is_superuser ? 'Yes' : 'No'}\n`;
+                            displayText += `  Can Login: ${user.can_login ? 'Yes' : 'No'}\n`;
+                            displayText += `  Can Create DB: ${user.can_create_databases ? 'Yes' : 'No'}\n`;
+                            displayText += `  Can Create Roles: ${user.can_create_roles ? 'Yes' : 'No'}\n`;
+                            displayText += `  Connection Limit: ${user.connection_limit || 'Unlimited'}\n`;
+                            if (user.password_expires) {
+                                displayText += `  Password Expires: ${user.password_expires}\n`;
+                            }
+                            displayText += '\n';
+                        }
+                        
+                        // Databases
+                        displayText += 'DATABASES:\n';
+                        displayText += '==========\n';
+                        for (const db of results.databases) {
+                            displayText += `Database: ${db.database_name}\n`;
+                            displayText += `  Owner: ${db.owner}\n`;
+                            displayText += `  Size: ${db.size}\n`;
+                            displayText += `  Encoding: ${db.encoding}\n`;
+                            displayText += `  Collation: ${db.collation}\n`;
+                            displayText += `  Template: ${db.is_template ? 'Yes' : 'No'}\n`;
+                            displayText += `  Allows Connections: ${db.allows_connections ? 'Yes' : 'No'}\n`;
+                            displayText += `  Connection Limit: ${db.connection_limit || 'Unlimited'}\n`;
+                            displayText += '\n';
+                        }
+                        
+                        // Role Memberships
+                        if (results.roles.length > 0) {
+                            displayText += 'ROLE MEMBERSHIPS:\n';
+                            displayText += '=================\n';
+                            for (const role of results.roles) {
+                                displayText += `Role: ${role.role_name} → Member: ${role.member_name}\n`;
+                                if (role.admin_option) {
+                                    displayText += `  Admin Option: Yes\n`;
+                                }
+                                displayText += '\n';
+                            }
+                        }
+                        
+                        // Permissions
+                        if (Object.keys(results.permissions).length > 0) {
+                            displayText += 'DATABASE PERMISSIONS:\n';
+                            displayText += '====================\n';
+                            for (const [dbName, perms] of Object.entries(results.permissions)) {
+                                displayText += `Database: ${dbName}\n`;
+                                displayText += `  Can Connect: ${perms.can_connect ? 'Yes' : 'No'}\n`;
+                                displayText += `  Can Create: ${perms.can_create ? 'Yes' : 'No'}\n`;
+                                displayText += `  Can Create Temp: ${perms.can_create_temp ? 'Yes' : 'No'}\n`;
+                                displayText += '\n';
+                            }
+                        }
+                        
+                    } else {
+                        displayText += '❌ CONNECTION FAILED\n';
+                        displayText += '====================\n\n';
+                    }
+                    
+                    if (results.errors.length > 0) {
+                        displayText += 'ERRORS:\n';
+                        displayText += '=======\n';
+                        for (const error of results.errors) {
+                            displayText += `• ${error}\n`;
+                        }
+                    }
+                    
+                    document.getElementById('postgresql-results').textContent = displayText;
+                    document.getElementById('postgresql-results').style.display = 'block';
+                    showAlert('PostgreSQL system check completed successfully', 'success');
+                } else {
+                    showAlert('PostgreSQL system check failed: ' + result.message, 'error');
+                }
+            } catch (error) {
+                showAlert('Error checking PostgreSQL system: ' + error.message, 'error');
+            } finally {
+                hideLoading();
+            }
+        }
+        
+        // Load configuration summary
+        async function loadConfigSummary() {
+            showLoading();
+            try {
+                const response = await fetch('/api/config-summary');
+                const result = await response.json();
+                
+                if (result.success) {
+                    const summary = result.summary;
+                    let displayText = 'Configuration Summary:\n\n';
+                    
+                    // Key settings
+                    displayText += 'KEY SETTINGS:\n';
+                    displayText += '=============\n';
+                    for (const [key, value] of Object.entries(summary.key_settings)) {
+                        displayText += `${key}: ${value}\n`;
+                    }
+                    
+                    // Configuration sources
+                    displayText += '\nCONFIGURATION SOURCES:\n';
+                    displayText += '=====================\n';
+                    for (const [source, info] of Object.entries(summary.configuration_sources)) {
+                        const exists = info.exists ? '✅' : '❌';
+                        displayText += `${exists} ${source.toUpperCase()}:\n`;
+                        displayText += `   File: ${info.source_file}\n`;
+                        displayText += `   Variables: ${info.count} (${info.variables.join(', ')})\n`;
+                    }
+                    
+                    // Recommendations
+                    if (summary.recommendations.length > 0) {
+                        displayText += '\nRECOMMENDATIONS:\n';
+                        displayText += '================\n';
+                        summary.recommendations.forEach((rec, index) => {
+                            displayText += `${index + 1}. ${rec}\n`;
+                        });
+                    }
+                    
+                    document.getElementById('config-summary').textContent = displayText;
+                    showAlert('Configuration summary loaded successfully', 'success');
+                } else {
+                    showAlert('Failed to load configuration summary: ' + result.message, 'error');
+                }
+            } catch (error) {
+                showAlert('Error loading configuration summary: ' + error.message, 'error');
+            } finally {
+                hideLoading();
+            }
+        }
+        
+        // Load system information
+        async function loadSystemInfo() {
+            showLoading();
+            try {
+                const response = await fetch('/api/system-info');
+                const result = await response.json();
+                
+                if (result.success) {
+                    document.getElementById('system-info').textContent = JSON.stringify(result.system_info, null, 2);
+                    showAlert('System information loaded successfully', 'success');
+                } else {
+                    showAlert('Failed to load system information: ' + result.message, 'error');
+                }
+            } catch (error) {
+                showAlert('Error loading system information: ' + error.message, 'error');
+            } finally {
+                hideLoading();
+            }
+        }
+        
+        // Load network information
+        async function loadNetworkInfo() {
+            showLoading();
+            try {
+                const response = await fetch('/api/network-info');
+                const result = await response.json();
+                
+                if (result.success) {
+                    document.getElementById('network-info').textContent = JSON.stringify(result.network_info, null, 2);
+                    showAlert('Network information loaded successfully', 'success');
+                } else {
+                    showAlert('Failed to load network information: ' + result.message, 'error');
+                }
+            } catch (error) {
+                showAlert('Error loading network information: ' + error.message, 'error');
+            } finally {
+                hideLoading();
+            }
+        }
+        
+        // Test communication
+        async function testCommunication() {
+            showLoading();
+            try {
+                const response = await fetch('/api/communication-test');
+                const result = await response.json();
+                
+                if (result.success) {
+                    document.getElementById('communication-test').textContent = JSON.stringify(result.communication_test, null, 2);
+                    showAlert('Communication test completed', 'success');
+                } else {
+                    showAlert('Communication test failed: ' + result.message, 'error');
+                }
+            } catch (error) {
+                showAlert('Error running communication test: ' + error.message, 'error');
+            } finally {
+                hideLoading();
+            }
+        }
+        
+        // Check consistency
+        async function checkConsistency() {
+            showLoading();
+            try {
+                const response = await fetch('/api/consistency-check');
+                const result = await response.json();
+                
+                if (result.success) {
+                    document.getElementById('consistency-check').textContent = JSON.stringify(result.consistency_check, null, 2);
+                    showAlert('Consistency check completed', 'success');
+                } else {
+                    showAlert('Consistency check failed: ' + result.message, 'error');
+                }
+            } catch (error) {
+                showAlert('Error running consistency check: ' + error.message, 'error');
+            } finally {
+                hideLoading();
+            }
+        }
+        
+        // Run full diagnostics
+        async function runFullDiagnostics() {
+            showLoading();
+            try {
+                const response = await fetch('/api/diagnostics');
+                const result = await response.json();
+                
+                if (result.success) {
+                    document.getElementById('full-diagnostics').textContent = JSON.stringify(result.diagnostics, null, 2);
+                    showAlert('Full diagnostics completed', 'success');
+                } else {
+                    showAlert('Full diagnostics failed: ' + result.message, 'error');
+                }
+            } catch (error) {
+                showAlert('Error running full diagnostics: ' + error.message, 'error');
+            } finally {
+                hideLoading();
+            }
+        }
+        
+        // Load database user from backend configuration
+        async function loadDatabaseUser() {
+            try {
+                const response = await fetch('/api/get-database-user');
+                const result = await response.json();
+                
+                if (result.success) {
+                    document.getElementById('pg-superuser').value = result.database_user;
+                    document.getElementById('pg-host').value = result.database_host;
+                    document.getElementById('pg-port').value = result.database_port;
+                    
+                    // Update the help text
+                    const helpText = document.querySelector('#pg-superuser').nextElementSibling;
+                    if (helpText && helpText.tagName === 'SMALL') {
+                        helpText.textContent = `Your backend uses '${result.database_user}' as the database user`;
+                    }
+                }
+            } catch (error) {
+                console.log('Could not load database user from backend configuration');
+            }
+        }
+        
+        // Redis & Celery Health Check Functions
+        
+        // Test Redis connection
+        async function testRedisConnection() {
+            showLoading();
+            try {
+                const response = await fetch('/api/test/redis');
+                const result = await response.json();
+                
+                if (result.success) {
+                    showAlert('Redis connection test passed: ' + result.message, 'success');
+                } else {
+                    showAlert('Redis connection test failed: ' + result.message, 'error');
+                }
+            } catch (error) {
+                showAlert('Error testing Redis connection: ' + error.message, 'error');
+            } finally {
+                hideLoading();
+            }
+        }
+        
+        // Get Redis status
+        async function getRedisStatus() {
+            showLoading();
+            try {
+                const response = await fetch('/api/redis/status');
+                const result = await response.json();
+                
+                if (result.success) {
+                    const redisStatus = result.redis_status;
+                    const statusElement = document.getElementById('redis-status');
+                    const indicator = statusElement.querySelector('.status-indicator');
+                    const text = statusElement.querySelector('span:last-child');
+                    
+                    if (redisStatus.running) {
+                        indicator.className = 'status-indicator status-running';
+                        text.textContent = `Running v${redisStatus.version} | ${redisStatus.memory_usage} | ${redisStatus.connected_clients} clients`;
+                    } else {
+                        indicator.className = 'status-indicator status-stopped';
+                        text.textContent = 'Not running';
+                    }
+                    
+                    showAlert('Redis status loaded successfully', 'success');
+                } else {
+                    showAlert('Failed to get Redis status: ' + result.message, 'error');
+                }
+            } catch (error) {
+                showAlert('Error getting Redis status: ' + error.message, 'error');
+            } finally {
+                hideLoading();
+            }
+        }
+        
+        // Test Celery connection
+        async function testCeleryConnection() {
+            showLoading();
+            try {
+                const response = await fetch('/api/test/celery');
+                const result = await response.json();
+                
+                if (result.success) {
+                    showAlert('Celery connection test passed: ' + result.message, 'success');
+                } else {
+                    showAlert('Celery connection test failed: ' + result.message, 'error');
+                }
+            } catch (error) {
+                showAlert('Error testing Celery connection: ' + error.message, 'error');
+            } finally {
+                hideLoading();
+            }
+        }
+        
+        // Get Celery status
+        async function getCeleryStatus() {
+            showLoading();
+            try {
+                const response = await fetch('/api/celery/status');
+                const result = await response.json();
+                
+                if (result.success) {
+                    const celeryStatus = result.celery_status;
+                    const statusElement = document.getElementById('celery-status');
+                    const indicator = statusElement.querySelector('.status-indicator');
+                    const text = statusElement.querySelector('span:last-child');
+                    
+                    if (celeryStatus.workers_running) {
+                        indicator.className = 'status-indicator status-running';
+                        text.textContent = `Workers active | ${celeryStatus.active_tasks} active, ${celeryStatus.queued_tasks} queued, ${celeryStatus.completed_tasks} completed`;
+                    } else {
+                        indicator.className = 'status-indicator status-stopped';
+                        text.textContent = 'No workers running';
+                    }
+                    
+                    showAlert('Celery status loaded successfully', 'success');
+                } else {
+                    showAlert('Failed to get Celery status: ' + result.message, 'error');
+                }
+            } catch (error) {
+                showAlert('Error getting Celery status: ' + error.message, 'error');
+            } finally {
+                hideLoading();
+            }
+        }
+        
+        // Get Redis & Celery health
+        async function getRedisCeleryHealth() {
+            showLoading();
+            try {
+                const response = await fetch('/api/redis-celery/health');
+                const result = await response.json();
+                
+                if (result.success) {
+                    const health = result.health;
+                    let displayText = 'Redis & Celery Health Check Results:\n\n';
+                    
+                    // Overall status
+                    const statusEmoji = health.overall_status === 'healthy' ? '✅' : 
+                                      health.overall_status === 'degraded' ? '⚠️' : '❌';
+                    displayText += `${statusEmoji} OVERALL STATUS: ${health.overall_status.toUpperCase()}\n`;
+                    displayText += '=====================================\n\n';
+                    
+                    // Redis status
+                    displayText += 'REDIS STATUS:\n';
+                    displayText += '=============\n';
+                    const redis = health.redis;
+                    if (redis.running) {
+                        displayText += `✅ Redis is running\n`;
+                        displayText += `   Version: ${redis.version}\n`;
+                        displayText += `   Memory Usage: ${redis.memory_usage}\n`;
+                        displayText += `   Connected Clients: ${redis.connected_clients}\n`;
+                        displayText += `   Uptime: ${redis.uptime} seconds\n`;
+                        displayText += `   Keys Count: ${redis.keys_count}\n`;
+                    } else {
+                        displayText += `❌ Redis is not running\n`;
+                        if (redis.error) {
+                            displayText += `   Error: ${redis.error}\n`;
+                        }
+                    }
+                    displayText += '\n';
+                    
+                    // Celery status
+                    displayText += 'CELERY STATUS:\n';
+                    displayText += '==============\n';
+                    const celery = health.celery;
+                    if (celery.workers_running) {
+                        displayText += `✅ Celery workers are running\n`;
+                        displayText += `   Active Tasks: ${celery.active_tasks}\n`;
+                        displayText += `   Queued Tasks: ${celery.queued_tasks}\n`;
+                        displayText += `   Completed Tasks: ${celery.completed_tasks}\n`;
+                        displayText += `   Failed Tasks: ${celery.failed_tasks}\n`;
+                    } else {
+                        displayText += `❌ No Celery workers running\n`;
+                        if (celery.error) {
+                            displayText += `   Error: ${celery.error}\n`;
+                        }
+                    }
+                    displayText += '\n';
+                    
+                    // Recommendations
+                    if (health.recommendations.length > 0) {
+                        displayText += 'RECOMMENDATIONS:\n';
+                        displayText += '================\n';
+                        health.recommendations.forEach((rec, index) => {
+                            displayText += `${index + 1}. ${rec}\n`;
+                        });
+                    }
+                    
+                    document.getElementById('redis-celery-health').textContent = displayText;
+                    document.getElementById('redis-celery-health').style.display = 'block';
+                    showAlert('Redis & Celery health check completed', 'success');
+                } else {
+                    showAlert('Failed to get Redis & Celery health: ' + result.message, 'error');
+                }
+            } catch (error) {
+                showAlert('Error getting Redis & Celery health: ' + error.message, 'error');
+            } finally {
+                hideLoading();
+            }
+        }
+        
+        // Refresh Redis & Celery status
+        async function refreshRedisCeleryStatus() {
+            await Promise.all([
+                getRedisStatus(),
+                getCeleryStatus()
+            ]);
+        }
+        
+        // Save Redis & Celery configuration
+        async function saveRedisCeleryConfig() {
+            showLoading();
+            try {
+                const config = {
+                    REDIS_URL: document.getElementById('redis-url-config').value,
+                    CELERY_BROKER_URL: document.getElementById('celery-broker-url').value,
+                    CELERY_RESULT_BACKEND: document.getElementById('celery-result-backend').value
+                };
+                
+                const response = await fetch('/api/config/backend', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(config)
+                });
+                
+                const result = await response.json();
+                if (result.success) {
+                    showAlert('Redis & Celery configuration saved successfully', 'success');
+                } else {
+                    showAlert('Failed to save Redis & Celery configuration: ' + result.message, 'error');
+                }
+            } catch (error) {
+                showAlert('Error saving Redis & Celery configuration: ' + error.message, 'error');
+            } finally {
+                hideLoading();
+            }
+        }
+        
+        // Test Redis & Celery configuration
+        async function testRedisCeleryConfig() {
+            showLoading();
+            try {
+                await Promise.all([
+                    testRedisConnection(),
+                    testCeleryConnection()
+                ]);
+            } finally {
+                hideLoading();
+            }
+        }
+        
+        // Initialize the page
+        document.addEventListener('DOMContentLoaded', function() {
+            loadConfig();
+            loadDatabaseUser();
+        });
+    </script>
+</body>
+</html>

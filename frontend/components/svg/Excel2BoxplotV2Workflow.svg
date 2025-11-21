@@ -1,0 +1,146 @@
+<svg width="800" height="600" viewBox="0 0 800 600" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="headerGradient" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#059669;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#0D9488;stop-opacity:1" />
+    </linearGradient>
+    <linearGradient id="stepGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#F3F4F6;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#E5E7EB;stop-opacity:1" />
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="2" dy="2" stdDeviation="3" flood-color="#000000" flood-opacity="0.2"/>
+    </filter>
+  </defs>
+  
+  <!-- Background -->
+  <rect width="800" height="600" fill="#FAFAFA"/>
+  
+  <!-- Header -->
+  <rect x="0" y="0" width="800" height="80" fill="url(#headerGradient)"/>
+  <text x="400" y="50" text-anchor="middle" fill="white" font-family="Arial, sans-serif" font-size="24" font-weight="bold">
+    Excel to Boxplot V2 - Workflow
+  </text>
+  
+  <!-- Step 1: Upload -->
+  <g transform="translate(50, 120)">
+    <rect x="0" y="0" width="150" height="100" rx="10" fill="url(#stepGradient)" stroke="#D1D5DB" stroke-width="2" filter="url(#shadow)"/>
+    <text x="75" y="25" text-anchor="middle" fill="#374151" font-family="Arial, sans-serif" font-size="14" font-weight="bold">1. Upload Excel</text>
+    <rect x="20" y="35" width="110" height="50" rx="5" fill="#FEF3C7" stroke="#F59E0B" stroke-width="1"/>
+    <text x="75" y="55" text-anchor="middle" fill="#92400E" font-family="Arial, sans-serif" font-size="10">Excel File</text>
+    <text x="75" y="70" text-anchor="middle" fill="#92400E" font-family="Arial, sans-serif" font-size="10">(Meta + Data)</text>
+  </g>
+  
+  <!-- Arrow 1 -->
+  <path d="M 220 170 L 280 170" stroke="#6B7280" stroke-width="3" fill="none" marker-end="url(#arrowhead)"/>
+  
+  <!-- Step 2: Column Mapping -->
+  <g transform="translate(300, 120)">
+    <rect x="0" y="0" width="150" height="100" rx="10" fill="url(#stepGradient)" stroke="#D1D5DB" stroke-width="2" filter="url(#shadow)"/>
+    <text x="75" y="25" text-anchor="middle" fill="#374151" font-family="Arial, sans-serif" font-size="14" font-weight="bold">2. Column Mapping</text>
+    <rect x="20" y="35" width="110" height="50" rx="5" fill="#DBEAFE" stroke="#3B82F6" stroke-width="1"/>
+    <text x="75" y="50" text-anchor="middle" fill="#1E40AF" font-family="Arial, sans-serif" font-size="9">V2 → Internal</text>
+    <text x="75" y="65" text-anchor="middle" fill="#1E40AF" font-family="Arial, sans-serif" font-size="9">Format</text>
+    <text x="75" y="80" text-anchor="middle" fill="#1E40AF" font-family="Arial, sans-serif" font-size="9">Auto-mapping</text>
+  </g>
+  
+  <!-- Arrow 2 -->
+  <path d="M 470 170 L 530 170" stroke="#6B7280" stroke-width="3" fill="none" marker-end="url(#arrowhead)"/>
+  
+  <!-- Step 3: Select Stage -->
+  <g transform="translate(550, 120)">
+    <rect x="0" y="0" width="150" height="100" rx="10" fill="url(#stepGradient)" stroke="#D1D5DB" stroke-width="2" filter="url(#shadow)"/>
+    <text x="75" y="25" text-anchor="middle" fill="#374151" font-family="Arial, sans-serif" font-size="14" font-weight="bold">3. Select Stage</text>
+    <rect x="20" y="35" width="110" height="50" rx="5" fill="#D1FAE5" stroke="#10B981" stroke-width="1"/>
+    <text x="75" y="50" text-anchor="middle" fill="#065F46" font-family="Arial, sans-serif" font-size="9">Preferred:</text>
+    <text x="75" y="65" text-anchor="middle" fill="#065F46" font-family="Arial, sans-serif" font-size="9">"Stage"</text>
+    <text x="75" y="80" text-anchor="middle" fill="#065F46" font-family="Arial, sans-serif" font-size="9">Variable</text>
+  </g>
+  
+  <!-- Arrow 3 -->
+  <path d="M 400 250 L 400 290" stroke="#6B7280" stroke-width="3" fill="none" marker-end="url(#arrowhead)"/>
+  
+  <!-- Step 4: Validation -->
+  <g transform="translate(300, 310)">
+    <rect x="0" y="0" width="150" height="100" rx="10" fill="url(#stepGradient)" stroke="#D1D5DB" stroke-width="2" filter="url(#shadow)"/>
+    <text x="75" y="25" text-anchor="middle" fill="#374151" font-family="Arial, sans-serif" font-size="14" font-weight="bold">4. Validation</text>
+    <rect x="20" y="35" width="110" height="50" rx="5" fill="#F3E8FF" stroke="#8B5CF6" stroke-width="1"/>
+    <text x="75" y="50" text-anchor="middle" fill="#6B21A8" font-family="Arial, sans-serif" font-size="9">Structure</text>
+    <text x="75" y="65" text-anchor="middle" fill="#6B21A8" font-family="Arial, sans-serif" font-size="9">Metadata</text>
+    <text x="75" y="80" text-anchor="middle" fill="#6B21A8" font-family="Arial, sans-serif" font-size="9">Quality</text>
+  </g>
+  
+  <!-- Arrow 4 -->
+  <path d="M 220 360 L 280 360" stroke="#6B7280" stroke-width="3" fill="none" marker-end="url(#arrowhead)"/>
+  
+  <!-- Step 5: Generate Files -->
+  <g transform="translate(50, 310)">
+    <rect x="0" y="0" width="150" height="100" rx="10" fill="url(#stepGradient)" stroke="#D1D5DB" stroke-width="2" filter="url(#shadow)"/>
+    <text x="75" y="25" text-anchor="middle" fill="#374151" font-family="Arial, sans-serif" font-size="14" font-weight="bold">5. Generate Files</text>
+    <rect x="20" y="35" width="50" height="50" rx="5" fill="#FEF2F2" stroke="#EF4444" stroke-width="1"/>
+    <text x="45" y="55" text-anchor="middle" fill="#991B1B" font-family="Arial, sans-serif" font-size="9">CSV</text>
+    <rect x="80" y="35" width="50" height="50" rx="5" fill="#FEF2F2" stroke="#EF4444" stroke-width="1"/>
+    <text x="105" y="55" text-anchor="middle" fill="#991B1B" font-family="Arial, sans-serif" font-size="9">JSL</text>
+  </g>
+  
+  <!-- Arrow 5 -->
+  <path d="M 470 360 L 530 360" stroke="#6B7280" stroke-width="3" fill="none" marker-end="url(#arrowhead)"/>
+  
+  <!-- Step 6: Enhanced Analysis -->
+  <g transform="translate(550, 310)">
+    <rect x="0" y="0" width="150" height="100" rx="10" fill="url(#stepGradient)" stroke="#D1D5DB" stroke-width="2" filter="url(#shadow)"/>
+    <text x="75" y="25" text-anchor="middle" fill="#374151" font-family="Arial, sans-serif" font-size="14" font-weight="bold">6. Enhanced Analysis</text>
+    <rect x="20" y="35" width="110" height="50" rx="5" fill="#F0FDF4" stroke="#22C55E" stroke-width="1"/>
+    <text x="75" y="50" text-anchor="middle" fill="#166534" font-family="Arial, sans-serif" font-size="9">Boxplot</text>
+    <text x="75" y="65" text-anchor="middle" fill="#166534" font-family="Arial, sans-serif" font-size="9">Visualization</text>
+    <text x="75" y="80" text-anchor="middle" fill="#166534" font-family="Arial, sans-serif" font-size="9">V2 Features</text>
+  </g>
+  
+  <!-- Excel Structure Diagram -->
+  <g transform="translate(50, 450)">
+    <text x="0" y="0" fill="#374151" font-family="Arial, sans-serif" font-size="16" font-weight="bold">Excel File Structure (V2 Format):</text>
+    
+    <!-- Meta Sheet -->
+    <g transform="translate(0, 20)">
+      <rect x="0" y="0" width="200" height="120" rx="5" fill="#F9FAFB" stroke="#D1D5DB" stroke-width="1"/>
+      <text x="10" y="20" fill="#374151" font-family="Arial, sans-serif" font-size="12" font-weight="bold">Meta Sheet (V2)</text>
+      <text x="10" y="40" fill="#6B7280" font-family="Arial, sans-serif" font-size="10">• Y Variable</text>
+      <text x="10" y="55" fill="#6B7280" font-family="Arial, sans-serif" font-size="10">• DETAIL</text>
+      <text x="10" y="70" fill="#6B7280" font-family="Arial, sans-serif" font-size="10">• Target</text>
+      <text x="10" y="85" fill="#6B7280" font-family="Arial, sans-serif" font-size="10">• USL</text>
+      <text x="10" y="100" fill="#6B7280" font-family="Arial, sans-serif" font-size="10">• LSL</text>
+      <text x="10" y="115" fill="#6B7280" font-family="Arial, sans-serif" font-size="10">• Label</text>
+    </g>
+    
+    <!-- Data Sheet -->
+    <g transform="translate(250, 20)">
+      <rect x="0" y="0" width="200" height="120" rx="5" fill="#F9FAFB" stroke="#D1D5DB" stroke-width="1"/>
+      <text x="10" y="20" fill="#374151" font-family="Arial, sans-serif" font-size="12" font-weight="bold">Data Sheet</text>
+      <text x="10" y="40" fill="#6B7280" font-family="Arial, sans-serif" font-size="10">• FAI1, FAI2, FAI3...</text>
+      <text x="10" y="55" fill="#059669" font-family="Arial, sans-serif" font-size="10" font-weight="bold">• Stage (Preferred)</text>
+      <text x="10" y="70" fill="#6B7280" font-family="Arial, sans-serif" font-size="10">• Build</text>
+      <text x="10" y="85" fill="#6B7280" font-family="Arial, sans-serif" font-size="10">• Location</text>
+      <text x="10" y="100" fill="#6B7280" font-family="Arial, sans-serif" font-size="10">• Other categorical</text>
+      <text x="10" y="115" fill="#6B7280" font-family="Arial, sans-serif" font-size="10">• variables</text>
+    </g>
+    
+    <!-- Mapping Info -->
+    <g transform="translate(500, 20)">
+      <rect x="0" y="0" width="200" height="120" rx="5" fill="#F0F9FF" stroke="#0EA5E9" stroke-width="1"/>
+      <text x="10" y="20" fill="#374151" font-family="Arial, sans-serif" font-size="12" font-weight="bold">Auto-Mapping</text>
+      <text x="10" y="40" fill="#0369A1" font-family="Arial, sans-serif" font-size="10">Y Variable → test_name</text>
+      <text x="10" y="55" fill="#0369A1" font-family="Arial, sans-serif" font-size="10">DETAIL → description</text>
+      <text x="10" y="70" fill="#0369A1" font-family="Arial, sans-serif" font-size="10">Target → target</text>
+      <text x="10" y="85" fill="#0369A1" font-family="Arial, sans-serif" font-size="10">USL → usl</text>
+      <text x="10" y="100" fill="#0369A1" font-family="Arial, sans-serif" font-size="10">LSL → lsl</text>
+      <text x="10" y="115" fill="#0369A1" font-family="Arial, sans-serif" font-size="10">Label → main_level</text>
+    </g>
+  </g>
+  
+  <!-- Arrow marker definition -->
+  <defs>
+    <marker id="arrowhead" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#6B7280"/>
+    </marker>
+  </defs>
+</svg>
