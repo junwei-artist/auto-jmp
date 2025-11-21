@@ -212,7 +212,7 @@ export default function DuckDB2JMPGUI({
       } else if (catVarOrder.length === 0) {
         // If no order set yet, try to use saved order from config, otherwise use default
         const savedOrder = node.config?.cat_var_order || []
-        if (savedOrder.length > 0 && savedOrder.every(v => catVarUniqueValues.includes(v))) {
+        if (savedOrder.length > 0 && savedOrder.every((v: string) => catVarUniqueValues.includes(v))) {
           setCatVarOrder(savedOrder)
         } else {
           setCatVarOrder([...catVarUniqueValues])
@@ -460,17 +460,8 @@ export default function DuckDB2JMPGUI({
       refetchPairs()
       toast.success(`Conversion complete! Created ${data.total_pairs} pair(s) from ${data.tables_processed} table(s)`)
       if (data.pairs && data.pairs.length > 0) {
-        // Find the pair in the pairs list
-        const newPair = pairsData?.pairs?.find(p => p.pair_id === data.pairs[0].pair_id) || {
-          pair_id: data.pairs[0].pair_id,
-          table_name: data.pairs[0].table_name,
-          pair_folder: data.pairs[0].pair_folder,
-          csv_path: data.pairs[0].csv_path,
-          jsl_path: data.pairs[0].jsl_path,
-          csv_filename: data.pairs[0].csv_filename,
-          jsl_filename: data.pairs[0].jsl_filename,
-          metadata: data.pairs[0].metadata
-        }
+        // Use the pair from the response directly since it's already a complete JSLCSVPair
+        const newPair: JSLCSVPair = data.pairs[0]
         setSelectedPair(newPair)
         setViewMode('processed')
       }

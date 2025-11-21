@@ -53,7 +53,7 @@ fi
 CONFIG_FILE="frontend/.frontend-config"
 
 # Default ports
-DEFAULT_DEV_PORT=4800
+DEFAULT_DEV_PORT=4260
 DEFAULT_PROD_PORT=4801
 
 # Function to check if port is in use
@@ -202,7 +202,7 @@ if [ -z "$SERVER_IP" ]; then
 fi
 
 # Load backend port from config if available (for initial .env.local creation)
-backend_port_for_init=4750
+backend_port_for_init=4250
 if [ -f "../backend/.backend-config" ]; then
     config_backend_port_init=$(grep "^BACKEND_PORT=" ../backend/.backend-config | cut -d'=' -f2)
     if [ ! -z "$config_backend_port_init" ] && [ "$config_backend_port_init" -gt 0 ] 2>/dev/null; then
@@ -221,7 +221,7 @@ EOF
     print_warning "Created configuration with server IP: $SERVER_IP"
 else
     # Load backend port from config if available, otherwise use default
-    backend_port=4750
+    backend_port=4250
     if [ -f "../backend/.backend-config" ]; then
         config_backend_port=$(grep "^BACKEND_PORT=" ../backend/.backend-config | cut -d'=' -f2)
         if [ ! -z "$config_backend_port" ] && [ "$config_backend_port" -gt 0 ] 2>/dev/null; then

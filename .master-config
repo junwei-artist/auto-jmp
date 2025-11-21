@@ -7,12 +7,12 @@
 # =============================================================================
 
 # Backend Configuration
-BACKEND_PORT=4750
+BACKEND_PORT=4250
 BACKEND_HOST=0.0.0.0
 BACKEND_RELOAD=true
 
 # Frontend Configuration  
-FRONTEND_DEV_PORT=4850
+FRONTEND_DEV_PORT=4260
 FRONTEND_PROD_PORT=4851
 FRONTEND_HOST=0.0.0.0
 

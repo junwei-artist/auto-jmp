@@ -54,7 +54,7 @@ fi
 CONFIG_FILE="backend/.backend-config"
 
 # Default port
-DEFAULT_PORT=4700
+DEFAULT_PORT=4250
 
 # Function to check if port is in use
 check_port() {

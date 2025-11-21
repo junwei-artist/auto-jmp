@@ -758,7 +758,7 @@ export default function OutlierRemoverDuckDBGUI({
     // Support both new format (sheets/columns) and legacy format (sheet/column)
     let selectedSheets: string[] = []
     let selectedColumns: Record<string, string[]> = {}
-    let applyToAllColumns: Record<string, boolean> = {}
+    const applyToAllColumns: Record<string, boolean> = {}
     
     if (rule.sheets && rule.sheets.length > 0) {
       // New format
@@ -1317,7 +1317,7 @@ export default function OutlierRemoverDuckDBGUI({
               return null // Mark for removal
             }
             
-            let updatedRule = { ...rule }
+            const updatedRule = { ...rule }
             
             // Apply user's updates if any (regardless of selection - user explicitly changed it)
             const userUpdate = ruleUpdates.get(index)
@@ -1456,9 +1456,9 @@ export default function OutlierRemoverDuckDBGUI({
   }
   
   // Build currentTable from tableData (for viewing) or tablesListData (for listing)
-  const currentTable = selectedTable && tableData?.table_name === selectedTable
+  const currentTable = selectedTable && tableData?.table_name === selectedTable && tableData.table_name
     ? {
-        name: tableData?.table_name!,
+        name: tableData.table_name,
         columns: tableData?.columns || [],
         data: tableData?.data || [], // Use only current page data
         total_rows: tableData?.total_rows || 0,

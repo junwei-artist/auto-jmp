@@ -1489,8 +1489,8 @@ export default function NodeEditorView({
       return
     }
 
-    const module = modules.find(m => m.module_type === node.module_type)
-    const displayName = node.checkpoint_name || module?.display_name || node.module_type
+    const moduleConfig = modules.find(m => m.module_type === node.module_type)
+    const displayName = node.checkpoint_name || moduleConfig?.display_name || node.module_type
     console.log('Node found:', { nodeId, displayName, moduleType: node.module_type })
 
     if (socketType === 'output') {
@@ -1809,7 +1809,7 @@ export default function NodeEditorView({
       )
     }
 
-    const module = modules.find(m => m.module_type === selectedNodeData.module_type)
+    const moduleConfig = modules.find(m => m.module_type === selectedNodeData.module_type)
     const currentNodeContext: NodeContext | null = nodeContext || selectedNodeContext || null
 
     // Get upstream and downstream node names
@@ -1863,7 +1863,7 @@ export default function NodeEditorView({
           <div className="flex-1">
             {/* Module Name - Always shown */}
             <div className="text-xs font-semibold text-gray-800">
-              {module?.display_name || selectedNodeData.module_type}
+              {moduleConfig?.display_name || selectedNodeData.module_type}
             </div>
             {/* Checkpoint Name - User-defined, editable */}
             {editingCheckpointName ? (
@@ -2675,7 +2675,7 @@ export default function NodeEditorView({
         {/* Node List */}
         <div className="flex-1 overflow-y-auto p-3 space-y-2">
           {orderedNodes.map((node, index) => {
-            const module = modules.find(m => m.module_type === node.module_type)
+            const moduleConfig = modules.find(m => m.module_type === node.module_type)
             const isSelected = selectedNode === node.id
             const nodeColor = getNodeColor(node.module_type)
             const isDragging = draggedNodeId === node.id
@@ -2735,7 +2735,7 @@ export default function NodeEditorView({
                         <p className={`text-[10px] font-medium truncate ${
                           isSelected ? 'text-gray-800' : 'text-gray-700'
                         }`}>
-                          {module?.display_name || node.module_type}
+                          {moduleConfig?.display_name || node.module_type}
                         </p>
                         {/* Checkpoint Name - User-defined, editable */}
                         {editingNodeCheckpointName === node.id ? (
@@ -3139,7 +3139,7 @@ export default function NodeEditorView({
             transition={{ duration: 0.5 }}
           >
           {nodes.map((node) => {
-            const module = modules.find(m => m.module_type === node.module_type)
+            const moduleConfig = modules.find(m => m.module_type === node.module_type)
             const isSelected = selectedNode === node.id
             const isDragging = dragState?.nodeId === node.id
             const nodeColor = getNodeColor(node.module_type)
@@ -3192,7 +3192,7 @@ export default function NodeEditorView({
                       <h3 className={`text-[10px] font-semibold truncate ${
                         isSelected ? 'text-gray-800' : 'text-gray-700'
                       }`}>
-                        {module?.display_name || node.module_type}
+                        {moduleConfig?.display_name || node.module_type}
                       </h3>
                       {/* Checkpoint Name - User-defined, editable */}
                       {editingNodeCheckpointName === node.id ? (
@@ -3240,7 +3240,7 @@ export default function NodeEditorView({
                     {/* Node Content - Center - Embedded Interface or Description */}
                     <div className="flex-1 flex items-center justify-center gap-2 text-[9px] text-gray-400 mb-1.5">
                       {renderEmbeddedInterface(node) || (
-                        <span className="truncate text-center">{module?.description || node.module_type}</span>
+                        <span className="truncate text-center">{moduleConfig?.description || node.module_type}</span>
                       )}
                     </div>
 

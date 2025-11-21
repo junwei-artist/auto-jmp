@@ -166,14 +166,14 @@ export default function OutlierRemoverGUI({
 
   // File upload mutation with progress tracking
   const uploadMutation = useMutation({
-    mutationFn: async (file: File) => {
+    mutationFn: async (file: File): Promise<{ storage_key: string; filename: string }> => {
       const formData = new FormData()
       formData.append('file', file)
       
       setUploadProgress({ progress: 0, message: 'Uploading...', status: 'uploading' })
       
       const xhr = new XMLHttpRequest()
-      return new Promise((resolve, reject) => {
+      return new Promise<{ storage_key: string; filename: string }>((resolve, reject) => {
         xhr.upload.addEventListener('progress', (e) => {
           if (e.lengthComputable) {
             const progress = Math.round((e.loaded / e.total) * 100)
@@ -225,7 +225,7 @@ export default function OutlierRemoverGUI({
         xhr.send(formData)
       })
     },
-    onSuccess: (data) => {
+    onSuccess: (data: { storage_key: string; filename: string }) => {
       setUploadedFileKey(data.storage_key)
       setFilename(data.filename)
       if (onConfigUpdate) {
@@ -868,7 +868,7 @@ export default function OutlierRemoverGUI({
               return null // Mark for removal
             }
             
-            let updatedRule = { ...rule }
+            const updatedRule = { ...rule }
             
             // Apply user's updates if any (regardless of selection - user explicitly changed it)
             const userUpdate = ruleUpdates.get(index)
