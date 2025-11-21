@@ -74,7 +74,7 @@ class JMPRunner:
                 self.base_task_dir = Path(settings.TASKS_DIRECTORY)
             except ImportError:
                 # Fallback if settings not available (e.g., when running standalone)
-                self.base_task_dir = Path("/Users/lytech/Documents/service/auto-jmp/backend/tasks")
+                self.base_task_dir = Path("/Users/lstech/service/files/tasks")
         
         self.max_wait_time = max_wait_time
         self.jmp_start_delay = jmp_start_delay

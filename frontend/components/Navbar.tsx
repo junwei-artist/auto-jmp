@@ -43,6 +43,13 @@ export default function Navbar() {
   const [isThemeMenuOpen, setIsThemeMenuOpen] = useState(false)
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false)
 
+  // Hide navbar on standalone module pages (e.g., /modules/duckdb2jmp)
+  // but show it on the modules list page (/modules)
+  const isStandaloneModulePage = pathname?.startsWith('/modules/') && pathname !== '/modules'
+  if (isStandaloneModulePage) {
+    return null
+  }
+
   const handleLogout = () => {
     logout()
     toast.success('Logged out successfully')

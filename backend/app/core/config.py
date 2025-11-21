@@ -88,11 +88,11 @@ class Settings(BaseSettings):
     ALLOW_PUBLIC_MEDIA_ACCESS: bool = os.getenv("ALLOW_PUBLIC_MEDIA_ACCESS", "false").lower() == "true"  # Allow direct access to images/attachments without auth
     
     # File Storage Configuration
-    UPLOADS_DIR: str = os.getenv("UPLOADS_DIR", "/Users/lytech/Documents/service/auto-jmp/backend/uploads")  # Hardcoded uploads directory path
+    UPLOADS_DIR: str = os.getenv("UPLOADS_DIR", "/Users/lstech/service/files")  # Base directory for all file storage
     
     # JMP Configuration
     JMP_TASK_DIR: str = os.getenv("JMP_TASK_DIR", "/tmp/jmp_tasks")
-    TASKS_DIRECTORY: str = os.getenv("TASKS_DIRECTORY", "/Users/lytech/Documents/service/auto-jmp/backend/tasks")  # Hardcoded tasks directory path
+    TASKS_DIRECTORY: str = os.getenv("TASKS_DIRECTORY", "/Users/lstech/service/files/tasks")  # Tasks directory path
     JMP_MAX_WAIT_TIME: int = 300  # 5 minutes
     JMP_START_DELAY: int = 4  # seconds
     

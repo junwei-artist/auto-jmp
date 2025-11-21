@@ -340,9 +340,42 @@ fi
 
 # Verify virtual environment is using Python 3.11
 print_status "Verifying virtual environment Python version..."
-VENV_PYTHON_VERSION=$(venv/bin/python --version 2>&1 | cut -d' ' -f2)
-VENV_MAJOR=$(echo $VENV_PYTHON_VERSION | cut -d'.' -f1)
-VENV_MINOR=$(echo $VENV_PYTHON_VERSION | cut -d'.' -f2)
+if [ ! -f "venv/bin/python" ]; then
+    print_error "Virtual environment Python executable not found at venv/bin/python"
+    print_status "Please run './install-backend.command' to recreate the virtual environment"
+    exit 1
+fi
+
+if [ ! -x "venv/bin/python" ]; then
+    print_error "Virtual environment Python executable is not executable"
+    print_status "Please run './install-backend.command' to recreate the virtual environment"
+    exit 1
+fi
+
+VENV_PYTHON_VERSION=$(venv/bin/python --version 2>&1)
+if [ $? -ne 0 ]; then
+    print_error "Failed to get Python version from virtual environment"
+    print_status "Please run './install-backend.command' to recreate the virtual environment"
+    exit 1
+fi
+
+# Extract version number (format: "Python X.Y.Z" or "Python X.Y")
+VENV_PYTHON_VERSION=$(echo "$VENV_PYTHON_VERSION" | grep -oE '[0-9]+\.[0-9]+(\.[0-9]+)?' | head -1)
+if [ -z "$VENV_PYTHON_VERSION" ]; then
+    print_error "Could not parse Python version from virtual environment"
+    print_status "Please run './install-backend.command' to recreate the virtual environment"
+    exit 1
+fi
+
+VENV_MAJOR=$(echo "$VENV_PYTHON_VERSION" | cut -d'.' -f1)
+VENV_MINOR=$(echo "$VENV_PYTHON_VERSION" | cut -d'.' -f2)
+
+# Validate that we got numeric values
+if ! [[ "$VENV_MAJOR" =~ ^[0-9]+$ ]] || ! [[ "$VENV_MINOR" =~ ^[0-9]+$ ]]; then
+    print_error "Invalid Python version format from virtual environment: $VENV_PYTHON_VERSION"
+    print_status "Please run './install-backend.command' to recreate the virtual environment"
+    exit 1
+fi
 
 if [ "$VENV_MAJOR" -eq 3 ] && [ "$VENV_MINOR" -eq 11 ]; then
     print_success "Virtual environment using Python $VENV_PYTHON_VERSION"
@@ -522,9 +555,30 @@ fi
 echo ""
 
 # Verify we're using the correct Python version in the activated environment
-ACTIVATED_PYTHON_VERSION=$(python --version 2>&1 | cut -d' ' -f2)
-ACTIVATED_MAJOR=$(echo $ACTIVATED_PYTHON_VERSION | cut -d'.' -f1)
-ACTIVATED_MINOR=$(echo $ACTIVATED_PYTHON_VERSION | cut -d'.' -f2)
+ACTIVATED_PYTHON_VERSION_OUTPUT=$(python --version 2>&1)
+if [ $? -ne 0 ]; then
+    print_error "Failed to get Python version from activated environment"
+    print_status "Please run './install-backend.command' to recreate the virtual environment"
+    exit 1
+fi
+
+# Extract version number (format: "Python X.Y.Z" or "Python X.Y")
+ACTIVATED_PYTHON_VERSION=$(echo "$ACTIVATED_PYTHON_VERSION_OUTPUT" | grep -oE '[0-9]+\.[0-9]+(\.[0-9]+)?' | head -1)
+if [ -z "$ACTIVATED_PYTHON_VERSION" ]; then
+    print_error "Could not parse Python version from activated environment"
+    print_status "Please run './install-backend.command' to recreate the virtual environment"
+    exit 1
+fi
+
+ACTIVATED_MAJOR=$(echo "$ACTIVATED_PYTHON_VERSION" | cut -d'.' -f1)
+ACTIVATED_MINOR=$(echo "$ACTIVATED_PYTHON_VERSION" | cut -d'.' -f2)
+
+# Validate that we got numeric values
+if ! [[ "$ACTIVATED_MAJOR" =~ ^[0-9]+$ ]] || ! [[ "$ACTIVATED_MINOR" =~ ^[0-9]+$ ]]; then
+    print_error "Invalid Python version format from activated environment: $ACTIVATED_PYTHON_VERSION"
+    print_status "Please run './install-backend.command' to recreate the virtual environment"
+    exit 1
+fi
 
 if [ "$ACTIVATED_MAJOR" -eq 3 ] && [ "$ACTIVATED_MINOR" -eq 11 ]; then
     print_success "Activated environment using Python $ACTIVATED_PYTHON_VERSION"

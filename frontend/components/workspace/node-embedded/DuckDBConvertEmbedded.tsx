@@ -21,28 +21,7 @@ export default function DuckDBConvertEmbedded({
   workflowId,
   onConfigUpdate
 }: DuckDBConvertEmbeddedProps) {
-  const [wizardOpen, setWizardOpen] = useState(false)
-
-  return (
-    <>
-      <Button
-        variant="outline"
-        size="sm"
-        onClick={() => setWizardOpen(true)}
-        className="flex items-center space-x-2"
-      >
-        <Database className="h-4 w-4" />
-        <span>Configure</span>
-      </Button>
-      
-      <DuckDBConvertWizard
-        node={node}
-        workflowId={workflowId}
-        open={wizardOpen}
-        onOpenChange={setWizardOpen}
-        onConfigUpdate={onConfigUpdate}
-      />
-    </>
-  )
+  // Button is rendered in parent component, just return null
+  return null
 }
 

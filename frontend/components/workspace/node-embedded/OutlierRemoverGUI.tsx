@@ -6,12 +6,13 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Checkbox } from '@/components/ui/checkbox'
-import { FileSpreadsheet, Upload, Play, Plus, X, Download, FolderOpen, Save, Search, FileText } from 'lucide-react'
+import { FileSpreadsheet, Upload, Play, Plus, X, Download, FolderOpen, Save, Search, FileText, Trash2 } from 'lucide-react'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { apiClient } from '@/lib/api'
 import toast from 'react-hot-toast'
+import { Progress } from '@/components/ui/progress'
 
 interface OutlierRemoverGUIProps {
   node: {
@@ -69,6 +70,9 @@ export default function OutlierRemoverGUI({
   const [searchQuery, setSearchQuery] = useState<string>('')
   const [showInputFileDialog, setShowInputFileDialog] = useState(false)
   const [loadAllRows, setLoadAllRows] = useState<Record<string, boolean>>({}) // Track which sheets have all rows loaded
+  
+  // Progress tracking
+  const [uploadProgress, setUploadProgress] = useState<{ progress: number; message: string; status: string } | null>(null)
   const [validationAlert, setValidationAlert] = useState<{
     open: boolean
     invalidRules: Array<{
@@ -160,16 +164,66 @@ export default function OutlierRemoverGUI({
     staleTime: 0 // Set to 0 to always refetch when switching versions
   })
 
-  // File upload mutation
+  // File upload mutation with progress tracking
   const uploadMutation = useMutation({
     mutationFn: async (file: File) => {
       const formData = new FormData()
       formData.append('file', file)
       
-      return apiClient.post<{
-        storage_key: string
-        filename: string
-      }>(`/v1/workflows/${workflowId}/nodes/${node.id}/upload`, formData)
+      setUploadProgress({ progress: 0, message: 'Uploading...', status: 'uploading' })
+      
+      const xhr = new XMLHttpRequest()
+      return new Promise((resolve, reject) => {
+        xhr.upload.addEventListener('progress', (e) => {
+          if (e.lengthComputable) {
+            const progress = Math.round((e.loaded / e.total) * 100)
+            setUploadProgress({ progress, message: `Uploading... ${progress}%`, status: 'uploading' })
+          }
+        })
+        
+        xhr.addEventListener('load', () => {
+          if (xhr.status === 200 || xhr.status === 201) {
+            setUploadProgress({ progress: 100, message: 'Upload complete', status: 'completed' })
+            setTimeout(() => setUploadProgress(null), 2000)
+            try {
+              const response = JSON.parse(xhr.responseText)
+              resolve(response)
+            } catch (e) {
+              // If response is not JSON, create a response object
+              resolve({ storage_key: xhr.responseText, filename: file.name })
+            }
+          } else {
+            setUploadProgress(null)
+            let errorMessage = 'Upload failed'
+            try {
+              const errorData = JSON.parse(xhr.responseText)
+              errorMessage = errorData.detail || errorData.message || errorMessage
+            } catch (e) {
+              errorMessage = xhr.statusText || errorMessage
+            }
+            reject(new Error(errorMessage))
+          }
+        })
+        
+        xhr.addEventListener('error', () => {
+          setUploadProgress(null)
+          reject(new Error('Network error during upload'))
+        })
+        
+        xhr.addEventListener('abort', () => {
+          setUploadProgress(null)
+          reject(new Error('Upload cancelled'))
+        })
+        
+        const token = localStorage.getItem('access_token')
+        // Use the same URL format as apiClient (without /api prefix since it's added by the proxy)
+        xhr.open('POST', `/api/v1/workflows/${workflowId}/nodes/${node.id}/upload`)
+        if (token) {
+          xhr.setRequestHeader('Authorization', `Bearer ${token}`)
+        }
+        // Don't set Content-Type - browser will set it automatically with boundary for FormData
+        xhr.send(formData)
+      })
     },
     onSuccess: (data) => {
       setUploadedFileKey(data.storage_key)
@@ -364,6 +418,39 @@ export default function OutlierRemoverGUI({
       toast.success(`Switched to file: ${originalFilename}`)
     } catch (error: any) {
       toast.error(`Failed to switch file: ${error.message || 'Unknown error'}`)
+    }
+  }
+
+  // Delete file mutation
+  const deleteFileMutation = useMutation({
+    mutationFn: async (filePath: string) => {
+      await apiClient.delete(`/v1/workflows/${workflowId}/nodes/${node.id}/files/${filePath}`)
+    },
+    onSuccess: () => {
+      toast.success('File deleted successfully')
+      // Refresh file list
+      refetchInputFiles()
+      // If the deleted file was the current one, clear it
+      if (uploadedFileKey && inputFilesData?.folders?.input) {
+        const deletedFile = inputFilesData.folders.input.find(f => f.path === uploadedFileKey)
+        if (deletedFile) {
+          setUploadedFileKey(null)
+          setSelectedSheet('')
+          setSearchQuery('')
+          setViewVersion('original')
+          setSelectedColumns({})
+        }
+      }
+    },
+    onError: (error: any) => {
+      toast.error(`Failed to delete file: ${error.message || 'Unknown error'}`)
+    }
+  })
+
+  const handleDeleteFile = (e: React.MouseEvent, file: { path: string; name: string }) => {
+    e.stopPropagation() // Prevent triggering file selection
+    if (confirm(`Are you sure you want to delete "${file.name}"? This action cannot be undone.`)) {
+      deleteFileMutation.mutate(file.path)
     }
   }
 
@@ -923,7 +1010,7 @@ export default function OutlierRemoverGUI({
   const currentSheet = excelData?.sheets.find(s => s.name === selectedSheet)
 
   return (
-    <div className="h-screen flex flex-col bg-gray-50">
+    <div className={`${isStandalone ? 'h-full' : 'h-screen'} flex flex-col bg-gray-50`}>
       {/* Top Menu Bar */}
       <div className="bg-white border-b border-gray-200 px-4 py-2 flex items-center justify-between">
         <div className="flex items-center space-x-2">
@@ -1303,7 +1390,7 @@ export default function OutlierRemoverGUI({
               {/* Table */}
               <div className="flex-1 overflow-auto p-4">
                 {currentSheet ? (
-                  <div className="border border-gray-200 rounded-lg overflow-hidden">
+                  <div className="border border-gray-200 rounded-lg overflow-x-auto">
                     {/* Load All Rows Button */}
                     {!loadAllRows[selectedSheet] && currentSheet.total_rows > currentSheet.displayed_rows && (
                       <div className="bg-gray-50 px-4 py-2 border-b border-gray-200 flex items-center justify-between">
@@ -1321,7 +1408,7 @@ export default function OutlierRemoverGUI({
                         </Button>
                       </div>
                     )}
-                    <table className="w-full text-sm border-collapse">
+                    <table className="min-w-full text-sm border-collapse">
                       <thead className="bg-gray-50 sticky top-0">
                         <tr>
                           {currentSheet.columns.map((col, colIdx) => (
@@ -1426,7 +1513,13 @@ export default function OutlierRemoverGUI({
       </div>
 
       {/* Input File Selection Dialog */}
-      <Dialog open={showInputFileDialog} onOpenChange={setShowInputFileDialog}>
+      <Dialog open={showInputFileDialog} onOpenChange={(open) => {
+        // Prevent closing dialog during upload
+        if (!open && uploadProgress && uploadProgress.status === 'uploading') {
+          return
+        }
+        setShowInputFileDialog(open)
+      }}>
         <DialogContent className="max-w-3xl max-h-[80vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Select Input File</DialogTitle>
@@ -1439,52 +1532,107 @@ export default function OutlierRemoverGUI({
               variant="outline"
               onClick={() => fileInputRef.current?.click()}
               className="w-full"
+              disabled={uploadProgress?.status === 'uploading'}
             >
               <Upload className="h-4 w-4 mr-2" />
               Upload New File
             </Button>
+            {uploadProgress && uploadProgress.status === 'uploading' && (
+              <div className="p-4 bg-blue-50 rounded-lg border border-blue-200">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-sm font-medium text-blue-900">Uploading file...</span>
+                  <span className="text-sm text-blue-700">{uploadProgress.progress}%</span>
+                </div>
+                <Progress value={uploadProgress.progress} className="h-2" />
+                <p className="text-xs text-blue-600 mt-2">{uploadProgress.message}</p>
+              </div>
+            )}
             {inputFilesData?.folders?.input && inputFilesData.folders.input.length > 0 ? (
               <div className="space-y-2">
                 <h3 className="text-sm font-semibold">Existing Input Files:</h3>
                 <div className="space-y-2 max-h-96 overflow-y-auto">
                   {inputFilesData.folders.input.map((file) => (
-                    <button
+                    <div
                       key={file.name}
-                      onClick={() => handleSelectInputFile(file)}
-                      className={`w-full text-left px-4 py-3 rounded-lg border hover:bg-gray-50 transition-all ${
+                      className={`relative w-full px-4 py-3 rounded-lg border hover:bg-gray-50 transition-all ${
                         file.path === uploadedFileKey ? 'bg-indigo-50 border-indigo-200' : 'border-gray-200'
                       }`}
                     >
-                      <div className="flex items-start space-x-3">
-                        <FileSpreadsheet className="h-5 w-5 text-gray-400 mt-0.5" />
-                        <div className="flex-1">
-                          {file.metadata ? (
-                            <>
-                              <div className="font-medium text-gray-900">{file.metadata.original_filename}</div>
-                              <div className="text-xs text-gray-500 mt-1 space-y-0.5">
-                                <div>Type: {file.metadata.file_type}</div>
-                                <div>Uploaded: {new Date(file.metadata.uploaded_time).toLocaleString()}</div>
-                                <div>Size: {(file.metadata.file_size / 1024).toFixed(2)} KB</div>
-                                <div>UUID: {file.metadata.uuid_filename}</div>
-                              </div>
-                            </>
-                          ) : (
-                            <>
-                              <div className="font-medium text-gray-900">{file.name}</div>
-                              <div className="text-xs text-gray-500 mt-1">
-                                Size: {(file.size / 1024).toFixed(2)} KB
-                              </div>
-                            </>
-                          )}
+                      <button
+                        onClick={() => handleSelectInputFile(file)}
+                        className="w-full text-left pr-8"
+                      >
+                        <div className="flex items-start space-x-3">
+                          <FileSpreadsheet className="h-5 w-5 text-gray-400 mt-0.5" />
+                          <div className="flex-1">
+                            {file.metadata ? (
+                              <>
+                                <div className="font-medium text-gray-900">{file.metadata.original_filename}</div>
+                                <div className="text-xs text-gray-500 mt-1 space-y-0.5">
+                                  <div>Type: {file.metadata.file_type}</div>
+                                  <div>Uploaded: {new Date(file.metadata.uploaded_time).toLocaleString()}</div>
+                                  <div>Size: {(file.metadata.file_size / 1024).toFixed(2)} KB</div>
+                                  <div>UUID: {file.metadata.uuid_filename}</div>
+                                </div>
+                              </>
+                            ) : (
+                              <>
+                                <div className="font-medium text-gray-900">{file.name}</div>
+                                <div className="text-xs text-gray-500 mt-1">
+                                  Size: {(file.size / 1024).toFixed(2)} KB
+                                </div>
+                              </>
+                            )}
+                          </div>
                         </div>
-                      </div>
-                    </button>
+                      </button>
+                      <button
+                        onClick={(e) => handleDeleteFile(e, file)}
+                        className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
+                        title="Delete file"
+                        disabled={deleteFileMutation.isPending}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    </div>
                   ))}
                 </div>
               </div>
             ) : (
               <p className="text-sm text-gray-500 text-center py-4">No input files found. Upload a file to get started.</p>
             )}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Upload Progress Dialog */}
+      <Dialog 
+        open={!!uploadProgress && uploadProgress.status === 'uploading'} 
+        onOpenChange={() => {
+          // Prevent closing during upload
+          if (uploadProgress?.status === 'uploading') {
+            return
+          }
+        }}
+      >
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Uploading File</DialogTitle>
+            <DialogDescription>
+              Please wait while your file is being uploaded. This may take a while for large files.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-gray-600">Progress</span>
+                <span className="font-medium text-gray-900">{uploadProgress?.progress || 0}%</span>
+              </div>
+              <Progress value={uploadProgress?.progress || 0} className="h-3" />
+            </div>
+            <div className="text-center">
+              <p className="text-sm text-gray-600">{uploadProgress?.message || 'Uploading...'}</p>
+            </div>
           </div>
         </DialogContent>
       </Dialog>

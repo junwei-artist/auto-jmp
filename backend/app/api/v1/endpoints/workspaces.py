@@ -240,6 +240,26 @@ class NodeResponse(BaseModel):
         from_attributes = True
 
 
+class NodeWithWorkflowResponse(BaseModel):
+    """Response model for nodes with their workflow information"""
+    id: str
+    workflow_id: str
+    workflow_name: str
+    workflow_description: Optional[str] = None
+    module_type: str
+    module_id: str
+    checkpoint_name: Optional[str] = None
+    position_x: int
+    position_y: int
+    config: Optional[dict]
+    state: Optional[dict]
+    workflow_updated_at: Optional[str] = None
+    created_at: Optional[str] = None
+    
+    class Config:
+        from_attributes = True
+
+
 class ConnectionCreate(BaseModel):
     source_node_id: str
     target_node_id: str
@@ -790,12 +810,16 @@ async def list_all_workflows(
     db: AsyncSession = Depends(get_db),
     current_user: Optional[AppUser] = Depends(get_current_user_optional)
 ):
-    """List all workflows (across all workspaces)"""
+    """List workflows created by the authenticated user"""
+    if not current_user:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authentication required")
+
     try:
         result = await db.execute(
-            select(Workflow).options(
-                selectinload(Workflow.workspaces)
-            ).order_by(Workflow.created_at.desc())
+            select(Workflow)
+            .options(selectinload(Workflow.workspaces))
+            .where(Workflow.created_by == current_user.id)
+            .order_by(Workflow.created_at.desc())
         )
         workflows = result.scalars().all()
         
@@ -803,11 +827,6 @@ async def list_all_workflows(
         response_list = []
         for wf in workflows:
             try:
-                # Get first workspace ID if any
-                workspace_id = None
-                if wf.workspaces and len(wf.workspaces) > 0:
-                    workspace_id = str(wf.workspaces[0].id)
-                
                 # Get folder path
                 folder_path_value = getattr(wf, 'folder_path', None)
                 if not folder_path_value:
@@ -892,13 +911,31 @@ async def update_workflow(
     if not workflow:
         raise HTTPException(status_code=404, detail="Workflow not found")
     
-    # Check if user has access through any workspace the workflow belongs to
+    # Check access: user must be owner of at least one workspace the workflow belongs to
+    # If workflow has no workspaces (independent), allow access
     has_access = False
-    if workflow.workspaces:
+    if workflow.workspaces and len(workflow.workspaces) > 0:
         for workspace in workflow.workspaces:
             if workspace.owner_id == current_user.id:
                 has_access = True
                 break
+            else:
+                # Check if user is a workspace member with EDIT or OWNER access
+                member_result = await db.execute(
+                    select(WorkspaceMember).where(
+                        and_(
+                            WorkspaceMember.workspace_id == workspace.id,
+                            WorkspaceMember.user_id == current_user.id
+                        )
+                    )
+                )
+                member = member_result.scalar_one_or_none()
+                if member and member.access_level in [WorkspaceAccessLevel.EDIT, WorkspaceAccessLevel.OWNER]:
+                    has_access = True
+                    break
+    else:
+        # Workflow has no workspaces (independent workflow) - allow access
+        has_access = True
     
     if not has_access:
         raise HTTPException(status_code=403, detail="Access denied")
@@ -1320,6 +1357,123 @@ async def list_workflows_by_module(
     except Exception as e:
         import traceback
         print(f"Error listing workflows by module: {str(e)}\n{traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+
+
+@router.get("/nodes/by-module/{module_type}", response_model=List[NodeWithWorkflowResponse])
+async def list_nodes_by_module(
+    module_type: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: Optional[AppUser] = Depends(get_current_user_optional)
+):
+    """List all workflow nodes of a specific module type with their workflow information"""
+    try:
+        # Get current_user_id early to avoid lazy loading issues
+        current_user_id = None
+        if current_user:
+            try:
+                current_user_id = str(current_user.id)
+            except Exception:
+                current_user_id = None
+        
+        # Query nodes with their workflows, ordered by created_at descending (latest first)
+        result = await db.execute(
+            select(WorkflowNode, Workflow)
+            .join(Workflow, WorkflowNode.workflow_id == Workflow.id)
+            .where(WorkflowNode.module_type == module_type)
+            .order_by(WorkflowNode.created_at.desc())
+            .options(
+                selectinload(Workflow.workspaces)
+            )
+        )
+        nodes_with_workflows = result.all()
+        
+        # Filter nodes based on workflow access
+        accessible_nodes = []
+        
+        # Load checkpoint names from workflow JSON files
+        checkpoint_names = {}
+        for node, workflow in nodes_with_workflows:
+            workflow_id_str = str(workflow.id)
+            if workflow_id_str not in checkpoint_names:
+                checkpoint_names[workflow_id_str] = {}
+                try:
+                    workflow_json = local_storage.load_workflow_json(workflow_id_str)
+                    if workflow_json and isinstance(workflow_json, dict):
+                        nodes_list = workflow_json.get('nodes', [])
+                        for n in nodes_list:
+                            node_id = n.get('id')
+                            if node_id:
+                                checkpoint_names[workflow_id_str][node_id] = n.get('checkpoint_name')
+                except Exception:
+                    pass
+        
+        for node, workflow in nodes_with_workflows:
+            has_access = False
+            
+            # Check if user created this workflow
+            workflow_created_by = None
+            if hasattr(workflow, '__dict__'):
+                workflow_created_by = workflow.__dict__.get('created_by', None)
+            
+            if current_user_id and workflow_created_by:
+                if str(workflow_created_by) == current_user_id:
+                    has_access = True
+            elif workflow.workspaces and len(workflow.workspaces) > 0:
+                # Workflow belongs to workspaces - check access
+                for workspace in workflow.workspaces:
+                    workspace_owner_id = getattr(workspace, 'owner_id', None)
+                    if current_user_id and workspace_owner_id and str(workspace_owner_id) == current_user_id:
+                        has_access = True
+                        break
+                    elif getattr(workspace, 'is_public', False):
+                        has_access = True
+                        break
+                    elif current_user_id:
+                        member_result = await db.execute(
+                            select(WorkspaceMember).where(
+                                and_(
+                                    WorkspaceMember.workspace_id == workspace.id,
+                                    WorkspaceMember.user_id == uuid.UUID(current_user_id)
+                                )
+                            )
+                        )
+                        member = member_result.scalar_one_or_none()
+                        if member:
+                            has_access = True
+                            break
+            else:
+                # Workflow has no workspaces (independent) - allow access if user created it or if no user (public)
+                if not current_user_id or (workflow_created_by and str(workflow_created_by) == current_user_id):
+                    has_access = True
+            
+            if has_access:
+                node_id_str = str(node.id)
+                workflow_id_str = str(workflow.id)
+                checkpoint_name = checkpoint_names.get(workflow_id_str, {}).get(node_id_str)
+                
+                accessible_nodes.append(
+                    NodeWithWorkflowResponse(
+                        id=node_id_str,
+                        workflow_id=workflow_id_str,
+                        workflow_name=workflow.name,
+                        workflow_description=workflow.description,
+                        module_type=node.module_type,
+                        module_id=node.module_id,
+                        checkpoint_name=checkpoint_name,
+                        position_x=node.position_x,
+                        position_y=node.position_y,
+                        config=node.config,
+                        state=node.state,
+                        workflow_updated_at=workflow.updated_at.isoformat() if workflow.updated_at else None,
+                        created_at=node.created_at.isoformat() if node.created_at else None
+                    )
+                )
+        
+        return accessible_nodes
+    except Exception as e:
+        import traceback
+        print(f"Error listing nodes by module: {str(e)}\n{traceback.format_exc()}")
         raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
 
@@ -2226,17 +2380,28 @@ async def upload_node_file(
     # Validate file type - check if node module type requires specific file types
     # For file_uploader module, allow all file types (validation is done in the module)
     # For other modules like excel_to_numeric, validate Excel files
+    # For outlier_remover_duckdb, validate DuckDB files
     node_module_type = node.module_type if hasattr(node, 'module_type') else None
     if node_module_type != 'file_uploader':
-        # For non-file-uploader modules, validate Excel files only
-        if not file.filename or not file.filename.lower().endswith(('.xlsx', '.xls')):
-            raise HTTPException(status_code=400, detail=f"Only Excel files (.xlsx, .xls) are allowed for module type '{node_module_type}'. Use file_uploader module for other file types.")
+        if node_module_type == 'outlier_remover_duckdb' or node_module_type == 'duckdb2jmp':
+            # For DuckDB modules, validate DuckDB files only
+            if not file.filename or not file.filename.lower().endswith('.duckdb'):
+                raise HTTPException(status_code=400, detail=f"Only DuckDB files (.duckdb) are allowed for module type '{node_module_type}'.")
+        else:
+            # For other non-file-uploader modules, validate Excel files only
+            if not file.filename or not file.filename.lower().endswith(('.xlsx', '.xls')):
+                raise HTTPException(status_code=400, detail=f"Only Excel files (.xlsx, .xls) are allowed for module type '{node_module_type}'. Use file_uploader module for other file types.")
     
     # Read file content
     content = await file.read()
     
-    # Check file size (50MB max)
-    max_size = 50 * 1024 * 1024
+    # Check file size (500MB max for DuckDB modules, 200MB for duckdb_convert, 50MB for others)
+    if node_module_type == 'outlier_remover_duckdb' or node_module_type == 'duckdb2jmp':
+        max_size = 500 * 1024 * 1024
+    elif node_module_type == 'duckdb_convert':
+        max_size = 200 * 1024 * 1024
+    else:
+        max_size = 50 * 1024 * 1024
     if len(content) > max_size:
         file_size_mb = len(content) / (1024 * 1024)
         max_size_mb = max_size / (1024 * 1024)
@@ -2293,7 +2458,7 @@ async def upload_node_file(
     
     # Read Excel file to get available sheets (only for Excel-based modules)
     available_sheets = []
-    if node_module_type != 'file_uploader':
+    if node_module_type != 'file_uploader' and node_module_type != 'outlier_remover_duckdb' and node_module_type != 'duckdb2jmp':
         try:
             excel_file = io.BytesIO(content)
             xl_file = pd.ExcelFile(excel_file, engine='openpyxl')
@@ -2422,6 +2587,7 @@ async def upload_workflow_node_file(
         # Validate file type - check if node module type requires specific file types
         # For file_uploader module, allow all file types (validation is done in the module)
         # For other modules like excel_to_numeric, validate Excel files
+        # For outlier_remover_duckdb, validate DuckDB files
         node_module_type = getattr(node, 'module_type', None)
         if not node_module_type:
             raise HTTPException(
@@ -2436,14 +2602,19 @@ async def upload_workflow_node_file(
         print(f"DEBUG: Node module_type: {node_module_type}, filename: {file.filename}, content_type: {getattr(file, 'content_type', 'unknown')}")
         
         if node_module_type != 'file_uploader':
-            # For non-file-uploader modules, validate Excel files only
-            if not file.filename:
-                raise HTTPException(status_code=400, detail="No filename provided")
-            if not file.filename.lower().endswith(('.xlsx', '.xls')):
-                raise HTTPException(
-                    status_code=400, 
-                    detail=f"Only Excel files (.xlsx, .xls) are allowed for module type '{node_module_type}'. Use file_uploader module for other file types. Received file: {file.filename}"
-                )
+            if node_module_type == 'outlier_remover_duckdb' or node_module_type == 'duckdb2jmp':
+                # For DuckDB modules, validate DuckDB files only
+                if not file.filename or not file.filename.lower().endswith('.duckdb'):
+                    raise HTTPException(status_code=400, detail=f"Only DuckDB files (.duckdb) are allowed for module type '{node_module_type}'. Received file: {file.filename}")
+            else:
+                # For other non-file-uploader modules, validate Excel files only
+                if not file.filename:
+                    raise HTTPException(status_code=400, detail="No filename provided")
+                if not file.filename.lower().endswith(('.xlsx', '.xls')):
+                    raise HTTPException(
+                        status_code=400, 
+                        detail=f"Only Excel files (.xlsx, .xls) are allowed for module type '{node_module_type}'. Use file_uploader module for other file types. Received file: {file.filename}"
+                    )
         
         # Read file content
         try:
@@ -2457,8 +2628,13 @@ async def upload_workflow_node_file(
         if len(content) == 0:
             raise HTTPException(status_code=400, detail="Uploaded file is empty")
         
-        # Check file size (50MB max)
-        max_size = 50 * 1024 * 1024
+        # Check file size (500MB max for DuckDB modules, 200MB for duckdb_convert, 50MB for others)
+        if node_module_type == 'outlier_remover_duckdb' or node_module_type == 'duckdb2jmp':
+            max_size = 500 * 1024 * 1024
+        elif node_module_type == 'duckdb_convert':
+            max_size = 200 * 1024 * 1024
+        else:
+            max_size = 50 * 1024 * 1024
         if len(content) > max_size:
             file_size_mb = len(content) / (1024 * 1024)
             max_size_mb = max_size / (1024 * 1024)
@@ -2530,7 +2706,7 @@ async def upload_workflow_node_file(
         
         # Read Excel file to get available sheets (only for Excel-based modules)
         available_sheets = []
-        if node_module_type != 'file_uploader':
+        if node_module_type != 'file_uploader' and node_module_type != 'outlier_remover_duckdb' and node_module_type != 'duckdb2jmp':
             try:
                 # Reset file pointer if needed
                 excel_file = io.BytesIO(content)
@@ -2843,6 +3019,128 @@ async def clear_node_files(
         raise HTTPException(status_code=500, detail=f"Error clearing node files: {str(e)}")
 
 
+# Delete single file endpoint
+@router.delete("/workflows/{workflow_id}/nodes/{node_id}/files/{file_path:path}")
+async def delete_node_file(
+    workflow_id: str,
+    node_id: str,
+    file_path: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: Optional[AppUser] = Depends(get_current_user)
+):
+    """Delete a single file from a node's folder (input, wip, or output)."""
+    try:
+        # Check workflow exists
+        workflow_result = await db.execute(
+            select(Workflow).where(Workflow.id == uuid.UUID(workflow_id))
+        )
+        workflow = workflow_result.scalar_one_or_none()
+        
+        if not workflow:
+            raise HTTPException(status_code=404, detail="Workflow not found")
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=f"Invalid workflow ID format: {str(e)}")
+    except Exception as e:
+        import traceback
+        print(f"Error checking workflow: {str(e)}\n{traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail=f"Error checking workflow: {str(e)}")
+    
+    # Check access
+    has_access = False
+    try:
+        workflow_result_with_workspaces = await db.execute(
+            select(Workflow).options(
+                selectinload(Workflow.workspaces)
+            ).where(Workflow.id == uuid.UUID(workflow_id))
+        )
+        workflow_with_workspaces = workflow_result_with_workspaces.scalar_one_or_none()
+        
+        if workflow_with_workspaces:
+            # Check if user has access through workspaces
+            if workflow_with_workspaces.workspaces:
+                for workspace in workflow_with_workspaces.workspaces:
+                    workspace_result = await db.execute(
+                        select(Workspace).where(Workspace.id == workspace.id)
+                    )
+                    ws = workspace_result.scalar_one_or_none()
+                    if ws and current_user:
+                        # Check if user is owner or has access
+                        if ws.owner_id == current_user.id:
+                            has_access = True
+                            break
+                        # Check workspace members
+                        members_result = await db.execute(
+                            select(WorkspaceMember).where(
+                                WorkspaceMember.workspace_id == ws.id,
+                                WorkspaceMember.user_id == current_user.id
+                            )
+                        )
+                        if members_result.scalar_one_or_none():
+                            has_access = True
+                            break
+            else:
+                # If workflow has no workspaces, allow access (workflow can be standalone)
+                has_access = True
+    except Exception as e:
+        import traceback
+        print(f"Error checking access: {str(e)}\n{traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail=f"Error checking access: {str(e)}")
+    
+    if not has_access:
+        raise HTTPException(status_code=403, detail="Access denied")
+    
+    # Check node exists
+    try:
+        node_result = await db.execute(
+            select(WorkflowNode).where(WorkflowNode.id == uuid.UUID(node_id))
+        )
+        node = node_result.scalar_one_or_none()
+        
+        if not node or str(node.workflow_id) != workflow_id:
+            raise HTTPException(status_code=404, detail="Node not found")
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=f"Invalid node ID format: {str(e)}")
+    except Exception as e:
+        import traceback
+        print(f"Error checking node: {str(e)}\n{traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail=f"Error checking node: {str(e)}")
+    
+    # Delete the file
+    try:
+        node_path = local_storage.get_workflow_node_path(workflow_id, node_id)
+        
+        # Construct full file path - file_path should be relative to node folder (e.g., "input/filename.duckdb")
+        full_file_path = node_path / file_path
+        
+        # Security check: ensure the file is within the node folder
+        try:
+            full_file_path.resolve().relative_to(node_path.resolve())
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid file path: file must be within node folder")
+        
+        if not full_file_path.exists():
+            raise HTTPException(status_code=404, detail="File not found")
+        
+        if not full_file_path.is_file():
+            raise HTTPException(status_code=400, detail="Path is not a file")
+        
+        # Delete the file
+        full_file_path.unlink()
+        
+        return {
+            "workflow_id": workflow_id,
+            "node_id": node_id,
+            "file_path": file_path,
+            "deleted": True
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        import traceback
+        print(f"Error deleting file: {str(e)}\n{traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail=f"Error deleting file: {str(e)}")
+
+
 # Execute single node endpoint
 @router.post("/workflows/{workflow_id}/nodes/{node_id}/execute")
 async def execute_node(
@@ -3096,6 +3394,32 @@ async def execute_duckdb_node(
         duckdb_input_path.mkdir(parents=True, exist_ok=True)
         duckdb_output_path.mkdir(parents=True, exist_ok=True)
         
+        # Send initial progress via WebSocket
+        try:
+            await publish_workflow_update(workflow_id, {
+                "type": "node_conversion_progress",
+                "workflow_id": workflow_id,
+                "node_id": node_id,
+                "status": "processing",
+                "progress": 0,
+                "message": "Starting conversion..."
+            })
+        except Exception as e:
+            print(f"Warning: Could not publish WebSocket progress update: {e}")
+        
+        # Send progress update
+        try:
+            await publish_workflow_update(workflow_id, {
+                "type": "node_conversion_progress",
+                "workflow_id": workflow_id,
+                "node_id": node_id,
+                "status": "processing",
+                "progress": 5,
+                "message": "Collecting input files..."
+            })
+        except Exception as e:
+            print(f"Warning: Could not publish WebSocket progress update: {e}")
+        
         # Get all input connections to this node
         connections_result = await db.execute(
             select(WorkflowConnection).where(
@@ -3109,6 +3433,17 @@ async def execute_duckdb_node(
         
         # Collect files from input nodes' output folders
         collected_files = []
+        try:
+            await publish_workflow_update(workflow_id, {
+                "type": "node_conversion_progress",
+                "workflow_id": workflow_id,
+                "node_id": node_id,
+                "status": "processing",
+                "progress": 10,
+                "message": "Collecting files from input nodes..."
+            })
+        except Exception as e:
+            print(f"Warning: Could not publish WebSocket progress update: {e}")
         for conn in connections:
             source_node_id = str(conn.source_node_id)
             source_node_path = local_storage.get_workflow_node_path(workflow_id, source_node_id)
@@ -3131,21 +3466,75 @@ async def execute_duckdb_node(
         db_filename = f"excel2duckdb_{timestamp}.duckdb"
         db_path = duckdb_output_path / db_filename
         
+        try:
+            await publish_workflow_update(workflow_id, {
+                "type": "node_conversion_progress",
+                "workflow_id": workflow_id,
+                "node_id": node_id,
+                "status": "processing",
+                "progress": 15,
+                "message": "Scanning input folder..."
+            })
+        except Exception as e:
+            print(f"Warning: Could not publish WebSocket progress update: {e}")
+        
         # Convert Excel files to DuckDB
         converted_tables = []
         errors = []
         
         # Also check for files already in the input folder (not just from upstream nodes)
         # This handles cases where files were uploaded directly to the DuckDB node
+        # Also collect metadata from input files
+        input_files_metadata = []
         if duckdb_input_path.exists() and duckdb_input_path.is_dir():
             for file_path in duckdb_input_path.iterdir():
-                if file_path.is_file() and file_path.name not in [f["filename"] for f in collected_files]:
-                    # File already exists in input folder, add to collected_files
-                    collected_files.append({
-                        "filename": file_path.name,
-                        "source_node": "local",
-                        "size": file_path.stat().st_size
-                    })
+                if file_path.is_file() and not file_path.name.endswith('_metadata.json'):
+                    # Check if file is already in collected_files
+                    if file_path.name not in [f["filename"] for f in collected_files]:
+                        # File already exists in input folder, add to collected_files
+                        collected_files.append({
+                            "filename": file_path.name,
+                            "source_node": "local",
+                            "size": file_path.stat().st_size
+                        })
+                    
+                    # Try to get metadata for this input file
+                    file_metadata = {
+                        "uuid_filename": file_path.name,
+                        "file_path": str(file_path.relative_to(local_storage.base_path)),
+                        "file_size": file_path.stat().st_size
+                    }
+                    
+                    # Look for metadata JSON file
+                    metadata_file = duckdb_input_path / f"{file_path.stem}_metadata.json"
+                    if metadata_file.exists():
+                        try:
+                            with open(metadata_file, 'r', encoding='utf-8') as f:
+                                input_metadata = json.load(f)
+                                file_metadata["original_filename"] = input_metadata.get("original_filename", file_path.name)
+                                file_metadata["file_type"] = input_metadata.get("file_type", "unknown")
+                                file_metadata["uploaded_time"] = input_metadata.get("uploaded_time")
+                                file_metadata["input_node_id"] = input_metadata.get("node_id")
+                                file_metadata["input_workflow_id"] = input_metadata.get("workflow_id")
+                        except Exception as e:
+                            print(f"Error reading metadata file {metadata_file}: {str(e)}")
+                            file_metadata["original_filename"] = file_path.name
+                    else:
+                        file_metadata["original_filename"] = file_path.name
+                    
+                    input_files_metadata.append(file_metadata)
+        
+        try:
+            await publish_workflow_update(workflow_id, {
+                "type": "node_conversion_progress",
+                "workflow_id": workflow_id,
+                "node_id": node_id,
+                "status": "processing",
+                "progress": 20,
+                "message": "Connecting to DuckDB..."
+            })
+        except Exception as e:
+            print(f"Warning: Could not publish WebSocket progress update: {e}")
         
         # Connect to DuckDB database
         conn = duckdb.connect(str(db_path))
@@ -3153,6 +3542,9 @@ async def execute_duckdb_node(
         try:
             # Check if there are any files to process
             input_files = list(duckdb_input_path.iterdir()) if duckdb_input_path.exists() else []
+            # Filter out metadata files
+            input_files = [f for f in input_files if f.is_file() and not f.name.endswith('_metadata.json')]
+            
             if not input_files:
                 return {
                     "workflow_id": workflow_id,
@@ -3168,10 +3560,37 @@ async def execute_duckdb_node(
                     }
                 }
             
-            for file_path in input_files:
+            total_files = len(input_files)
+            try:
+                await publish_workflow_update(workflow_id, {
+                    "type": "node_conversion_progress",
+                    "workflow_id": workflow_id,
+                    "node_id": node_id,
+                    "status": "processing",
+                    "progress": 25,
+                    "message": f"Processing {total_files} file(s)..."
+                })
+            except Exception as e:
+                print(f"Warning: Could not publish WebSocket progress update: {e}")
+            
+            for file_idx, file_path in enumerate(input_files):
                 if file_path.is_file():
                     filename = file_path.name
                     file_ext = file_path.suffix.lower()
+                    
+                    # Update progress for current file
+                    file_progress = 25 + int((file_idx / total_files) * 70) if total_files > 0 else 25
+                    try:
+                        await publish_workflow_update(workflow_id, {
+                            "type": "node_conversion_progress",
+                            "workflow_id": workflow_id,
+                            "node_id": node_id,
+                            "status": "processing",
+                            "progress": file_progress,
+                            "message": f"Processing file {file_idx + 1}/{total_files}: {filename}..."
+                        })
+                    except Exception as e:
+                        print(f"Warning: Could not publish WebSocket progress update: {e}")
                     
                     try:
                         if file_ext in ['.xlsx', '.xls']:
@@ -3181,8 +3600,22 @@ async def execute_duckdb_node(
                             
                             print(f"Found {len(excel_file.sheet_names)} sheet(s) in {filename}: {excel_file.sheet_names}")
                             
+                            total_sheets = len(excel_file.sheet_names)
                             # Read all sheets
-                            for sheet_name in excel_file.sheet_names:
+                            for sheet_idx, sheet_name in enumerate(excel_file.sheet_names):
+                                # Update progress for current sheet
+                                sheet_progress = file_progress + int(((sheet_idx + 1) / total_sheets) * (70 / total_files)) if total_sheets > 0 else file_progress
+                                try:
+                                    await publish_workflow_update(workflow_id, {
+                                        "type": "node_conversion_progress",
+                                        "workflow_id": workflow_id,
+                                        "node_id": node_id,
+                                        "status": "processing",
+                                        "progress": min(sheet_progress, 95),
+                                        "message": f"Processing {filename} - Sheet {sheet_idx + 1}/{total_sheets}: {sheet_name}..."
+                                    })
+                                except Exception as e:
+                                    print(f"Warning: Could not publish WebSocket progress update: {e}")
                                 try:
                                     df = pd.read_excel(excel_file, sheet_name=sheet_name)
                                     print(f"Read sheet '{sheet_name}' with {len(df)} rows and {len(df.columns)} columns")
@@ -3268,6 +3701,64 @@ async def execute_duckdb_node(
         finally:
             conn.close()
         
+        try:
+            await publish_workflow_update(workflow_id, {
+                "type": "node_conversion_progress",
+                "workflow_id": workflow_id,
+                "node_id": node_id,
+                "status": "processing",
+                "progress": 95,
+                "message": "Creating metadata file..."
+            })
+        except Exception as e:
+            print(f"Warning: Could not publish WebSocket progress update: {e}")
+        
+        # Create metadata JSON file for the output DuckDB file
+        try:
+            output_metadata = {
+                "output_filename": db_filename,
+                "original_db_filename": db_filename,
+                "file_type": "duckdb",
+                "created_time": datetime.now(timezone.utc).isoformat(),
+                "workflow_id": workflow_id,
+                "node_id": node_id,
+                "module_type": "duckdb_convert",
+                "db_path": str(db_path.relative_to(local_storage.base_path)),
+                "file_size": db_path.stat().st_size if db_path.exists() else 0,
+                "input_files": input_files_metadata,
+                "converted_tables": converted_tables,
+                "summary": {
+                    "files_collected": len(collected_files),
+                    "tables_created": len(converted_tables),
+                    "errors": len(errors)
+                },
+                "errors": errors if errors else None
+            }
+            
+            # Save metadata JSON file alongside the DuckDB file
+            metadata_filename = f"{db_filename}_metadata.json"
+            metadata_path = duckdb_output_path / metadata_filename
+            with open(metadata_path, 'w', encoding='utf-8') as f:
+                json.dump(output_metadata, f, indent=2)
+            print(f"Saved output metadata file: {metadata_path}")
+        except Exception as e:
+            import traceback
+            print(f"Error saving output metadata file: {str(e)}\n{traceback.format_exc()}")
+            # Don't fail the conversion if metadata save fails, just log it
+        
+        # Mark conversion as completed via WebSocket
+        try:
+            await publish_workflow_update(workflow_id, {
+                "type": "node_conversion_progress",
+                "workflow_id": workflow_id,
+                "node_id": node_id,
+                "status": "completed",
+                "progress": 100,
+                "message": "Conversion completed successfully"
+            })
+        except Exception as e:
+            print(f"Warning: Could not publish WebSocket progress update: {e}")
+        
         return {
             "workflow_id": workflow_id,
             "node_id": node_id,
@@ -3284,6 +3775,18 @@ async def execute_duckdb_node(
     except Exception as e:
         import traceback
         print(f"Error executing DuckDB node: {str(e)}\n{traceback.format_exc()}")
+        # Mark progress as error via WebSocket
+        try:
+            await publish_workflow_update(workflow_id, {
+                "type": "node_conversion_progress",
+                "workflow_id": workflow_id,
+                "node_id": node_id,
+                "status": "error",
+                "progress": 0,
+                "message": f"Error executing DuckDB node: {str(e)}"
+            })
+        except Exception as ws_error:
+            print(f"Warning: Could not publish WebSocket error update: {ws_error}")
         raise HTTPException(status_code=500, detail=f"Error executing DuckDB node: {str(e)}")
 
 
@@ -3314,8 +3817,8 @@ async def get_duckdb_tables(
         if not node or str(node.workflow_id) != workflow_id:
             raise HTTPException(status_code=404, detail="Node not found")
         
-        if node.module_type != "duckdb_convert":
-            raise HTTPException(status_code=400, detail="Node is not a DuckDB convert node")
+        if node.module_type not in ["duckdb_convert", "duckdb2jmp"]:
+            raise HTTPException(status_code=400, detail="Node is not a DuckDB module")
     except ValueError as e:
         raise HTTPException(status_code=400, detail=f"Invalid ID format: {str(e)}")
     except Exception as e:
@@ -3328,17 +3831,22 @@ async def get_duckdb_tables(
         import duckdb
         
         node_path = local_storage.get_workflow_node_path(workflow_id, node_id)
-        output_path = node_path / "output"
+        
+        # For duckdb_convert, look in output folder; for duckdb2jmp, look in input folder
+        if node.module_type == "duckdb2jmp":
+            search_path = node_path / "input"
+        else:
+            search_path = node_path / "output"
         
         # Find DuckDB file
-        db_files = list(output_path.glob("*.duckdb"))
+        db_files = list(search_path.glob("*.duckdb"))
         
         if not db_files:
             return {
                 "workflow_id": workflow_id,
                 "node_id": node_id,
                 "tables": [],
-                "message": "No DuckDB database file found"
+                "message": f"No DuckDB database file found in {search_path.name} folder"
             }
         
         # Use the first DuckDB file found
@@ -3389,6 +3897,118 @@ async def get_duckdb_tables(
         raise HTTPException(status_code=500, detail=f"Error getting DuckDB tables: {str(e)}")
 
 
+# Get DuckDB column unique values endpoint
+@router.get("/workflows/{workflow_id}/nodes/{node_id}/duckdb-column-unique-values")
+async def get_duckdb_column_unique_values(
+    workflow_id: str,
+    node_id: str,
+    column_name: str = Query(..., description="Name of the column to get unique values from"),
+    table_name: str = Query(..., description="Name of the table"),
+    db: AsyncSession = Depends(get_db),
+    current_user: Optional[AppUser] = Depends(get_current_user)
+):
+    """Get unique values from a DuckDB table column"""
+    try:
+        # Check workflow and node
+        workflow_result = await db.execute(
+            select(Workflow).where(Workflow.id == uuid.UUID(workflow_id))
+        )
+        workflow = workflow_result.scalar_one_or_none()
+        
+        if not workflow:
+            raise HTTPException(status_code=404, detail="Workflow not found")
+        
+        node_result = await db.execute(
+            select(WorkflowNode).where(WorkflowNode.id == uuid.UUID(node_id))
+        )
+        node = node_result.scalar_one_or_none()
+        
+        if not node or str(node.workflow_id) != workflow_id:
+            raise HTTPException(status_code=404, detail="Node not found")
+        
+        if node.module_type not in ["duckdb_convert", "duckdb2jmp"]:
+            raise HTTPException(status_code=400, detail="Node is not a DuckDB module")
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=f"Invalid ID format: {str(e)}")
+    except Exception as e:
+        import traceback
+        print(f"Error checking workflow/node: {str(e)}\n{traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail=f"Error checking workflow/node: {str(e)}")
+    
+    # Get DuckDB database path and query column
+    try:
+        import duckdb
+        import re
+        
+        node_path = local_storage.get_workflow_node_path(workflow_id, node_id)
+        
+        # For duckdb_convert, look in output folder; for duckdb2jmp, look in input folder
+        if node.module_type == "duckdb2jmp":
+            search_path = node_path / "input"
+        else:
+            search_path = node_path / "output"
+        
+        # Find DuckDB file
+        db_files = list(search_path.glob("*.duckdb"))
+        
+        if not db_files:
+            raise HTTPException(status_code=404, detail=f"No DuckDB database file found in {search_path.name} folder")
+        
+        # Use the first DuckDB file found
+        db_path = db_files[0]
+        
+        # Sanitize table and column names to prevent SQL injection
+        if not re.match(r'^[a-zA-Z_][a-zA-Z0-9_]*$', table_name):
+            raise HTTPException(status_code=400, detail="Invalid table name")
+        if not re.match(r'^[a-zA-Z_][a-zA-Z0-9_]*$', column_name):
+            raise HTTPException(status_code=400, detail="Invalid column name")
+        
+        # Connect and query unique values
+        conn = duckdb.connect(str(db_path))
+        try:
+            # Check if table exists
+            tables_result = conn.execute("SHOW TABLES").fetchall()
+            table_names = [t[0] for t in tables_result]
+            if table_name not in table_names:
+                raise HTTPException(status_code=404, detail=f"Table '{table_name}' not found")
+            
+            # Check if column exists
+            columns_result = conn.execute(f"DESCRIBE {table_name}").fetchall()
+            column_names = [col[0] for col in columns_result]
+            if column_name not in column_names:
+                raise HTTPException(status_code=404, detail=f"Column '{column_name}' not found in table '{table_name}'")
+            
+            # Get all unique values from the column (excluding NULL)
+            query = f'SELECT DISTINCT "{column_name}" FROM {table_name} WHERE "{column_name}" IS NOT NULL ORDER BY "{column_name}"'
+            result = conn.execute(query).fetchall()
+            
+            # Convert to strings and filter out empty strings
+            unique_values = [str(v[0]) for v in result if v[0] is not None and str(v[0]).strip() != '']
+            
+            # Get total row count
+            count_result = conn.execute(f"SELECT COUNT(*) FROM {table_name}").fetchone()
+            total_rows = count_result[0] if count_result else 0
+            
+            return {
+                "workflow_id": workflow_id,
+                "node_id": node_id,
+                "table_name": table_name,
+                "column_name": column_name,
+                "unique_values": unique_values,
+                "count": len(unique_values),
+                "total_rows": total_rows
+            }
+        finally:
+            conn.close()
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        import traceback
+        print(f"Error getting DuckDB column unique values: {str(e)}\n{traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail=f"Error getting unique values: {str(e)}")
+
+
 # Get DuckDB table data endpoint
 @router.get("/workflows/{workflow_id}/nodes/{node_id}/duckdb-table-data")
 async def get_duckdb_table_data(
@@ -3419,8 +4039,8 @@ async def get_duckdb_table_data(
         if not node or str(node.workflow_id) != workflow_id:
             raise HTTPException(status_code=404, detail="Node not found")
         
-        if node.module_type != "duckdb_convert":
-            raise HTTPException(status_code=400, detail="Node is not a DuckDB convert node")
+        if node.module_type not in ["duckdb_convert", "duckdb2jmp"]:
+            raise HTTPException(status_code=400, detail="Node is not a DuckDB module")
     except ValueError as e:
         raise HTTPException(status_code=400, detail=f"Invalid ID format: {str(e)}")
     except Exception as e:
@@ -3433,13 +4053,18 @@ async def get_duckdb_table_data(
         import duckdb
         
         node_path = local_storage.get_workflow_node_path(workflow_id, node_id)
-        output_path = node_path / "output"
+        
+        # For duckdb_convert, look in output folder; for duckdb2jmp, look in input folder
+        if node.module_type == "duckdb2jmp":
+            search_path = node_path / "input"
+        else:
+            search_path = node_path / "output"
         
         # Find DuckDB file
-        db_files = list(output_path.glob("*.duckdb"))
+        db_files = list(search_path.glob("*.duckdb"))
         
         if not db_files:
-            raise HTTPException(status_code=404, detail="No DuckDB database file found")
+            raise HTTPException(status_code=404, detail=f"No DuckDB database file found in {search_path.name} folder")
         
         # Use the first DuckDB file found
         db_path = db_files[0]
@@ -3702,6 +4327,278 @@ async def execute_excel2jmp_node(
         import traceback
         print(f"Error executing Excel2JMP node: {str(e)}\n{traceback.format_exc()}")
         raise HTTPException(status_code=500, detail=f"Error executing Excel2JMP node: {str(e)}")
+
+
+# DuckDB2JMP endpoints
+@router.post("/workflows/{workflow_id}/nodes/{node_id}/execute-duckdb2jmp")
+async def execute_duckdb2jmp_node(
+    workflow_id: str,
+    node_id: str,
+    cat_var: str = Form("Stage"),
+    color_by: Optional[str] = Form(None),
+    selected_tables: Optional[str] = Form(None),  # JSON array of strings
+    chunk_size: int = Form(100000),
+    list_check_values: Optional[str] = Form(None),  # JSON array of strings
+    value_order: Optional[str] = Form(None),  # JSON array of strings
+    caption_box_statistics: Optional[str] = Form(None),  # JSON array of strings
+    db: AsyncSession = Depends(get_db),
+    current_user: Optional[AppUser] = Depends(get_current_user)
+):
+    """Execute DuckDB2JMP node: convert DuckDB tables to JSL/CSV pairs"""
+    try:
+        # Check workflow and node
+        workflow_result = await db.execute(
+            select(Workflow).where(Workflow.id == uuid.UUID(workflow_id))
+        )
+        workflow = workflow_result.scalar_one_or_none()
+        
+        if not workflow:
+            raise HTTPException(status_code=404, detail="Workflow not found")
+        
+        node_result = await db.execute(
+            select(WorkflowNode).where(WorkflowNode.id == uuid.UUID(node_id))
+        )
+        node = node_result.scalar_one_or_none()
+        
+        if not node or str(node.workflow_id) != workflow_id:
+            raise HTTPException(status_code=404, detail="Node not found")
+        
+        if node.module_type != "duckdb2jmp":
+            raise HTTPException(status_code=400, detail="Node is not a DuckDB2JMP node")
+        
+        # Get node paths
+        node_path = local_storage.get_workflow_node_path(workflow_id, node_id)
+        input_path = node_path / "input"
+        output_path = node_path / "output"
+        
+        # Ensure directories exist
+        input_path.mkdir(parents=True, exist_ok=True)
+        output_path.mkdir(parents=True, exist_ok=True)
+        
+        # Find DuckDB files in input folder
+        duckdb_files = list(input_path.glob("*.duckdb"))
+        
+        if not duckdb_files:
+            raise HTTPException(status_code=400, detail="No DuckDB files found in input folder")
+        
+        # Process first DuckDB file found
+        duckdb_file_path = duckdb_files[0]
+        
+        # Import processors from duckdb2jmp module
+        from app.workspaces.modules.duckdb2jmp.file_handler import FileHandler
+        from app.workspaces.modules.duckdb2jmp.data_validator import DataValidator
+        from app.workspaces.modules.duckdb2jmp.data_process import DataProcessor
+        from app.workspaces.modules.duckdb2jmp.file_processor import FileProcessor
+        
+        # Initialize processors
+        file_handler = FileHandler()
+        validator = DataValidator()
+        data_processor = DataProcessor()
+        file_processor = FileProcessor()
+        
+        # Load DuckDB file
+        load_result = file_handler.load_duckdb_file(str(duckdb_file_path))
+        if not load_result.get("success"):
+            raise HTTPException(status_code=400, detail=f"Failed to load DuckDB: {load_result.get('error')}")
+        
+        tables = load_result.get("tables", [])
+        if not tables:
+            raise HTTPException(status_code=400, detail="No tables found in DuckDB file")
+        
+        # Parse selected_tables if provided
+        selected_tables_list = None
+        if selected_tables:
+            try:
+                selected_tables_list = json.loads(selected_tables)
+            except Exception:
+                pass
+        
+        # Use all tables if none selected
+        if not selected_tables_list:
+            selected_tables_list = tables
+        
+        # Find meta table (look for table with 'meta' in name or first table)
+        meta_table = None
+        for table in tables:
+            if "meta" in table.lower():
+                meta_table = table
+                break
+        
+        if not meta_table and len(tables) > 0:
+            meta_table = tables[0]
+        
+        # Load meta table
+        meta_result = file_handler.load_meta_table(meta_table)
+        if not meta_result.get("success"):
+            raise HTTPException(status_code=400, detail=f"Failed to load meta table: {meta_result.get('error')}")
+        
+        df_meta = file_handler.df_meta
+        
+        # Parse list_check_values, value_order, and caption_box_statistics if provided
+        list_check_list = None
+        value_order_list = None
+        caption_box_stats_list = None
+        if list_check_values:
+            try:
+                list_check_list = json.loads(list_check_values)
+            except Exception:
+                pass
+        if value_order:
+            try:
+                value_order_list = json.loads(value_order)
+            except Exception:
+                pass
+        if caption_box_statistics:
+            try:
+                caption_box_stats_list = json.loads(caption_box_statistics)
+            except Exception:
+                pass
+        
+        # Process each selected table
+        all_pairs = []
+        
+        for table_name in selected_tables_list:
+            if table_name == meta_table:
+                continue  # Skip meta table
+            
+            if table_name not in tables:
+                continue  # Skip if table doesn't exist
+            
+            # Load table (with chunking for large tables)
+            table_result = file_handler.load_table(table_name, chunk_size=chunk_size)
+            if not table_result.get("success"):
+                print(f"Warning: Failed to load table {table_name}: {table_result.get('error')}")
+                continue
+            
+            df_data = file_handler.df_data_raw
+            fai_columns = file_handler.fai_columns
+            
+            # Set categorical variable
+            set_cat_result = file_handler.set_categorical_variable(cat_var)
+            if not set_cat_result.get("success"):
+                print(f"Warning: Failed to set categorical variable for {table_name}: {set_cat_result.get('error')}")
+                continue
+            
+            # Validate data (using sample if chunked)
+            validation_result = validator.run_full_validation(df_meta, df_data, cat_var)
+            if not validation_result.get("success"):
+                print(f"Warning: Data validation failed for {table_name}: {validation_result.get('error')}")
+                continue
+            
+            # Process data (using all data from DuckDB for boundaries calculation)
+            is_large = table_result.get("is_chunked", False)
+            if is_large:
+                # For large tables, calculate boundaries from all data in DuckDB
+                process_result = data_processor.process_data(
+                    df_meta, 
+                    df_data,  # Sample for validation only
+                    fai_columns, 
+                    cat_var,
+                    duckdb_path=str(duckdb_file_path),
+                    table_name=table_name
+                )
+            else:
+                # For small tables, use the loaded data
+                process_result = data_processor.process_data(df_meta, df_data, fai_columns, cat_var)
+            
+            if not process_result.get("success"):
+                print(f"Warning: Data processing failed for {table_name}: {process_result.get('error')}")
+                continue
+            
+            # Generate files (with chunked processing if needed)
+            file_result = file_processor.generate_files(
+                df_meta,
+                df_data if not is_large else None,  # Only pass df_data for small tables
+                process_result["boundaries"],
+                cat_var,
+                fai_columns,
+                color_by,
+                duckdb_path=str(duckdb_file_path) if is_large else None,
+                table_name=table_name if is_large else None,
+                chunk_size=chunk_size if is_large else None,
+                list_check_values=list_check_list,
+                value_order=value_order_list,
+                caption_box_statistics=caption_box_stats_list
+            )
+            
+            if not file_result.get("success"):
+                print(f"Warning: File generation failed for {table_name}: {file_result.get('error')}")
+                continue
+            
+            # Create timestamped pair folder for this table
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            pair_id = str(uuid.uuid4())[:8]
+            pair_folder = output_path / f"pair_{table_name}_{timestamp}_{pair_id}"
+            pair_folder.mkdir(parents=True, exist_ok=True)
+            
+            # Save CSV and JSL files
+            csv_content = file_result["files"]["csv_content"]
+            jsl_content = file_result["files"]["jsl_content"]
+            
+            csv_filename = f"data_{table_name}_{timestamp}_{pair_id}.csv"
+            jsl_filename = f"script_{table_name}_{timestamp}_{pair_id}.jsl"
+            
+            csv_path = pair_folder / csv_filename
+            jsl_path = pair_folder / jsl_filename
+            
+            csv_path.write_text(csv_content, encoding='utf-8')
+            jsl_path.write_text(jsl_content, encoding='utf-8')
+            
+            # Set JSL file permissions
+            jsl_path.chmod(0o644)
+            
+            # Create metadata JSON
+            metadata = {
+                "pair_id": pair_id,
+                "table_name": table_name,
+                "timestamp": timestamp,
+                "csv_filename": csv_filename,
+                "jsl_filename": jsl_filename,
+                "cat_var": cat_var,
+                "color_by": color_by,
+                "fai_columns": fai_columns,
+                "chunked": is_large,
+                "chunk_size": chunk_size if is_large else None,
+                "list_check_values": list_check_list,
+                "value_order": value_order_list,
+                "caption_box_statistics": caption_box_stats_list,
+                "created_at": datetime.now().isoformat()
+            }
+            
+            metadata_path = pair_folder / "metadata.json"
+            metadata_path.write_text(json.dumps(metadata, indent=2), encoding='utf-8')
+            
+            pair_info = {
+                "pair_id": pair_id,
+                "table_name": table_name,
+                "pair_folder": pair_folder.name,
+                "csv_path": str(csv_path.relative_to(local_storage.base_path)),
+                "jsl_path": str(jsl_path.relative_to(local_storage.base_path)),
+                "csv_filename": csv_filename,
+                "jsl_filename": jsl_filename,
+                "metadata": metadata
+            }
+            
+            all_pairs.append(pair_info)
+        
+        if not all_pairs:
+            raise HTTPException(status_code=400, detail="No tables were successfully processed")
+        
+        return {
+            "workflow_id": workflow_id,
+            "node_id": node_id,
+            "pairs": all_pairs,
+            "total_pairs": len(all_pairs),
+            "tables_processed": len(selected_tables_list),
+            "total_tables": len(tables)
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        import traceback
+        print(f"Error executing DuckDB2JMP node: {str(e)}\n{traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail=f"Error executing DuckDB2JMP node: {str(e)}")
 
 
 @router.get("/workflows/{workflow_id}/nodes/{node_id}/jsl-csv-pairs")
@@ -5337,6 +6234,1404 @@ async def download_processed_excel(
     except Exception as e:
         import traceback
         print(f"Error downloading processed Excel: {str(e)}\n{traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail=f"Error downloading file: {str(e)}")
+
+
+# ==================== DuckDB Outlier Remover Endpoints ====================
+
+# Get DuckDB data (list tables and get table data)
+@router.get("/workflows/{workflow_id}/nodes/{node_id}/duckdb-data")
+async def get_duckdb_data(
+    workflow_id: str,
+    node_id: str,
+    table_name: Optional[str] = Query(None, description="Table name to get data from"),
+    file_path: Optional[str] = Query(None, description="DuckDB file path (filename only)"),
+    version: str = Query("original", description="Version: 'original' or 'processed'"),
+    load_all: Optional[bool] = Query(False, description="Load all rows (default: first 50)"),
+    limit: int = Query(50, description="Number of rows to load (default: 50)"),
+    offset: int = Query(0, description="Row offset for pagination"),
+    db: AsyncSession = Depends(get_db),
+    current_user: Optional[AppUser] = Depends(get_current_user)
+):
+    """Get DuckDB data - list tables or get table data"""
+    try:
+        # Check workflow and node
+        workflow_result = await db.execute(
+            select(Workflow).where(Workflow.id == uuid.UUID(workflow_id))
+        )
+        workflow = workflow_result.scalar_one_or_none()
+        
+        if not workflow:
+            raise HTTPException(status_code=404, detail="Workflow not found")
+        
+        node_result = await db.execute(
+            select(WorkflowNode).where(WorkflowNode.id == uuid.UUID(node_id))
+        )
+        node = node_result.scalar_one_or_none()
+        
+        if not node or str(node.workflow_id) != workflow_id:
+            raise HTTPException(status_code=404, detail="Node not found")
+        
+        if node.module_type != "outlier_remover_duckdb":
+            raise HTTPException(status_code=400, detail="Node is not an outlier remover DuckDB node")
+        
+        node_path = local_storage.get_workflow_node_path(workflow_id, node_id)
+        
+        if version == "processed":
+            # Look for processed file in output folder
+            output_path = node_path / "output"
+            if not output_path.exists():
+                return {
+                    "workflow_id": workflow_id,
+                    "node_id": node_id,
+                    "tables": [],
+                    "message": "No processed DuckDB file found - output folder does not exist"
+                }
+            
+            duckdb_files = list(output_path.glob("*.duckdb"))
+            
+            # When viewing processed files, file_path refers to the input file filename
+            if file_path:
+                input_path = node_path / "input"
+                input_file_path = input_path / file_path
+                if input_file_path.exists():
+                    current_input_file = str(input_file_path.relative_to(local_storage.base_path))
+                    
+                    # Find processed file that matches this input file
+                    matched_files = []
+                    for duckdb_file in duckdb_files:
+                        try:
+                            file_stem = duckdb_file.stem
+                            metadata_file = output_path / f"{file_stem}_metadata.json"
+                            if metadata_file.exists():
+                                with open(metadata_file, 'r', encoding='utf-8') as f:
+                                    metadata = json.load(f)
+                                    processed_input_file = metadata.get("input_file")
+                                    if processed_input_file:
+                                        processed_path_normalized = str(Path(processed_input_file)).replace('\\', '/')
+                                        current_path_normalized = str(Path(current_input_file)).replace('\\', '/')
+                                        processed_filename = Path(processed_input_file).name
+                                        current_filename = Path(current_input_file).name
+                                        
+                                        if processed_path_normalized == current_path_normalized or processed_filename == current_filename:
+                                            matched_files.append(duckdb_file)
+                        except Exception as e:
+                            print(f"Warning: Could not read metadata for {duckdb_file}: {e}")
+                            continue
+                    
+                    if matched_files:
+                        duckdb_files = matched_files
+                    else:
+                        return {
+                            "workflow_id": workflow_id,
+                            "node_id": node_id,
+                            "tables": [],
+                            "message": "No processed file found for the current input file. Please process the file first.",
+                            "version": version
+                        }
+        else:
+            # Original file from input folder
+            input_path = node_path / "input"
+            if not input_path.exists():
+                return {
+                    "workflow_id": workflow_id,
+                    "node_id": node_id,
+                    "tables": [],
+                    "message": "No input DuckDB file found"
+                }
+            
+            duckdb_files = list(input_path.glob("*.duckdb"))
+            
+            if file_path:
+                file_path_obj = Path(file_path)
+                if file_path_obj.is_absolute():
+                    duckdb_file_path = file_path_obj
+                else:
+                    duckdb_file_path = input_path / file_path
+                if duckdb_file_path.exists() and duckdb_file_path.is_file():
+                    duckdb_files = [duckdb_file_path]
+        
+        if not duckdb_files:
+            return {
+                "workflow_id": workflow_id,
+                "node_id": node_id,
+                "tables": [],
+                "message": "No DuckDB file found"
+            }
+        
+        # Use first file
+        duckdb_file_path = duckdb_files[0]
+        
+        # Connect to DuckDB
+        import duckdb
+        conn = duckdb.connect(str(duckdb_file_path), read_only=True)
+        
+        try:
+            # Get list of tables
+            tables_result = conn.execute("SHOW TABLES").fetchall()
+            table_names = [row[0] for row in tables_result]
+            
+            if not table_name:
+                # Return list of tables
+                tables_info = []
+                for tbl_name in table_names:
+                    # Get row count and columns for each table
+                    try:
+                        row_count = conn.execute(f"SELECT COUNT(*) FROM {tbl_name}").fetchone()[0]
+                        columns_result = conn.execute(f"DESCRIBE {tbl_name}").fetchall()
+                        columns = [col[0] for col in columns_result]
+                        tables_info.append({
+                            "name": tbl_name,
+                            "row_count": row_count,
+                            "columns": columns
+                        })
+                    except Exception as e:
+                        print(f"Error getting info for table {tbl_name}: {e}")
+                        tables_info.append({
+                            "name": tbl_name,
+                            "row_count": 0,
+                            "columns": []
+                        })
+                
+                return {
+                    "workflow_id": workflow_id,
+                    "node_id": node_id,
+                    "tables": tables_info,
+                    "file_path": str(duckdb_file_path.relative_to(local_storage.base_path)),
+                    "version": version
+                }
+            else:
+                # Get data from specific table
+                if table_name not in table_names:
+                    return {
+                        "workflow_id": workflow_id,
+                        "node_id": node_id,
+                        "tables": [],
+                        "message": f"Table '{table_name}' not found"
+                    }
+                
+                # Get columns
+                columns_result = conn.execute(f"DESCRIBE {table_name}").fetchall()
+                columns = [col[0] for col in columns_result]
+                
+                # Get total row count
+                total_rows = conn.execute(f"SELECT COUNT(*) FROM {table_name}").fetchone()[0]
+                
+                # Get data with pagination
+                if load_all:
+                    df = conn.execute(f"SELECT * FROM {table_name}").df()
+                else:
+                    df = conn.execute(f"SELECT * FROM {table_name} LIMIT {limit} OFFSET {offset}").df()
+                
+                # Convert to list of dictionaries
+                data = []
+                for _, row in df.iterrows():
+                    row_dict = {}
+                    for col in columns:
+                        value = row[col]
+                        if pd.isna(value):
+                            row_dict[col] = None
+                        else:
+                            row_dict[col] = str(value)
+                    data.append(row_dict)
+                
+                return {
+                    "workflow_id": workflow_id,
+                    "node_id": node_id,
+                    "table_name": table_name,
+                    "columns": columns,
+                    "data": data,
+                    "total_rows": int(total_rows),
+                    "displayed_rows": len(data),
+                    "limit": limit if not load_all else total_rows,
+                    "offset": offset,
+                    "version": version
+                }
+        finally:
+            conn.close()
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        import traceback
+        print(f"Error getting DuckDB data: {str(e)}\n{traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail=f"Error getting DuckDB data: {str(e)}")
+
+
+# Process DuckDB file with outlier remover
+class OutlierRemoverDuckDBRequest(BaseModel):
+    outlier_rules: List[Dict[str, Any]]
+    selected_columns: Optional[Dict[str, List[str]]] = None  # Deprecated: columns are now specified in rules
+    file_key: Optional[str] = None  # Optional: specify which input file to process
+
+# Progress tracking storage (in-memory, could be moved to Redis for production)
+duckdb_progress_store: Dict[str, Dict[str, Any]] = {}
+
+@router.post("/workflows/{workflow_id}/nodes/{node_id}/process-outlier-remover-duckdb")
+async def process_outlier_remover_duckdb(
+    workflow_id: str,
+    node_id: str,
+    request: OutlierRemoverDuckDBRequest = Body(...),
+    db: AsyncSession = Depends(get_db),
+    current_user: Optional[AppUser] = Depends(get_current_user)
+):
+    """Process DuckDB file by removing outliers based on rules and generate summary table"""
+    progress_key = f"{workflow_id}_{node_id}"
+    duckdb_progress_store[progress_key] = {"status": "processing", "progress": 0, "message": "Starting processing..."}
+    
+    try:
+        # Check workflow and node
+        workflow_result = await db.execute(
+            select(Workflow).where(Workflow.id == uuid.UUID(workflow_id))
+        )
+        workflow = workflow_result.scalar_one_or_none()
+        
+        if not workflow:
+            raise HTTPException(status_code=404, detail="Workflow not found")
+        
+        node_result = await db.execute(
+            select(WorkflowNode).where(WorkflowNode.id == uuid.UUID(node_id))
+        )
+        node = node_result.scalar_one_or_none()
+        
+        if not node or str(node.workflow_id) != workflow_id:
+            raise HTTPException(status_code=404, detail="Node not found")
+        
+        if node.module_type != "outlier_remover_duckdb":
+            raise HTTPException(status_code=400, detail="Node is not an outlier remover DuckDB node")
+    except ValueError as e:
+        duckdb_progress_store[progress_key] = {"status": "error", "progress": 0, "message": f"Invalid ID format: {str(e)}"}
+        raise HTTPException(status_code=400, detail=f"Invalid ID format: {str(e)}")
+    except Exception as e:
+        import traceback
+        duckdb_progress_store[progress_key] = {"status": "error", "progress": 0, "message": f"Error checking workflow/node: {str(e)}"}
+        print(f"Error checking workflow/node: {str(e)}\n{traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail=f"Error checking workflow/node: {str(e)}")
+    
+    # Process DuckDB file
+    try:
+        import numpy as np
+        from datetime import datetime
+        import duckdb
+        
+        duckdb_progress_store[progress_key] = {"status": "processing", "progress": 10, "message": "Loading DuckDB file..."}
+        
+        node_path = local_storage.get_workflow_node_path(workflow_id, node_id)
+        input_path = node_path / "input"
+        output_path = node_path / "output"
+        output_path.mkdir(parents=True, exist_ok=True)
+        
+        # Get the current input file from request or node config
+        file_key = request.file_key
+        if not file_key:
+            node_config = node.config or {}
+            file_key = node_config.get("file_key")
+            if not file_key:
+                try:
+                    config_file = local_storage.load_node_config(workflow_id, node_id)
+                    if config_file:
+                        file_key = config_file.get("file_key")
+                except Exception as e:
+                    print(f"Warning: Could not load config file: {e}")
+        
+        # Find DuckDB file in input folder
+        duckdb_files = list(input_path.glob("*.duckdb"))
+        
+        if not duckdb_files:
+            duckdb_progress_store[progress_key] = {"status": "error", "progress": 0, "message": "No DuckDB file found in input folder"}
+            raise HTTPException(status_code=404, detail="No DuckDB file found in input folder")
+        
+        # If file_key is specified, use that file
+        duckdb_file_path = None
+        if file_key:
+            filename_from_key = file_key.split('/')[-1] if '/' in file_key else file_key
+            potential_path = input_path / filename_from_key
+            if potential_path.exists() and potential_path.is_file():
+                duckdb_file_path = potential_path
+            else:
+                if file_key:
+                    duckdb_progress_store[progress_key] = {"status": "error", "progress": 0, "message": f"File specified in file_key not found"}
+                    raise HTTPException(status_code=404, detail=f"File specified in file_key ({file_key}) not found")
+        
+        if not duckdb_file_path:
+            duckdb_file_path = duckdb_files[0]
+        
+        filename = duckdb_file_path.name
+        input_original_filename = filename
+        
+        duckdb_progress_store[progress_key] = {"status": "processing", "progress": 20, "message": "Connecting to DuckDB..."}
+        
+        # Connect to input DuckDB
+        conn = duckdb.connect(str(duckdb_file_path), read_only=True)
+        
+        try:
+            # Get list of tables
+            tables_result = conn.execute("SHOW TABLES").fetchall()
+            table_names = [row[0] for row in tables_result]
+            
+            if not table_names:
+                duckdb_progress_store[progress_key] = {"status": "error", "progress": 0, "message": "No tables found in DuckDB file"}
+                raise HTTPException(status_code=400, detail="No tables found in DuckDB file")
+            
+            duckdb_progress_store[progress_key] = {"status": "processing", "progress": 30, "message": f"Processing {len(table_names)} tables..."}
+            
+            # Create output DuckDB database
+            import tempfile
+            import os
+            # Generate a unique temp file path - DuckDB will create the file
+            temp_dir = tempfile.gettempdir()
+            temp_filename = f"duckdb_output_{uuid.uuid4().hex}.duckdb"
+            temp_output_path = os.path.join(temp_dir, temp_filename)
+            
+            output_conn = duckdb.connect(temp_output_path)
+            removal_summary = []
+            processed_tables = {}
+            
+            total_tables = len(table_names)
+            for table_idx, table_name in enumerate(table_names):
+                progress_pct = 30 + int((table_idx / total_tables) * 50)
+                duckdb_progress_store[progress_key] = {"status": "processing", "progress": progress_pct, "message": f"Processing table {table_name} ({table_idx + 1}/{total_tables})..."}
+                
+                # Read table into pandas DataFrame for processing
+                df = conn.execute(f"SELECT * FROM {table_name}").df()
+                original_row_count = len(df)
+                
+                # Apply outlier removal rules in sequence order
+                # Sort rules by sequence (if present) to ensure correct application order
+                sorted_rules = sorted(
+                    request.outlier_rules,
+                    key=lambda r: r.get("sequence", 999)  # Rules without sequence go last
+                )
+                
+                for rule in sorted_rules:
+                    condition = rule.get("condition")
+                    value = rule.get("value")
+                    action = rule.get("action", "clear_cell")
+                    
+                    # Support new format (sheets/columns arrays) and legacy format (sheet/column)
+                    rule_sheets = rule.get("sheets")  # New format: array of sheet names
+                    rule_columns = rule.get("columns")  # New format: {sheetName: [columnNames]}
+                    rule_table = rule.get("sheet")  # Legacy format: single sheet
+                    column = rule.get("column")  # Legacy format: single column
+                    
+                    # Determine if this rule applies to the current table
+                    should_apply = False
+                    if rule_sheets:
+                        # New format: check if current table is in sheets array
+                        if table_name in rule_sheets:
+                            should_apply = True
+                    elif rule_table:
+                        # Legacy format: check if matches current table
+                        if rule_table == table_name:
+                            should_apply = True
+                    else:
+                        # No sheet specified = applies to all tables
+                        should_apply = True
+                    
+                    if not should_apply:
+                        continue
+                    
+                    # Determine which columns to apply the rule to
+                    columns_to_process = []
+                    if rule_sheets and rule_columns and table_name in rule_columns:
+                        # New format: specific columns for this sheet
+                        selected_columns = rule_columns.get(table_name, [])
+                        if selected_columns:
+                            # Only process selected columns that exist in the table
+                            columns_to_process = [col for col in selected_columns if col in df.columns]
+                        else:
+                            # No columns specified for this sheet = all columns
+                            columns_to_process = list(df.columns)
+                    elif rule_sheets:
+                        # New format: all columns for this sheet
+                        columns_to_process = list(df.columns)
+                    elif column:
+                        # Legacy format: specific column
+                        if column in df.columns:
+                            columns_to_process = [column]
+                    else:
+                        # No column specified = all columns in the table
+                        columns_to_process = list(df.columns)
+                    
+                    all_rows_to_remove = set()
+                    
+                    for col in columns_to_process:
+                        try:
+                            removed_count = 0
+                            rows_to_remove = set()
+                            
+                            if condition == "greater_than":
+                                try:
+                                    num_value = float(value)
+                                    mask = df[col] > num_value
+                                    removed_count = mask.sum()
+                                    if action == "remove_row":
+                                        rows_to_remove.update(df[mask].index.tolist())
+                                    else:
+                                        df.loc[mask, col] = np.nan
+                                except (ValueError, TypeError):
+                                    pass
+                            
+                            elif condition == "less_than":
+                                try:
+                                    num_value = float(value)
+                                    mask = df[col] < num_value
+                                    removed_count = mask.sum()
+                                    if action == "remove_row":
+                                        rows_to_remove.update(df[mask].index.tolist())
+                                    else:
+                                        df.loc[mask, col] = np.nan
+                                except (ValueError, TypeError):
+                                    pass
+                            
+                            elif condition == "equals":
+                                try:
+                                    num_value = float(value)
+                                    if pd.api.types.is_numeric_dtype(df[col]):
+                                        mask = (df[col] == num_value) & df[col].notna()
+                                    else:
+                                        mask = (df[col].astype(str) == str(value)) & df[col].notna()
+                                except (ValueError, TypeError):
+                                    mask = (df[col].astype(str) == str(value)) & df[col].notna()
+                                
+                                removed_count = mask.sum()
+                                if action == "remove_row":
+                                    rows_to_remove.update(df[mask].index.tolist())
+                                else:
+                                    df.loc[mask, col] = np.nan
+                            
+                            elif condition == "contains":
+                                if isinstance(value, str):
+                                    mask = df[col].astype(str).str.contains(value, na=False)
+                                    removed_count = mask.sum()
+                                    if action == "remove_row":
+                                        rows_to_remove.update(df[mask].index.tolist())
+                                    else:
+                                        df.loc[mask, col] = np.nan
+                            
+                            elif condition == "iqr":
+                                # IQR-based outlier detection
+                                try:
+                                    multiplier = float(value) if value else 1.5
+                                    # Get numeric values only (exclude NaN)
+                                    numeric_values = pd.to_numeric(df[col], errors='coerce')
+                                    numeric_values_clean = numeric_values.dropna()
+                                    
+                                    if len(numeric_values_clean) > 0:
+                                        q1 = numeric_values_clean.quantile(0.25)
+                                        q3 = numeric_values_clean.quantile(0.75)
+                                        iqr = q3 - q1
+                                        
+                                        lower_bound = q1 - multiplier * iqr
+                                        upper_bound = q3 + multiplier * iqr
+                                        
+                                        # Mark values outside bounds as outliers
+                                        mask = (numeric_values < lower_bound) | (numeric_values > upper_bound)
+                                        removed_count = mask.sum()
+                                        
+                                        if action == "remove_row":
+                                            rows_to_remove.update(df[mask].index.tolist())
+                                        else:
+                                            df.loc[mask, col] = np.nan
+                                except (ValueError, TypeError) as e:
+                                    print(f"Error in IQR calculation for column {col}: {e}")
+                                    pass
+                            
+                            elif condition == "sigma":
+                                # Sigma (standard deviation) based outlier detection
+                                try:
+                                    multiplier = float(value) if value else 3.0
+                                    # Get numeric values only (exclude NaN)
+                                    numeric_values = pd.to_numeric(df[col], errors='coerce')
+                                    numeric_values_clean = numeric_values.dropna()
+                                    
+                                    if len(numeric_values_clean) > 0:
+                                        mean_val = numeric_values_clean.mean()
+                                        std_val = numeric_values_clean.std()
+                                        
+                                        if std_val > 0:  # Avoid division by zero
+                                            lower_bound = mean_val - multiplier * std_val
+                                            upper_bound = mean_val + multiplier * std_val
+                                            
+                                            # Mark values outside bounds as outliers
+                                            mask = (numeric_values < lower_bound) | (numeric_values > upper_bound)
+                                            removed_count = mask.sum()
+                                            
+                                            if action == "remove_row":
+                                                rows_to_remove.update(df[mask].index.tolist())
+                                            else:
+                                                df.loc[mask, col] = np.nan
+                                except (ValueError, TypeError) as e:
+                                    print(f"Error in sigma calculation for column {col}: {e}")
+                                    pass
+                            
+                            if action == "remove_row":
+                                all_rows_to_remove.update(rows_to_remove)
+                            
+                            if removed_count > 0:
+                                removal_summary.append({
+                                    "table": table_name,
+                                    "column": col,
+                                    "condition": condition,
+                                    "value": str(value),
+                                    "action": action,
+                                    "removed_count": int(removed_count),
+                                    "timestamp": datetime.now().isoformat()
+                                })
+                        
+                        except Exception as e:
+                            print(f"Error applying rule to column {col} in table {table_name}: {str(e)}")
+                            continue
+                    
+                    if action == "remove_row" and all_rows_to_remove:
+                        df = df.drop(index=list(all_rows_to_remove))
+                        df = df.reset_index(drop=True)
+                
+                # Write processed table to output database
+                output_conn.register('temp_df', df)
+                output_conn.execute(f"CREATE TABLE {table_name} AS SELECT * FROM temp_df")
+                output_conn.unregister('temp_df')
+                processed_tables[table_name] = df
+            
+            duckdb_progress_store[progress_key] = {"status": "processing", "progress": 85, "message": "Creating summary table..."}
+            
+            # Create summary table
+            if removal_summary:
+                summary_df = pd.DataFrame(removal_summary)
+                summary_table_name = f"Removal_Summary_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+            else:
+                summary_df = pd.DataFrame({
+                    "table": [],
+                    "column": [],
+                    "condition": [],
+                    "value": [],
+                    "removed_count": [],
+                    "timestamp": []
+                })
+                summary_table_name = f"Removal_Summary_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+            
+            output_conn.register('temp_summary_df', summary_df)
+            output_conn.execute(f"CREATE TABLE {summary_table_name} AS SELECT * FROM temp_summary_df")
+            output_conn.unregister('temp_summary_df')
+            processed_tables[summary_table_name] = summary_df
+            
+            # Close connections before saving file
+            output_conn.close()
+            conn.close()
+            
+            duckdb_progress_store[progress_key] = {"status": "processing", "progress": 90, "message": "Saving processed file..."}
+            
+            # Generate output filename based on input filename
+            # Remove "processed_" prefix if input file is already processed
+            input_filename_base = filename
+            if input_filename_base.startswith("processed_"):
+                input_filename_base = input_filename_base[len("processed_"):]
+            
+            # Ensure it ends with .duckdb
+            if not input_filename_base.endswith('.duckdb'):
+                input_filename_base = f"{input_filename_base}.duckdb"
+            
+            output_filename = f"processed_{input_filename_base}"
+            output_file_path = output_path / output_filename
+            
+            # Remove existing processed file if it exists (to replace it)
+            if output_file_path.exists():
+                output_file_path.unlink()
+                # Also remove associated metadata file if it exists
+                metadata_file_path = output_path / f"{output_file_path.stem}_metadata.json"
+                if metadata_file_path.exists():
+                    metadata_file_path.unlink()
+            
+            # Copy temp file to output
+            import shutil
+            shutil.copy2(temp_output_path, output_file_path)
+            Path(temp_output_path).unlink(missing_ok=True)
+            
+            # Create metadata JSON file
+            try:
+                from datetime import timezone
+                processed_time = datetime.now(timezone.utc).isoformat()
+                output_file_stem = output_file_path.stem
+                
+                processed_metadata = {
+                    "original_filename": output_filename,
+                    "input_filename": input_original_filename,
+                    "input_file": str(duckdb_file_path.relative_to(local_storage.base_path)),
+                    "file_type": "duckdb",
+                    "processed_time": processed_time,
+                    "workflow_id": workflow_id,
+                    "node_id": node_id,
+                    "uuid_filename": output_filename,
+                    "file_size": output_file_path.stat().st_size if output_file_path.exists() else 0,
+                    "total_removals": len(removal_summary),
+                    "tables_processed": list(processed_tables.keys()),
+                    "summary_table": summary_table_name
+                }
+                
+                metadata_filename = f"{output_file_stem}_metadata.json"
+                metadata_file_path = output_path / metadata_filename
+                with open(metadata_file_path, 'w', encoding='utf-8') as f:
+                    json.dump(processed_metadata, f, indent=2)
+                print(f"Saved processed file metadata: {metadata_file_path}")
+            except Exception as e:
+                import traceback
+                print(f"Warning: Could not save processed file metadata: {e}\n{traceback.format_exc()}")
+            
+            # Update node config
+            node_config = node.config or {}
+            node_config["outlier_rules"] = request.outlier_rules
+            node_config["selected_columns"] = request.selected_columns
+            node.config = node_config
+            await db.commit()
+            
+            # Save node config to file
+            try:
+                node_config_to_save = {
+                    "file_key": node_config.get("file_key"),
+                    "filename": filename,
+                    "selected_columns": request.selected_columns,
+                    "outlier_rules": request.outlier_rules,
+                    "available_tables": table_names
+                }
+                local_storage.save_node_config(workflow_id, node_id, node_config_to_save)
+            except Exception as e:
+                import traceback
+                print(f"Warning: Could not save node config to file: {e}\n{traceback.format_exc()}")
+            
+            duckdb_progress_store[progress_key] = {"status": "completed", "progress": 100, "message": "Processing completed successfully"}
+            
+            return {
+                "workflow_id": workflow_id,
+                "node_id": node_id,
+                "original_file": str(duckdb_file_path.relative_to(local_storage.base_path)),
+                "processed_file": str(output_file_path.relative_to(local_storage.base_path)),
+                "filename": output_filename,
+                "tables_processed": list(processed_tables.keys()),
+                "summary_table": summary_table_name,
+                "total_removals": len(removal_summary),
+                "removal_summary": removal_summary
+            }
+        
+        finally:
+            if 'conn' in locals():
+                try:
+                    conn.close()
+                except:
+                    pass
+            if 'output_conn' in locals():
+                try:
+                    output_conn.close()
+                except:
+                    pass
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        import traceback
+        duckdb_progress_store[progress_key] = {"status": "error", "progress": 0, "message": f"Error processing DuckDB: {str(e)}"}
+        print(f"Error processing DuckDB with outlier remover: {str(e)}\n{traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail=f"Error processing DuckDB: {str(e)}")
+
+
+# Get processing progress
+@router.get("/workflows/{workflow_id}/nodes/{node_id}/duckdb-progress")
+async def get_duckdb_progress(
+    workflow_id: str,
+    node_id: str,
+    operation: Optional[str] = Query("process", description="Operation type: 'process' or 'convert'"),
+    db: AsyncSession = Depends(get_db),
+    current_user: Optional[AppUser] = Depends(get_current_user)
+):
+    """Get progress of DuckDB processing or conversion operation"""
+    if operation == "convert":
+        progress_key = f"{workflow_id}_{node_id}_convert"
+    else:
+        progress_key = f"{workflow_id}_{node_id}"
+    progress = duckdb_progress_store.get(progress_key, {"status": "idle", "progress": 0, "message": "No operation in progress"})
+    return progress
+
+
+# Download processed DuckDB file
+@router.get("/workflows/{workflow_id}/nodes/{node_id}/download-processed-duckdb")
+async def download_processed_duckdb(
+    workflow_id: str,
+    node_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: Optional[AppUser] = Depends(get_current_user)
+):
+    """Download the processed DuckDB file"""
+    try:
+        from fastapi.responses import FileResponse
+        
+        node_path = local_storage.get_workflow_node_path(workflow_id, node_id)
+        output_path = node_path / "output"
+        
+        # Find processed DuckDB file
+        duckdb_files = list(output_path.glob("processed_*.duckdb"))
+        
+        if not duckdb_files:
+            raise HTTPException(status_code=404, detail="No processed DuckDB file found")
+        
+        # Get most recent file
+        duckdb_file = max(duckdb_files, key=lambda p: p.stat().st_mtime)
+        
+        return FileResponse(
+            path=str(duckdb_file),
+            filename=duckdb_file.name,
+            media_type="application/octet-stream"
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        import traceback
+        print(f"Error downloading DuckDB file: {str(e)}\n{traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail=f"Error downloading file: {str(e)}")
+
+
+# Download converted DuckDB file (for duckdb_convert module)
+@router.get("/workflows/{workflow_id}/nodes/{node_id}/download-duckdb")
+async def download_duckdb(
+    workflow_id: str,
+    node_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: Optional[AppUser] = Depends(get_current_user)
+):
+    """Download the converted DuckDB file from duckdb_convert module"""
+    try:
+        from fastapi.responses import FileResponse
+        
+        # Check workflow and node exist
+        workflow_result = await db.execute(
+            select(Workflow).where(Workflow.id == uuid.UUID(workflow_id))
+        )
+        workflow = workflow_result.scalar_one_or_none()
+        if not workflow:
+            raise HTTPException(status_code=404, detail="Workflow not found")
+        
+        node_result = await db.execute(
+            select(WorkflowNode).where(WorkflowNode.id == uuid.UUID(node_id))
+        )
+        node = node_result.scalar_one_or_none()
+        if not node:
+            raise HTTPException(status_code=404, detail="Node not found")
+        
+        if str(node.workflow_id) != workflow_id:
+            raise HTTPException(
+                status_code=400, 
+                detail=f"Node {node_id} does not belong to workflow {workflow_id}"
+            )
+        
+        node_path = local_storage.get_workflow_node_path(workflow_id, node_id)
+        output_path = node_path / "output"
+        
+        # Find converted DuckDB files (excel2duckdb_*.duckdb pattern)
+        duckdb_files = list(output_path.glob("excel2duckdb_*.duckdb"))
+        
+        if not duckdb_files:
+            raise HTTPException(status_code=404, detail="No converted DuckDB file found. Please execute conversion first.")
+        
+        # Get most recent file
+        duckdb_file = max(duckdb_files, key=lambda p: p.stat().st_mtime)
+        
+        return FileResponse(
+            path=str(duckdb_file),
+            filename=duckdb_file.name,
+            media_type="application/octet-stream"
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        import traceback
+        print(f"Error downloading DuckDB file: {str(e)}\n{traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail=f"Error downloading file: {str(e)}")
+
+
+# Move output to next node endpoint
+@router.post("/workflows/{workflow_id}/nodes/{node_id}/move-to-next-node")
+async def move_to_next_node(
+    workflow_id: str,
+    node_id: str,
+    next_module_type: str = Body(..., embed=True, description="Module type for the next node: 'outlier_remover_duckdb' or 'duckdb2jmp'"),
+    db: AsyncSession = Depends(get_db),
+    current_user: Optional[AppUser] = Depends(get_current_user)
+):
+    """Move the output DuckDB file from current node to a new node's input folder"""
+    try:
+        import shutil
+        from pathlib import Path
+        
+        # Check workflow and source node exist
+        workflow_result = await db.execute(
+            select(Workflow).where(Workflow.id == uuid.UUID(workflow_id))
+        )
+        workflow = workflow_result.scalar_one_or_none()
+        if not workflow:
+            raise HTTPException(status_code=404, detail="Workflow not found")
+        
+        source_node_result = await db.execute(
+            select(WorkflowNode).where(WorkflowNode.id == uuid.UUID(node_id))
+        )
+        source_node = source_node_result.scalar_one_or_none()
+        if not source_node:
+            raise HTTPException(status_code=404, detail="Source node not found")
+        
+        if str(source_node.workflow_id) != workflow_id:
+            raise HTTPException(
+                status_code=400, 
+                detail=f"Node {node_id} does not belong to workflow {workflow_id}"
+            )
+        
+        # Validate next_module_type based on source node type
+        if source_node.module_type == "duckdb_convert":
+            # DuckDB converter can move to outlier_remover_duckdb or duckdb2jmp
+            if next_module_type not in ['outlier_remover_duckdb', 'duckdb2jmp']:
+                raise HTTPException(
+                    status_code=400, 
+                    detail=f"Invalid module type '{next_module_type}'. DuckDB converter can only move to 'outlier_remover_duckdb' or 'duckdb2jmp'"
+                )
+        elif source_node.module_type == "outlier_remover_duckdb":
+            # Outlier remover can only move to duckdb2jmp
+            if next_module_type != 'duckdb2jmp':
+                raise HTTPException(
+                    status_code=400, 
+                    detail=f"Invalid module type '{next_module_type}'. Outlier remover can only move to 'duckdb2jmp'"
+                )
+        else:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Source node type '{source_node.module_type}' is not supported for moving to next node."
+            )
+        
+        # Get source node output path
+        source_node_path = local_storage.get_workflow_node_path(workflow_id, node_id)
+        source_output_path = source_node_path / "output"
+        
+        # Find DuckDB files based on source node type
+        duckdb_files = []
+        if source_node.module_type == "duckdb_convert":
+            # DuckDB converter creates excel2duckdb_*.duckdb files
+            duckdb_files = list(source_output_path.glob("excel2duckdb_*.duckdb"))
+            if not duckdb_files:
+                raise HTTPException(
+                    status_code=404, 
+                    detail="No converted DuckDB file found. Please execute conversion first."
+                )
+        elif source_node.module_type == "outlier_remover_duckdb":
+            # Outlier remover creates processed_*.duckdb files
+            duckdb_files = list(source_output_path.glob("processed_*.duckdb"))
+            if not duckdb_files:
+                raise HTTPException(
+                    status_code=404, 
+                    detail="No processed DuckDB file found. Please execute processing first."
+                )
+        else:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Source node type '{source_node.module_type}' is not supported for moving to next node."
+            )
+        
+        # Get most recent file
+        source_duckdb_file = max(duckdb_files, key=lambda p: p.stat().st_mtime)
+        
+        # Get metadata from source output if available
+        source_metadata = None
+        source_metadata_file = source_output_path / f"{source_duckdb_file.stem}_metadata.json"
+        if source_metadata_file.exists():
+            try:
+                with open(source_metadata_file, 'r', encoding='utf-8') as f:
+                    source_metadata = json.load(f)
+            except Exception as e:
+                print(f"Error reading source metadata file: {str(e)}")
+        
+        # Get original filename from source metadata or use the file name
+        original_filename = source_duckdb_file.name
+        if source_metadata and source_metadata.get("input_files"):
+            # Try to get original filename from first input file
+            first_input = source_metadata["input_files"][0] if source_metadata["input_files"] else None
+            if first_input and first_input.get("original_filename"):
+                original_filename = first_input["original_filename"]
+                # Change extension to .duckdb if needed
+                if not original_filename.endswith('.duckdb'):
+                    original_filename = Path(original_filename).stem + '.duckdb'
+        
+        # Create new node
+        registry = get_registry()
+        node_class = registry.get_node_class(next_module_type)
+        if not node_class:
+            raise HTTPException(status_code=400, detail=f"Unknown module type: {next_module_type}")
+        
+        # Generate unique module_id
+        temp_node = node_class(str(uuid.uuid4()))
+        module_display_name = temp_node.display_name.replace(' ', '_').lower()
+        unique_module_id = f"{module_display_name}_{str(uuid.uuid4())}"
+        
+        # Get all nodes in the workflow to find the smallest available x position
+        all_nodes_result = await db.execute(
+            select(WorkflowNode).where(WorkflowNode.workflow_id == uuid.UUID(workflow_id))
+        )
+        all_nodes = all_nodes_result.scalars().all()
+        
+        # Get all x positions from all nodes (check all nodes' x positions)
+        used_x_positions = set()
+        for node in all_nodes:
+            if node.position_x is not None:
+                used_x_positions.add(node.position_x)
+        
+        # Find the smallest available x position (starting from 0)
+        new_position_x = 0
+        while new_position_x in used_x_positions:
+            new_position_x += 1
+        
+        # Always set y=0
+        new_position_y = 0
+        
+        # Create node
+        new_node = WorkflowNode(
+            workflow_id=uuid.UUID(workflow_id),
+            module_type=next_module_type,
+            module_id=unique_module_id,
+            position_x=new_position_x,
+            position_y=new_position_y,
+            config={}
+        )
+        
+        db.add(new_node)
+        await db.commit()
+        await db.refresh(new_node)
+        
+        # Create node folder structure
+        new_node_path = local_storage.ensure_workflow_node_structure(workflow_id, str(new_node.id))
+        new_node_input_path = new_node_path / "input"
+        
+        # Generate UUID for the copied file
+        file_uuid = str(uuid.uuid4())
+        uuid_filename = f"{file_uuid}.duckdb"
+        dest_file_path = new_node_input_path / uuid_filename
+        
+        # Copy the DuckDB file to new node's input folder
+        shutil.copy2(str(source_duckdb_file), str(dest_file_path))
+        
+        # Create metadata JSON for the new input file
+        new_input_metadata = {
+            "original_filename": original_filename,
+            "file_type": "duckdb",
+            "uploaded_time": datetime.now(timezone.utc).isoformat(),
+            "workflow_id": workflow_id,
+            "node_id": str(new_node.id),
+            "uuid_filename": uuid_filename,
+            "file_size": dest_file_path.stat().st_size,
+            "source_node_id": node_id,
+            "source_node_module_type": source_node.module_type,
+            "source_workflow_id": workflow_id,
+            "source_file_path": str(source_duckdb_file.relative_to(local_storage.base_path)),
+            "source_metadata": source_metadata  # Include full source metadata for traceability
+        }
+        
+        # Save metadata JSON file
+        metadata_filename = f"{file_uuid}_metadata.json"
+        metadata_path = new_node_input_path / metadata_filename
+        with open(metadata_path, 'w', encoding='utf-8') as f:
+            json.dump(new_input_metadata, f, indent=2)
+        
+        print(f"Copied DuckDB file from {source_duckdb_file} to {dest_file_path}")
+        print(f"Saved metadata file: {metadata_path}")
+        
+        # Generate a checkpoint name for the new node based on module type
+        checkpoint_name = next_module_type.replace('_', ' ').replace('duckdb', 'DuckDB').title()
+        
+        # Save workflow JSON to file to include the new node
+        try:
+            checkpoint_name_updates = {str(new_node.id): checkpoint_name}
+            await save_workflow_json_to_file(workflow_id, db, checkpoint_name_updates)
+        except Exception as e:
+            # Log error but don't fail the request
+            import traceback
+            print(f"Warning: Could not save workflow JSON: {e}\n{traceback.format_exc()}")
+        
+        # Publish WebSocket update to notify clients about the new node
+        try:
+            await publish_workflow_update(workflow_id, {
+                "type": "node_created",
+                "workflow_id": workflow_id,
+                "node": {
+                    "id": str(new_node.id),
+                    "workflow_id": str(new_node.workflow_id),
+                    "module_type": new_node.module_type,
+                    "module_id": new_node.module_id,
+                    "checkpoint_name": checkpoint_name,
+                    "position_x": new_node.position_x,
+                    "position_y": new_node.position_y,
+                    "config": new_node.config,
+                    "state": new_node.state
+                }
+            })
+        except Exception as e:
+            # Log WebSocket error but don't fail the request
+            import traceback
+            print(f"Warning: Could not publish WebSocket update: {e}\n{traceback.format_exc()}")
+        
+        # Return the relative path from node folder (e.g., "input/uuid_filename.duckdb")
+        file_relative_path = f"input/{uuid_filename}"
+        
+        return {
+            "workflow_id": workflow_id,
+            "source_node_id": node_id,
+            "new_node_id": str(new_node.id),
+            "new_node_module_type": next_module_type,
+            "file_copied": file_relative_path,  # Return full relative path for file selection
+            "original_filename": original_filename
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        import traceback
+        print(f"Error moving to next node: {str(e)}\n{traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail=f"Error moving to next node: {str(e)}")
+
+
+# Move output to existing node endpoint
+@router.post("/workflows/{workflow_id}/nodes/{node_id}/move-to-existing-node")
+async def move_to_existing_node(
+    workflow_id: str,
+    node_id: str,
+    target_node_id: str = Body(..., embed=True, description="Target node ID to move the file to"),
+    db: AsyncSession = Depends(get_db),
+    current_user: Optional[AppUser] = Depends(get_current_user)
+):
+    """Move the output DuckDB file from current node to an existing node's input folder"""
+    try:
+        import shutil
+        from pathlib import Path
+        
+        # Check workflow and source node exist
+        workflow_result = await db.execute(
+            select(Workflow).where(Workflow.id == uuid.UUID(workflow_id))
+        )
+        workflow = workflow_result.scalar_one_or_none()
+        if not workflow:
+            raise HTTPException(status_code=404, detail="Workflow not found")
+        
+        source_node_result = await db.execute(
+            select(WorkflowNode).where(WorkflowNode.id == uuid.UUID(node_id))
+        )
+        source_node = source_node_result.scalar_one_or_none()
+        if not source_node:
+            raise HTTPException(status_code=404, detail="Source node not found")
+        
+        if str(source_node.workflow_id) != workflow_id:
+            raise HTTPException(
+                status_code=400, 
+                detail=f"Node {node_id} does not belong to workflow {workflow_id}"
+            )
+        
+        # Check target node exists and belongs to the same workflow
+        target_node_result = await db.execute(
+            select(WorkflowNode).where(WorkflowNode.id == uuid.UUID(target_node_id))
+        )
+        target_node = target_node_result.scalar_one_or_none()
+        if not target_node:
+            raise HTTPException(status_code=404, detail="Target node not found")
+        
+        if str(target_node.workflow_id) != workflow_id:
+            raise HTTPException(
+                status_code=400, 
+                detail=f"Target node {target_node_id} does not belong to workflow {workflow_id}"
+            )
+        
+        # Validate target node module type based on source node type
+        if source_node.module_type == "duckdb_convert":
+            # DuckDB converter can move to outlier_remover_duckdb or duckdb2jmp
+            if target_node.module_type not in ['outlier_remover_duckdb', 'duckdb2jmp']:
+                raise HTTPException(
+                    status_code=400, 
+                    detail=f"Invalid target module type '{target_node.module_type}'. DuckDB converter can only move to 'outlier_remover_duckdb' or 'duckdb2jmp'"
+                )
+        elif source_node.module_type == "outlier_remover_duckdb":
+            # Outlier remover can only move to duckdb2jmp
+            if target_node.module_type != 'duckdb2jmp':
+                raise HTTPException(
+                    status_code=400, 
+                    detail=f"Invalid target module type '{target_node.module_type}'. Outlier remover can only move to 'duckdb2jmp'"
+                )
+        else:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Source node type '{source_node.module_type}' is not supported for moving to existing node."
+            )
+        
+        # Get source node output path
+        source_node_path = local_storage.get_workflow_node_path(workflow_id, node_id)
+        source_output_path = source_node_path / "output"
+        
+        # Find DuckDB files based on source node type
+        duckdb_files = []
+        if source_node.module_type == "duckdb_convert":
+            # DuckDB converter creates excel2duckdb_*.duckdb files
+            duckdb_files = list(source_output_path.glob("excel2duckdb_*.duckdb"))
+            if not duckdb_files:
+                raise HTTPException(
+                    status_code=404, 
+                    detail="No converted DuckDB file found. Please execute conversion first."
+                )
+        elif source_node.module_type == "outlier_remover_duckdb":
+            # Outlier remover creates processed_*.duckdb files
+            duckdb_files = list(source_output_path.glob("processed_*.duckdb"))
+            if not duckdb_files:
+                raise HTTPException(
+                    status_code=404, 
+                    detail="No processed DuckDB file found. Please execute processing first."
+                )
+        else:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Source node type '{source_node.module_type}' is not supported for moving to existing node."
+            )
+        
+        # Get most recent file
+        source_duckdb_file = max(duckdb_files, key=lambda p: p.stat().st_mtime)
+        
+        # Get metadata from source output if available
+        source_metadata = None
+        source_metadata_file = source_output_path / f"{source_duckdb_file.stem}_metadata.json"
+        if source_metadata_file.exists():
+            try:
+                with open(source_metadata_file, 'r', encoding='utf-8') as f:
+                    source_metadata = json.load(f)
+            except Exception as e:
+                print(f"Error reading source metadata file: {str(e)}")
+        
+        # Get original filename from source metadata or use the file name
+        original_filename = source_duckdb_file.name
+        if source_metadata and source_metadata.get("input_files"):
+            # Try to get original filename from first input file
+            first_input = source_metadata["input_files"][0] if source_metadata["input_files"] else None
+            if first_input and first_input.get("original_filename"):
+                original_filename = first_input["original_filename"]
+                # Change extension to .duckdb if needed
+                if not original_filename.endswith('.duckdb'):
+                    original_filename = Path(original_filename).stem + '.duckdb'
+        
+        # Ensure target node folder structure exists
+        target_node_path = local_storage.ensure_workflow_node_structure(workflow_id, target_node_id)
+        target_node_input_path = target_node_path / "input"
+        
+        # Generate UUID for the copied file
+        file_uuid = str(uuid.uuid4())
+        uuid_filename = f"{file_uuid}.duckdb"
+        dest_file_path = target_node_input_path / uuid_filename
+        
+        # Copy the DuckDB file to target node's input folder
+        shutil.copy2(str(source_duckdb_file), str(dest_file_path))
+        
+        # Create metadata JSON for the new input file
+        new_input_metadata = {
+            "original_filename": original_filename,
+            "file_type": "duckdb",
+            "uploaded_time": datetime.now(timezone.utc).isoformat(),
+            "workflow_id": workflow_id,
+            "node_id": target_node_id,
+            "uuid_filename": uuid_filename,
+            "file_size": dest_file_path.stat().st_size,
+            "source_node_id": node_id,
+            "source_node_module_type": source_node.module_type,
+            "source_workflow_id": workflow_id,
+            "source_file_path": str(source_duckdb_file.relative_to(local_storage.base_path)),
+            "source_metadata": source_metadata  # Include full source metadata for traceability
+        }
+        
+        # Save metadata JSON file
+        metadata_filename = f"{file_uuid}_metadata.json"
+        metadata_path = target_node_input_path / metadata_filename
+        with open(metadata_path, 'w', encoding='utf-8') as f:
+            json.dump(new_input_metadata, f, indent=2)
+        
+        print(f"Copied DuckDB file from {source_duckdb_file} to {dest_file_path}")
+        print(f"Saved metadata file: {metadata_path}")
+        
+        # Return the relative path from node folder (e.g., "input/uuid_filename.duckdb")
+        file_relative_path = f"input/{uuid_filename}"
+        
+        return {
+            "workflow_id": workflow_id,
+            "source_node_id": node_id,
+            "target_node_id": target_node_id,
+            "target_node_module_type": target_node.module_type,
+            "file_copied": file_relative_path,  # Return full relative path for file selection
+            "original_filename": original_filename
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        import traceback
+        print(f"Error moving to existing node: {str(e)}\n{traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail=f"Error moving to existing node: {str(e)}")
+
+
+# Convert processed DuckDB to CSV bundle
+@router.post("/workflows/{workflow_id}/nodes/{node_id}/convert-duckdb-to-csv")
+async def convert_duckdb_to_csv(
+    workflow_id: str,
+    node_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: Optional[AppUser] = Depends(get_current_user)
+):
+    """Convert processed DuckDB file to a zipped collection of CSV files"""
+    progress_key = f"{workflow_id}_{node_id}_convert"
+    duckdb_progress_store[progress_key] = {"status": "processing", "progress": 0, "message": "Starting conversion..."}
+    
+    try:
+        # Check workflow and node
+        workflow_result = await db.execute(
+            select(Workflow).where(Workflow.id == uuid.UUID(workflow_id))
+        )
+        workflow = workflow_result.scalar_one_or_none()
+        
+        if not workflow:
+            raise HTTPException(status_code=404, detail="Workflow not found")
+        
+        node_result = await db.execute(
+            select(WorkflowNode).where(WorkflowNode.id == uuid.UUID(node_id))
+        )
+        node = node_result.scalar_one_or_none()
+        
+        if not node or str(node.workflow_id) != workflow_id:
+            raise HTTPException(status_code=404, detail="Node not found")
+        
+        if node.module_type != "outlier_remover_duckdb":
+            raise HTTPException(status_code=400, detail="Node is not an outlier remover DuckDB node")
+        
+        node_path = local_storage.get_workflow_node_path(workflow_id, node_id)
+        output_path = node_path / "output"
+        
+        # Find processed DuckDB file
+        duckdb_files = list(output_path.glob("processed_*.duckdb"))
+        
+        if not duckdb_files:
+            duckdb_progress_store[progress_key] = {"status": "error", "progress": 0, "message": "No processed DuckDB file found"}
+            raise HTTPException(status_code=404, detail="No processed DuckDB file found")
+        
+        duckdb_file = max(duckdb_files, key=lambda p: p.stat().st_mtime)
+        
+        duckdb_progress_store[progress_key] = {"status": "processing", "progress": 10, "message": "Connecting to DuckDB..."}
+        
+        # Connect to DuckDB and export tables to CSV
+        import duckdb
+        import tempfile
+        import zipfile
+        import shutil
+        import re
+        
+        conn = duckdb.connect(str(duckdb_file), read_only=True)
+        temp_dir = Path(tempfile.mkdtemp(prefix="duckdb_csv_export_"))
+        csv_files: List[Path] = []
+        
+        try:
+            tables_result = conn.execute("SHOW TABLES").fetchall()
+            table_names = [row[0] for row in tables_result]
+            
+            if not table_names:
+                duckdb_progress_store[progress_key] = {"status": "error", "progress": 0, "message": "No tables found in DuckDB file"}
+                raise HTTPException(status_code=400, detail="No tables found in DuckDB file")
+            
+            duckdb_progress_store[progress_key] = {"status": "processing", "progress": 20, "message": f"Exporting {len(table_names)} tables to CSV..."}
+            
+            total_tables = len(table_names)
+            name_counts: Dict[str, int] = {}
+            
+            for idx, table_name in enumerate(table_names, start=1):
+                progress_pct = 20 + int((idx / total_tables) * 60)
+                duckdb_progress_store[progress_key] = {
+                    "status": "processing",
+                    "progress": min(progress_pct, 80),
+                    "message": f"Exporting table {table_name} ({idx}/{total_tables})..."
+                }
+                
+                # Sanitize file name
+                safe_name = re.sub(r"[^A-Za-z0-9_-]+", "_", table_name).strip("_") or "table"
+                safe_name = safe_name[:100]  # keep names manageable
+                count = name_counts.get(safe_name, 0)
+                name_counts[safe_name] = count + 1
+                if count > 0:
+                    safe_name = f"{safe_name}_{count+1}"
+                
+                csv_path = temp_dir / f"{safe_name}.csv"
+                # Quote identifier safely for DuckDB (wrap in double quotes, escape inner quotes)
+                quoted_table_name = '"' + table_name.replace('"', '""') + '"'
+                conn.execute(f"COPY (SELECT * FROM {quoted_table_name}) TO '{csv_path.as_posix()}' (FORMAT CSV, HEADER TRUE)")
+                csv_files.append(csv_path)
+            
+            duckdb_progress_store[progress_key] = {"status": "processing", "progress": 90, "message": "Compressing CSV files..."}
+            
+            # Create zip archive
+            zip_filename = f"{duckdb_file.stem}_tables.zip"
+            zip_file_path = output_path / zip_filename
+            if zip_file_path.exists():
+                zip_file_path.unlink()
+            
+            with zipfile.ZipFile(zip_file_path, 'w', compression=zipfile.ZIP_DEFLATED, allowZip64=True) as zipf:
+                for csv_file in csv_files:
+                    zipf.write(csv_file, arcname=csv_file.name)
+            
+            duckdb_progress_store[progress_key] = {"status": "completed", "progress": 100, "message": "CSV package ready"}
+            
+            return {
+                "workflow_id": workflow_id,
+                "node_id": node_id,
+                "csv_zip_file": str(zip_file_path.relative_to(local_storage.base_path)),
+                "zip_filename": zip_filename,
+                "tables_converted": table_names,
+                "csv_count": len(csv_files)
+            }
+        
+        finally:
+            conn.close()
+            shutil.rmtree(temp_dir, ignore_errors=True)
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        import traceback
+        duckdb_progress_store[progress_key] = {"status": "error", "progress": 0, "message": f"Error converting DuckDB to CSV: {str(e)}"}
+        print(f"Error converting DuckDB to CSV: {str(e)}\n{traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail=f"Error converting DuckDB to CSV: {str(e)}")
+
+
+# Download converted CSV zip file
+@router.get("/workflows/{workflow_id}/nodes/{node_id}/download-csv-zip-from-duckdb")
+async def download_csv_zip_from_duckdb(
+    workflow_id: str,
+    node_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: Optional[AppUser] = Depends(get_current_user)
+):
+    """Download the CSV zip file converted from DuckDB"""
+    try:
+        from fastapi.responses import FileResponse
+        
+        node_path = local_storage.get_workflow_node_path(workflow_id, node_id)
+        output_path = node_path / "output"
+        
+        # Find CSV zip file
+        zip_files = list(output_path.glob("processed_*_tables.zip"))
+        
+        if not zip_files:
+            raise HTTPException(status_code=404, detail="No converted CSV zip file found. Please convert DuckDB to CSV first.")
+        
+        # Get most recent file
+        zip_file = max(zip_files, key=lambda p: p.stat().st_mtime)
+        
+        return FileResponse(
+            path=str(zip_file),
+            filename=zip_file.name,
+            media_type="application/zip"
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        import traceback
+        print(f"Error downloading CSV zip file: {str(e)}\n{traceback.format_exc()}")
         raise HTTPException(status_code=500, detail=f"Error downloading file: {str(e)}")
 
 

@@ -6,7 +6,7 @@ import { apiClient } from '@/lib/api'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { ArrowLeft, Loader2, FolderOpen, Plus, Workflow, Sparkles } from 'lucide-react'
+import { ArrowLeft, Loader2, FolderOpen, Plus, Workflow, Sparkles, Trash2 } from 'lucide-react'
 import Link from 'next/link'
 import { useState, useEffect, Suspense } from 'react'
 import toast from 'react-hot-toast'
@@ -15,9 +15,11 @@ import FileUploaderWizard from '@/components/workspace/node-embedded/FileUploade
 import ExcelViewerWizard from '@/components/workspace/node-embedded/ExcelViewerWizard'
 import OutlierRemoverWizard from '@/components/workspace/node-embedded/OutlierRemoverWizard'
 import OutlierRemoverGUI from '@/components/workspace/node-embedded/OutlierRemoverGUI'
+import OutlierRemoverDuckDBGUI from '@/components/workspace/node-embedded/OutlierRemoverDuckDBGUI'
 import DuckDBConvertWizard from '@/components/workspace/node-embedded/DuckDBConvertWizard'
 import DuckDBConvertGUI from '@/components/workspace/node-embedded/DuckDBConvertGUI'
 import Excel2JMPGUI from '@/components/workspace/node-embedded/Excel2JMPGUI'
+import DuckDB2JMPGUI from '@/components/workspace/node-embedded/DuckDB2JMPGUI'
 
 interface Module {
   module_type: string
@@ -48,6 +50,7 @@ function ModuleRunnerPageContent() {
   // Read workflow and node from URL params
   const urlWorkflowId = searchParams.get('workflow')
   const urlNodeId = searchParams.get('node')
+  const urlFile = searchParams.get('file')  // File path to auto-select
   
   const [wizardOpen, setWizardOpen] = useState(true)
   const [tempWorkflowId, setTempWorkflowId] = useState<string | null>(urlWorkflowId)
@@ -58,6 +61,7 @@ function ModuleRunnerPageContent() {
   const [workflowSelected, setWorkflowSelected] = useState(!!urlWorkflowId)  // Track if workflow is selected
   const [nodeCreated, setNodeCreated] = useState(!!urlNodeId)  // Track if node is created
   const [showWorkflowDialog, setShowWorkflowDialog] = useState(false)  // Control workflow selection dialog
+  const [nodeToDelete, setNodeToDelete] = useState<{ id: string; name: string } | null>(null)  // Node to delete (for confirmation)
 
   // Get storage key for this module type
   const getStorageKey = (key: string) => `standalone_module_${moduleType}_${key}`
@@ -320,21 +324,44 @@ function ModuleRunnerPageContent() {
     enabled: !!moduleType
   })
 
-  // Fetch workflows for this module type
-  const { data: moduleWorkflows, refetch: refetchWorkflows } = useQuery<Array<{
+  // Fetch nodes for this module type (with workflow information)
+  const { data: moduleNodes, refetch: refetchNodes } = useQuery<Array<{
     id: string
-    name: string
-    description?: string
-    status: string
+    workflow_id: string
+    workflow_name: string
+    workflow_description?: string
+    module_type: string
+    checkpoint_name?: string
+    workflow_updated_at?: string
     created_at?: string
-    updated_at?: string
   }>>({
-    queryKey: ['workflows-by-module', moduleType],
+    queryKey: ['nodes-by-module', moduleType],
     queryFn: async () => {
-      return apiClient.get(`/v1/workflows/by-module/${moduleType}`)
+      return apiClient.get(`/v1/nodes/by-module/${moduleType}`)
     },
     enabled: !!moduleType,
     staleTime: 30000
+  })
+
+  // Delete node mutation - MUST be before any early returns
+  const deleteNodeMutation = useMutation({
+    mutationFn: async (nodeId: string) => {
+      await apiClient.delete(`/v1/nodes/${nodeId}`)
+    },
+    onSuccess: () => {
+      toast.success('Node deleted successfully')
+      // If the deleted node was the current one, reset to selector
+      if (nodeToDelete && nodeToDelete.id === tempNodeId) {
+        handleResetWorkflow()
+      }
+      // Refresh the nodes list
+      refetchNodes()
+      setNodeToDelete(null)
+    },
+    onError: (error: any) => {
+      toast.error(`Failed to delete node: ${error.message || 'Unknown error'}`)
+      setNodeToDelete(null)
+    }
   })
 
   if (isLoading) {
@@ -389,62 +416,37 @@ function ModuleRunnerPageContent() {
     }
   }
 
-  // Handle workflow selection
-  const handleWorkflowSelect = async (workflowId: string) => {
+  // Handle node selection (from the list of nodes)
+  const handleNodeSelect = async (nodeId: string, workflowId: string) => {
     try {
       // Close the dialog
       setShowWorkflowDialog(false)
       
-      // Get nodes for this workflow filtered by module type
-      const matchingNodes = await apiClient.get<Array<{ id: string; module_type: string; checkpoint_name?: string }>>(
-        `/v1/workflows/${workflowId}/nodes?module_type=${moduleType}`
-      )
+      // Update state
+      setTempWorkflowId(workflowId)
+      setTempNodeId(nodeId)
+      setWorkflowSelected(true)
+      setNodeCreated(true)
+      setShowWorkflowSelector(false)
+      setShowNodeSelector(false)
       
-      if (matchingNodes.length === 0) {
-        // No node found, create one
-        setTempWorkflowId(workflowId)
-        setWorkflowSelected(true)
-        setShowWorkflowSelector(false)
-        await createNodeForWorkflow(workflowId)
-        // URL will be updated in createNodeForWorkflow
-      } else if (matchingNodes.length === 1) {
-        // Only one node, use it directly
-        const selectedNodeId = matchingNodes[0].id
-        
-        // Update state first
-        setTempWorkflowId(workflowId)
-        setTempNodeId(selectedNodeId)
-        setWorkflowSelected(true)
-        setNodeCreated(true)
-        setShowWorkflowSelector(false)
-        setShowNodeSelector(false)
-        
-        // Update localStorage
-        if (typeof window !== 'undefined') {
-          localStorage.setItem(getStorageKey('workflowId'), workflowId)
-          localStorage.setItem(getStorageKey('nodeId'), selectedNodeId)
-        }
-        
-        // Update URL - this will trigger a navigation
-        updateUrl(workflowId, selectedNodeId)
-        
-        toast.success('Workflow and node loaded')
-      } else {
-        // Multiple nodes, show node selector
-        setTempWorkflowId(workflowId)
-        setWorkflowSelected(true)
-        setAvailableNodes(matchingNodes)
-        setShowWorkflowSelector(false)
-        setShowNodeSelector(true)
-        // Don't update URL yet - wait for node selection
+      // Update localStorage
+      if (typeof window !== 'undefined') {
+        localStorage.setItem(getStorageKey('workflowId'), workflowId)
+        localStorage.setItem(getStorageKey('nodeId'), nodeId)
       }
+      
+      // Update URL - this will trigger a navigation
+      updateUrl(workflowId, nodeId)
+      
+      toast.success('Node and workflow loaded')
     } catch (error: any) {
-      toast.error(error.message || 'Failed to load workflow')
+      toast.error(error.message || 'Failed to load node')
     }
   }
 
-  // Handle node selection
-  const handleNodeSelect = (nodeId: string) => {
+  // Handle node selection from node selector (when multiple nodes in same workflow)
+  const handleNodeSelectFromSelector = (nodeId: string) => {
     setTempNodeId(nodeId)
     setNodeCreated(true)
     setShowNodeSelector(false)
@@ -466,6 +468,19 @@ function ModuleRunnerPageContent() {
     createWorkflowMutation.mutate()
   }
 
+  // Handle delete node
+  const handleDeleteNode = (nodeId: string, nodeName: string, e: React.MouseEvent) => {
+    e.stopPropagation()  // Prevent triggering the node selection
+    setNodeToDelete({ id: nodeId, name: nodeName })
+  }
+
+  // Confirm delete
+  const confirmDeleteNode = () => {
+    if (nodeToDelete) {
+      deleteNodeMutation.mutate(nodeToDelete.id)
+    }
+  }
+
   const renderModuleInterface = () => {
     // Show workflow selector if workflow not selected
     if (showWorkflowSelector && !workflowSelected) {
@@ -473,11 +488,11 @@ function ModuleRunnerPageContent() {
         <Card className="p-12">
           <div className="text-center mb-8">
             <h2 className="text-2xl font-semibold text-gray-900 mb-2">Get Started</h2>
-            <p className="text-gray-600">Select an existing workflow or create a new one to continue</p>
+            <p className="text-gray-600">Select an existing node or create a new workflow to continue</p>
           </div>
           
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6 max-w-3xl mx-auto">
-            {/* Select Existing Workflow Button */}
+            {/* Select Existing Node Button */}
             <button
               onClick={() => {
                 setShowWorkflowDialog(true)
@@ -493,15 +508,15 @@ function ModuleRunnerPageContent() {
                 </div>
                 <div className="text-center">
                   <h3 className="text-xl font-semibold text-gray-900 mb-2 group-hover:text-indigo-600 transition-colors">
-                    Select Workflow
+                    Select Node
                   </h3>
                   <p className="text-sm text-gray-600">
-                    Choose from your existing workflows
+                    Choose from your existing nodes
                   </p>
                 </div>
-                {moduleWorkflows && moduleWorkflows.length > 0 && (
+                {moduleNodes && moduleNodes.length > 0 && (
                   <div className="mt-2 text-xs text-indigo-600 font-medium">
-                    {moduleWorkflows.length} workflow{moduleWorkflows.length !== 1 ? 's' : ''} available
+                    {moduleNodes.length} node{moduleNodes.length !== 1 ? 's' : ''} available
                   </div>
                 )}
               </div>
@@ -628,6 +643,22 @@ function ModuleRunnerPageContent() {
             }}
           />
         )
+      case 'outlier_remover_duckdb':
+        return (
+          <OutlierRemoverDuckDBGUI
+            node={tempNode}
+            workflowId={tempWorkflowId}
+            onConfigUpdate={handleConfigUpdate}
+            onProcess={handleProcess}
+            isStandalone={true}
+            autoSelectFile={urlFile || undefined}
+            onCreateNewWorkflow={(file?: File) => {
+              if (file) {
+                createWorkflowWithFileMutation.mutate(file)
+              }
+            }}
+          />
+        )
       case 'duckdb_convert':
         return (
           <DuckDBConvertGUI
@@ -648,6 +679,17 @@ function ModuleRunnerPageContent() {
             isStandalone={true}
           />
         )
+      case 'duckdb2jmp':
+        return (
+          <DuckDB2JMPGUI
+            node={tempNode}
+            workflowId={tempWorkflowId}
+            onConfigUpdate={handleConfigUpdate}
+            onProcess={handleProcess}
+            isStandalone={true}
+            autoSelectFile={urlFile || undefined}
+          />
+        )
       default:
         return (
           <Card className="p-8 text-center">
@@ -663,11 +705,11 @@ function ModuleRunnerPageContent() {
   }
 
   // For full-screen GUI modules, render without container constraints
-  if (moduleType === 'outlier_remover' || moduleType === 'excel2jmp' || moduleType === 'duckdb_convert') {
+  if (moduleType === 'outlier_remover' || moduleType === 'outlier_remover_duckdb' || moduleType === 'excel2jmp' || moduleType === 'duckdb2jmp' || moduleType === 'duckdb_convert') {
     return (
-      <div className="h-screen flex flex-col">
+      <div className="h-screen flex flex-col overflow-hidden">
         {/* Top Bar with Back Button */}
-        <div className="bg-white border-b border-gray-200 px-4 py-2 flex items-center justify-between">
+        <div className="bg-white border-b border-gray-200 px-4 py-2 flex items-center justify-between flex-shrink-0">
           <div className="flex items-center space-x-2">
             <Link href="/modules">
               <Button variant="ghost" size="sm">
@@ -684,7 +726,7 @@ function ModuleRunnerPageContent() {
               <h1 className="text-lg font-semibold text-gray-900">{module.display_name}</h1>
               {tempWorkflowId && (
                 <p className="text-xs text-gray-500">
-                  {moduleWorkflows?.find(w => w.id === tempWorkflowId)?.name || 'Current Workflow'}
+                  {moduleNodes?.find(n => n.workflow_id === tempWorkflowId)?.workflow_name || 'Current Workflow'}
                 </p>
               )}
             </div>
@@ -695,7 +737,7 @@ function ModuleRunnerPageContent() {
 
         {/* Node Selector */}
         {showNodeSelector && tempWorkflowId && availableNodes.length > 0 && (
-          <div className="bg-white border-b border-gray-200 px-4 py-3 max-h-64 overflow-y-auto">
+          <div className="bg-white border-b border-gray-200 px-4 py-3 max-h-64 overflow-y-auto flex-shrink-0">
             <div className="flex items-center justify-between mb-2">
               <h3 className="text-sm font-semibold">Select Node</h3>
               <Button
@@ -711,25 +753,25 @@ function ModuleRunnerPageContent() {
             </div>
             <div className="space-y-1">
               {availableNodes.map((node) => (
-                <button
-                  key={node.id}
-                  onClick={() => handleNodeSelect(node.id)}
-                  className={`w-full text-left px-3 py-2 rounded-md text-sm hover:bg-gray-100 ${
-                    node.id === tempNodeId ? 'bg-indigo-50 border border-indigo-200' : ''
-                  }`}
-                >
-                  <div className="font-medium">
-                    {node.checkpoint_name || `Node ${node.id.slice(0, 8)}`}
-                  </div>
-                  <div className="text-xs text-gray-500">Module: {node.module_type}</div>
-                </button>
+                  <button
+                    key={node.id}
+                    onClick={() => handleNodeSelectFromSelector(node.id)}
+                    className={`w-full text-left px-3 py-2 rounded-md text-sm hover:bg-gray-100 ${
+                      node.id === tempNodeId ? 'bg-indigo-50 border border-indigo-200' : ''
+                    }`}
+                  >
+                    <div className="font-medium">
+                      {node.checkpoint_name || `Node ${node.id.slice(0, 8)}`}
+                    </div>
+                    <div className="text-xs text-gray-500">Module: {node.module_type}</div>
+                  </button>
               ))}
             </div>
           </div>
         )}
         
         {/* Full-screen GUI */}
-        <div className="flex-1 overflow-hidden">
+        <div className="flex-1 min-h-0 overflow-y-auto">
           {renderModuleInterface()}
         </div>
 
@@ -737,9 +779,9 @@ function ModuleRunnerPageContent() {
         <Dialog open={showWorkflowDialog} onOpenChange={setShowWorkflowDialog}>
           <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
             <DialogHeader>
-              <DialogTitle>Select Workflow</DialogTitle>
+              <DialogTitle>Select Node</DialogTitle>
               <DialogDescription>
-                Choose an existing workflow to continue, or create a new one
+                Choose an existing node to continue, or create a new workflow
               </DialogDescription>
             </DialogHeader>
             <div className="space-y-4">
@@ -750,37 +792,84 @@ function ModuleRunnerPageContent() {
               >
                 {createWorkflowMutation.isPending ? 'Creating...' : 'Create New Workflow'}
               </Button>
-              {moduleWorkflows && moduleWorkflows.length > 0 ? (
+              {moduleNodes && moduleNodes.length > 0 ? (
                 <div className="space-y-2">
-                  <h3 className="text-sm font-semibold mb-2">Existing Workflows:</h3>
+                  <h3 className="text-sm font-semibold mb-2">Existing Nodes:</h3>
                   <div className="space-y-2 max-h-96 overflow-y-auto">
-                    {moduleWorkflows.map((workflow) => (
-                      <button
-                        key={workflow.id}
-                        onClick={() => handleWorkflowSelect(workflow.id)}
-                        className={`w-full text-left px-4 py-3 rounded-lg border hover:bg-gray-50 transition-all ${
-                          workflow.id === tempWorkflowId ? 'bg-indigo-50 border-indigo-200' : 'border-gray-200'
-                        }`}
-                      >
-                        <div className="flex items-center space-x-3">
-                          <Workflow className="h-5 w-5 text-gray-400" />
-                          <div className="flex-1">
-                            <div className="font-medium text-gray-900">{workflow.name}</div>
-                            {workflow.description && (
-                              <div className="text-sm text-gray-500 mt-1">{workflow.description}</div>
-                            )}
-                            <div className="text-xs text-gray-400 mt-1">
-                              {workflow.updated_at && new Date(workflow.updated_at).toLocaleDateString()}
+                    {moduleNodes.map((node) => {
+                      const nodeName = node.checkpoint_name || `Node ${node.id.slice(0, 8)}`
+                      return (
+                        <div
+                          key={node.id}
+                          className={`relative w-full px-4 py-3 rounded-lg border hover:bg-gray-50 transition-all ${
+                            node.id === tempNodeId ? 'bg-indigo-50 border-indigo-200' : 'border-gray-200'
+                          }`}
+                        >
+                          <button
+                            onClick={() => handleNodeSelect(node.id, node.workflow_id)}
+                            className="w-full text-left"
+                          >
+                            <div className="flex items-center space-x-3 pr-8">
+                              <Workflow className="h-5 w-5 text-gray-400" />
+                              <div className="flex-1">
+                                <div className="font-medium text-gray-900">
+                                  {nodeName}
+                                </div>
+                                <div className="text-sm text-gray-600 mt-1">
+                                  Workflow: {node.workflow_name}
+                                </div>
+                                {node.workflow_description && (
+                                  <div className="text-sm text-gray-500 mt-1">{node.workflow_description}</div>
+                                )}
+                                <div className="text-xs text-gray-400 mt-1">
+                                  {node.workflow_updated_at && new Date(node.workflow_updated_at).toLocaleDateString()}
+                                </div>
+                              </div>
                             </div>
-                          </div>
+                          </button>
+                          <button
+                            onClick={(e) => handleDeleteNode(node.id, nodeName, e)}
+                            className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
+                            title="Delete node"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
                         </div>
-                      </button>
-                    ))}
+                      )
+                    })}
                   </div>
                 </div>
               ) : (
-                <p className="text-sm text-gray-500 text-center py-4">No workflows found. Create a new one to get started.</p>
+                <p className="text-sm text-gray-500 text-center py-4">No nodes found. Create a new workflow to get started.</p>
               )}
+            </div>
+          </DialogContent>
+        </Dialog>
+
+        {/* Delete Confirmation Dialog */}
+        <Dialog open={!!nodeToDelete} onOpenChange={(open) => !open && setNodeToDelete(null)}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Delete Node</DialogTitle>
+              <DialogDescription>
+                Are you sure you want to delete "{nodeToDelete?.name}"? This action cannot be undone.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="flex justify-end space-x-2 mt-4">
+              <Button
+                variant="outline"
+                onClick={() => setNodeToDelete(null)}
+                disabled={deleteNodeMutation.isPending}
+              >
+                Cancel
+              </Button>
+              <Button
+                variant="destructive"
+                onClick={confirmDeleteNode}
+                disabled={deleteNodeMutation.isPending}
+              >
+                {deleteNodeMutation.isPending ? 'Deleting...' : 'Delete'}
+              </Button>
             </div>
           </DialogContent>
         </Dialog>
@@ -844,29 +933,50 @@ function ModuleRunnerPageContent() {
                   {createWorkflowMutation.isPending ? 'Creating...' : 'Create New Workflow'}
                 </Button>
               </div>
-              {moduleWorkflows && moduleWorkflows.length > 0 ? (
+              {moduleNodes && moduleNodes.length > 0 ? (
                 <div className="space-y-2">
-                  <h3 className="text-sm font-semibold mb-2">Existing Workflows:</h3>
-                  {moduleWorkflows.map((workflow) => (
-                    <button
-                      key={workflow.id}
-                      onClick={() => handleWorkflowSelect(workflow.id)}
-                      className={`w-full text-left px-4 py-3 rounded-md border hover:bg-gray-50 ${
-                        workflow.id === tempWorkflowId ? 'bg-indigo-50 border-indigo-200' : 'border-gray-200'
-                      }`}
-                    >
-                      <div className="font-medium">{workflow.name}</div>
-                      {workflow.description && (
-                        <div className="text-sm text-gray-500 mt-1">{workflow.description}</div>
-                      )}
-                      <div className="text-xs text-gray-400 mt-1">
-                        {workflow.updated_at && new Date(workflow.updated_at).toLocaleDateString()}
+                  <h3 className="text-sm font-semibold mb-2">Existing Nodes:</h3>
+                  {moduleNodes.map((node) => {
+                    const nodeName = node.checkpoint_name || `Node ${node.id.slice(0, 8)}`
+                    return (
+                      <div
+                        key={node.id}
+                        className={`relative w-full px-4 py-3 rounded-md border hover:bg-gray-50 ${
+                          node.id === tempNodeId ? 'bg-indigo-50 border-indigo-200' : 'border-gray-200'
+                        }`}
+                      >
+                        <button
+                          onClick={() => handleNodeSelect(node.id, node.workflow_id)}
+                          className="w-full text-left"
+                        >
+                          <div className="pr-8">
+                            <div className="font-medium">
+                              {nodeName}
+                            </div>
+                            <div className="text-sm text-gray-600 mt-1">
+                              Workflow: {node.workflow_name}
+                            </div>
+                            {node.workflow_description && (
+                              <div className="text-sm text-gray-500 mt-1">{node.workflow_description}</div>
+                            )}
+                            <div className="text-xs text-gray-400 mt-1">
+                              {node.workflow_updated_at && new Date(node.workflow_updated_at).toLocaleDateString()}
+                            </div>
+                          </div>
+                        </button>
+                        <button
+                          onClick={(e) => handleDeleteNode(node.id, nodeName, e)}
+                          className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
+                          title="Delete node"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
                       </div>
-                    </button>
-                  ))}
+                    )
+                  })}
                 </div>
               ) : (
-                <p className="text-sm text-gray-500">No workflows found. Create a new one to get started.</p>
+                <p className="text-sm text-gray-500">No nodes found. Create a new workflow to get started.</p>
               )}
             </CardContent>
           </Card>
@@ -886,7 +996,7 @@ function ModuleRunnerPageContent() {
                 {availableNodes.map((node) => (
                   <button
                     key={node.id}
-                    onClick={() => handleNodeSelect(node.id)}
+                    onClick={() => handleNodeSelectFromSelector(node.id)}
                     className={`w-full text-left px-4 py-3 rounded-md border hover:bg-gray-50 ${
                       node.id === tempNodeId ? 'bg-indigo-50 border-indigo-200' : 'border-gray-200'
                     }`}
@@ -922,9 +1032,9 @@ function ModuleRunnerPageContent() {
         <Dialog open={showWorkflowDialog} onOpenChange={setShowWorkflowDialog}>
           <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
             <DialogHeader>
-              <DialogTitle>Select Workflow</DialogTitle>
+              <DialogTitle>Select Node</DialogTitle>
               <DialogDescription>
-                Choose an existing workflow to continue, or create a new one
+                Choose an existing node to continue, or create a new workflow
               </DialogDescription>
             </DialogHeader>
             <div className="space-y-4">
@@ -935,37 +1045,84 @@ function ModuleRunnerPageContent() {
               >
                 {createWorkflowMutation.isPending ? 'Creating...' : 'Create New Workflow'}
               </Button>
-              {moduleWorkflows && moduleWorkflows.length > 0 ? (
+              {moduleNodes && moduleNodes.length > 0 ? (
                 <div className="space-y-2">
-                  <h3 className="text-sm font-semibold mb-2">Existing Workflows:</h3>
+                  <h3 className="text-sm font-semibold mb-2">Existing Nodes:</h3>
                   <div className="space-y-2 max-h-96 overflow-y-auto">
-                    {moduleWorkflows.map((workflow) => (
-                      <button
-                        key={workflow.id}
-                        onClick={() => handleWorkflowSelect(workflow.id)}
-                        className={`w-full text-left px-4 py-3 rounded-lg border hover:bg-gray-50 transition-all ${
-                          workflow.id === tempWorkflowId ? 'bg-indigo-50 border-indigo-200' : 'border-gray-200'
-                        }`}
-                      >
-                        <div className="flex items-center space-x-3">
-                          <Workflow className="h-5 w-5 text-gray-400" />
-                          <div className="flex-1">
-                            <div className="font-medium text-gray-900">{workflow.name}</div>
-                            {workflow.description && (
-                              <div className="text-sm text-gray-500 mt-1">{workflow.description}</div>
-                            )}
-                            <div className="text-xs text-gray-400 mt-1">
-                              {workflow.updated_at && new Date(workflow.updated_at).toLocaleDateString()}
+                    {moduleNodes.map((node) => {
+                      const nodeName = node.checkpoint_name || `Node ${node.id.slice(0, 8)}`
+                      return (
+                        <div
+                          key={node.id}
+                          className={`relative w-full px-4 py-3 rounded-lg border hover:bg-gray-50 transition-all ${
+                            node.id === tempNodeId ? 'bg-indigo-50 border-indigo-200' : 'border-gray-200'
+                          }`}
+                        >
+                          <button
+                            onClick={() => handleNodeSelect(node.id, node.workflow_id)}
+                            className="w-full text-left"
+                          >
+                            <div className="flex items-center space-x-3 pr-8">
+                              <Workflow className="h-5 w-5 text-gray-400" />
+                              <div className="flex-1">
+                                <div className="font-medium text-gray-900">
+                                  {nodeName}
+                                </div>
+                                <div className="text-sm text-gray-600 mt-1">
+                                  Workflow: {node.workflow_name}
+                                </div>
+                                {node.workflow_description && (
+                                  <div className="text-sm text-gray-500 mt-1">{node.workflow_description}</div>
+                                )}
+                                <div className="text-xs text-gray-400 mt-1">
+                                  {node.workflow_updated_at && new Date(node.workflow_updated_at).toLocaleDateString()}
+                                </div>
+                              </div>
                             </div>
-                          </div>
+                          </button>
+                          <button
+                            onClick={(e) => handleDeleteNode(node.id, nodeName, e)}
+                            className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
+                            title="Delete node"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
                         </div>
-                      </button>
-                    ))}
+                      )
+                    })}
                   </div>
                 </div>
               ) : (
-                <p className="text-sm text-gray-500 text-center py-4">No workflows found. Create a new one to get started.</p>
+                <p className="text-sm text-gray-500 text-center py-4">No nodes found. Create a new workflow to get started.</p>
               )}
+            </div>
+          </DialogContent>
+        </Dialog>
+
+        {/* Delete Confirmation Dialog */}
+        <Dialog open={!!nodeToDelete} onOpenChange={(open) => !open && setNodeToDelete(null)}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Delete Node</DialogTitle>
+              <DialogDescription>
+                Are you sure you want to delete "{nodeToDelete?.name}"? This action cannot be undone.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="flex justify-end space-x-2 mt-4">
+              <Button
+                variant="outline"
+                onClick={() => setNodeToDelete(null)}
+                disabled={deleteNodeMutation.isPending}
+              >
+                Cancel
+              </Button>
+              <Button
+                variant="destructive"
+                onClick={confirmDeleteNode}
+                disabled={deleteNodeMutation.isPending}
+              >
+                {deleteNodeMutation.isPending ? 'Deleting...' : 'Delete'}
+              </Button>
             </div>
           </DialogContent>
         </Dialog>

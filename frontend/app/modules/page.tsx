@@ -4,7 +4,7 @@ import { useQuery } from '@tanstack/react-query'
 import { apiClient } from '@/lib/api'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
-import { Package, ArrowLeft, Database, Zap, BarChart3, Settings, ArrowRightCircle, ArrowLeftCircle, Hash, Upload, FileSpreadsheet } from 'lucide-react'
+import { Package, ArrowLeft, Database, Zap, BarChart3, Settings, ArrowRightCircle, ArrowLeftCircle, Hash, Upload, FileSpreadsheet, Play } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
@@ -165,42 +165,59 @@ export default function ModulesPage() {
               return (
                 <Card
                   key={module.module_type}
-                  className={`hover:shadow-lg transition-all duration-200 border-2 ${colors.border} hover:scale-105 cursor-pointer`}
+                  className={`hover:shadow-lg transition-all duration-200 border-2 ${colors.border} hover:scale-105 cursor-pointer flex flex-col h-full`}
                   onClick={() => router.push(`/modules/${module.module_type}`)}
                 >
-                  <CardHeader>
-                    <div className="flex items-start justify-between mb-2">
-                      <div className={`h-12 w-12 rounded-lg ${colors.bg} flex items-center justify-center text-white`}>
-                        {getModuleIcon(module.module_type)}
+                  <CardHeader className="pb-4">
+                    {/* Header Row: Icon, Title, Button */}
+                    <div className="flex items-start justify-between gap-3 mb-3">
+                      <div className="flex items-center gap-3 flex-1 min-w-0">
+                        <div className={`h-12 w-12 rounded-lg ${colors.bg} flex items-center justify-center text-white flex-shrink-0`}>
+                          {getModuleIcon(module.module_type)}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <CardTitle className="text-xl leading-tight mb-1">{module.display_name}</CardTitle>
+                          <Badge variant="outline" className={`${colors.text} text-xs`}>
+                            {module.module_type}
+                          </Badge>
+                        </div>
                       </div>
-                      <Badge variant="outline" className={colors.text}>
-                        {module.module_type}
-                      </Badge>
+                      <Button
+                        size="icon"
+                        className={`${colors.bg} text-white hover:opacity-90 hover:scale-110 transition-transform shadow-md hover:shadow-lg rounded-full h-10 w-10 flex-shrink-0`}
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          router.push(`/modules/${module.module_type}`)
+                        }}
+                        title="Run Module"
+                      >
+                        <Play className="h-5 w-5 fill-white" />
+                      </Button>
                     </div>
-                    <CardTitle className="text-xl">{module.display_name}</CardTitle>
-                    <CardDescription className="mt-2">
+                    {/* Description */}
+                    <CardDescription className="text-sm leading-relaxed">
                       {module.description}
                     </CardDescription>
                   </CardHeader>
-                  <CardContent>
+                  <CardContent className="flex-1 flex flex-col pt-0">
                     <div className="space-y-4">
                       {/* Inputs */}
                       {module.inputs.length > 0 && (
                         <div>
                           <div className="flex items-center space-x-2 mb-2">
-                            <ArrowRightCircle className="h-4 w-4 text-gray-500" />
+                            <ArrowRightCircle className="h-4 w-4 text-gray-500 flex-shrink-0" />
                             <h4 className="text-sm font-semibold text-gray-700">
                               Inputs ({module.inputs.length})
                             </h4>
                           </div>
-                          <div className="space-y-1">
+                          <div className="space-y-1.5">
                             {module.inputs.map((input, idx) => (
                               <div
                                 key={idx}
-                                className="text-xs bg-gray-50 rounded px-2 py-1 flex items-center justify-between"
+                                className="text-xs bg-gray-50 rounded-md px-2.5 py-1.5 flex items-center justify-between gap-2"
                               >
-                                <span className="font-medium">{input.label || input.name}</span>
-                                <div className="flex items-center space-x-2">
+                                <span className="font-medium text-gray-700 truncate">{input.label || input.name}</span>
+                                <div className="flex items-center space-x-1.5 flex-shrink-0">
                                   <Badge variant="secondary" className="text-xs">
                                     {input.type}
                                   </Badge>
@@ -220,19 +237,19 @@ export default function ModulesPage() {
                       {module.outputs.length > 0 && (
                         <div>
                           <div className="flex items-center space-x-2 mb-2">
-                            <ArrowLeftCircle className="h-4 w-4 text-gray-500" />
+                            <ArrowLeftCircle className="h-4 w-4 text-gray-500 flex-shrink-0" />
                             <h4 className="text-sm font-semibold text-gray-700">
                               Outputs ({module.outputs.length})
                             </h4>
                           </div>
-                          <div className="space-y-1">
+                          <div className="space-y-1.5">
                             {module.outputs.map((output, idx) => (
                               <div
                                 key={idx}
-                                className="text-xs bg-gray-50 rounded px-2 py-1 flex items-center justify-between"
+                                className="text-xs bg-gray-50 rounded-md px-2.5 py-1.5 flex items-center justify-between gap-2"
                               >
-                                <span className="font-medium">{output.label || output.name}</span>
-                                <Badge variant="secondary" className="text-xs">
+                                <span className="font-medium text-gray-700 truncate">{output.label || output.name}</span>
+                                <Badge variant="secondary" className="text-xs flex-shrink-0">
                                   {output.type}
                                 </Badge>
                               </div>
@@ -242,19 +259,10 @@ export default function ModulesPage() {
                       )}
 
                       {module.inputs.length === 0 && module.outputs.length === 0 && (
-                        <p className="text-xs text-gray-500 italic">No inputs or outputs defined</p>
+                        <div className="text-center py-4">
+                          <p className="text-xs text-gray-500 italic">No inputs or outputs defined</p>
+                        </div>
                       )}
-                    </div>
-                    <div className="mt-4 pt-4 border-t">
-                      <Button
-                        className={`w-full ${colors.bg} text-white hover:opacity-90`}
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          router.push(`/modules/${module.module_type}`)
-                        }}
-                      >
-                        Run Module
-                      </Button>
                     </div>
                   </CardContent>
                 </Card>

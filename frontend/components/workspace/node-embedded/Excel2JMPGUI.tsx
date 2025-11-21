@@ -8,7 +8,7 @@ import { Label } from '@/components/ui/label'
 import { Card } from '@/components/ui/card'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { FileSpreadsheet, Upload, Play, Loader2, FileText, ArrowLeft, Database, Search, Download, ArrowUp, ArrowDown, GripVertical, Check } from 'lucide-react'
+import { FileSpreadsheet, Upload, Play, Loader2, FileText, ArrowLeft, Database, Search, Download, ArrowUp, ArrowDown, GripVertical, Check, Trash2 } from 'lucide-react'
 import { Checkbox } from '@/components/ui/checkbox'
 import { apiClient } from '@/lib/api'
 import toast from 'react-hot-toast'
@@ -441,6 +441,36 @@ export default function Excel2JMPGUI({
     }
   }
 
+  // Delete file mutation
+  const deleteFileMutation = useMutation({
+    mutationFn: async (filePath: string) => {
+      await apiClient.delete(`/v1/workflows/${workflowId}/nodes/${node.id}/files/${filePath}`)
+    },
+    onSuccess: () => {
+      toast.success('File deleted successfully')
+      // Refresh file list
+      refetchInputFiles()
+      // If the deleted file was the current one, clear it
+      if (uploadedFileKey && inputFilesData?.folders?.input) {
+        const deletedFile = inputFilesData.folders.input.find(f => f.path === uploadedFileKey)
+        if (deletedFile) {
+          setUploadedFileKey(null)
+          setSelectedPair(null)
+        }
+      }
+    },
+    onError: (error: any) => {
+      toast.error(`Failed to delete file: ${error.message || 'Unknown error'}`)
+    }
+  })
+
+  const handleDeleteFile = (e: React.MouseEvent, file: { path: string; name: string }) => {
+    e.stopPropagation() // Prevent triggering file selection
+    if (confirm(`Are you sure you want to delete "${file.name}"? This action cannot be undone.`)) {
+      deleteFileMutation.mutate(file.path)
+    }
+  }
+
   // Auto-select first sheet when data loads
   useEffect(() => {
     if (excelData && excelData.sheets.length > 0 && !selectedSheet) {
@@ -551,7 +581,7 @@ export default function Excel2JMPGUI({
   }, [pairsData, selectedPair, uploadedFileKey])
 
   return (
-    <div className="h-screen flex flex-col bg-gray-50">
+    <div className={`${isStandalone ? 'h-full' : 'h-screen'} flex flex-col bg-gray-50`}>
       {/* Top Menu Bar */}
       <div className="bg-white border-b border-gray-200 px-4 py-2 flex items-center justify-between">
         <div className="flex items-center space-x-2">
@@ -1167,8 +1197,8 @@ export default function Excel2JMPGUI({
                       </div>
                       {/* CSV Table */}
                       <div className="flex-1 overflow-auto p-4">
-                        <div className="border border-gray-200 rounded-lg overflow-hidden">
-                          <table className="w-full text-sm border-collapse">
+                        <div className="border border-gray-200 rounded-lg overflow-x-auto">
+                          <table className="min-w-full text-sm border-collapse">
                             <thead className="bg-gray-50 sticky top-0">
                               <tr>
                                 {csvData.columns.map((col: string, colIdx: number) => (
@@ -1328,34 +1358,46 @@ export default function Excel2JMPGUI({
                 <h3 className="text-sm font-semibold">Existing Input Files:</h3>
                 <div className="space-y-2 max-h-96 overflow-y-auto">
                   {inputFilesData.folders.input.map((file) => (
-                    <button
+                    <div
                       key={file.name}
-                      onClick={() => handleSelectInputFile(file)}
-                      className={`w-full text-left px-4 py-3 rounded-lg border hover:bg-gray-50 transition-all ${
+                      className={`relative w-full px-4 py-3 rounded-lg border hover:bg-gray-50 transition-all ${
                         file.path === uploadedFileKey ? 'bg-indigo-50 border-indigo-200' : 'border-gray-200'
                       }`}
                     >
-                      <div className="flex items-start space-x-3">
-                        <FileSpreadsheet className="h-5 w-5 text-gray-400 mt-0.5" />
-                        <div className="flex-1">
-                          {file.metadata ? (
-                            <>
-                              <div className="font-medium text-gray-900">{file.metadata.original_filename}</div>
-                              <div className="text-xs text-gray-500 mt-1">
-                                Type: {file.metadata.file_type} • Uploaded: {new Date(file.metadata.uploaded_time).toLocaleString()}
-                              </div>
-                            </>
-                          ) : (
-                            <>
-                              <div className="font-medium text-gray-900">{file.name}</div>
-                              <div className="text-xs text-gray-500 mt-1">
-                                Size: {(file.size / 1024).toFixed(2)} KB
-                              </div>
-                            </>
-                          )}
+                      <button
+                        onClick={() => handleSelectInputFile(file)}
+                        className="w-full text-left pr-8"
+                      >
+                        <div className="flex items-start space-x-3">
+                          <FileSpreadsheet className="h-5 w-5 text-gray-400 mt-0.5" />
+                          <div className="flex-1">
+                            {file.metadata ? (
+                              <>
+                                <div className="font-medium text-gray-900">{file.metadata.original_filename}</div>
+                                <div className="text-xs text-gray-500 mt-1">
+                                  Type: {file.metadata.file_type} • Uploaded: {new Date(file.metadata.uploaded_time).toLocaleString()}
+                                </div>
+                              </>
+                            ) : (
+                              <>
+                                <div className="font-medium text-gray-900">{file.name}</div>
+                                <div className="text-xs text-gray-500 mt-1">
+                                  Size: {(file.size / 1024).toFixed(2)} KB
+                                </div>
+                              </>
+                            )}
+                          </div>
                         </div>
-                      </div>
-                    </button>
+                      </button>
+                      <button
+                        onClick={(e) => handleDeleteFile(e, file)}
+                        className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
+                        title="Delete file"
+                        disabled={deleteFileMutation.isPending}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    </div>
                   ))}
                 </div>
               </div>

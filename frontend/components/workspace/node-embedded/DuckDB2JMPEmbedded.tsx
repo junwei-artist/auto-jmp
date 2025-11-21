@@ -2,10 +2,10 @@
 
 import { useState } from 'react'
 import { Button } from '@/components/ui/button'
-import { FileSpreadsheet } from 'lucide-react'
-import Excel2JMPWizard from './Excel2JMPWizard'
+import { Database } from 'lucide-react'
+import DuckDB2JMPWizard from './DuckDB2JMPWizard'
 
-interface Excel2JMPEmbeddedProps {
+interface DuckDB2JMPEmbeddedProps {
   node: {
     id: string
     module_type: string
@@ -16,11 +16,11 @@ interface Excel2JMPEmbeddedProps {
   onConfigUpdate?: (config: any) => void
 }
 
-export default function Excel2JMPEmbedded({
+export default function DuckDB2JMPEmbedded({
   node,
   workflowId,
   onConfigUpdate
-}: Excel2JMPEmbeddedProps) {
+}: DuckDB2JMPEmbeddedProps) {
   // Button is rendered in parent component, just return null
   return null
 }

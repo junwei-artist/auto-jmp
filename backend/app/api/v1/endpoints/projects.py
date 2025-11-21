@@ -833,8 +833,8 @@ async def download_public_artifact(
             if candidate.exists():
                 full_path = candidate
             else:
-                # THIRD: Explicit fallback to GitHub path
-                fixed_backend = Path("/Users/lytech/Documents/GitHub/auto-jmp/backend")
+                # THIRD: Explicit fallback to service files path
+                fixed_backend = Path("/Users/lstech/service/files")
                 fixed_candidate = (fixed_backend / task_path).resolve()
                 if fixed_candidate.exists():
                     full_path = fixed_candidate
@@ -862,17 +862,11 @@ async def download_public_artifact(
                 if candidate.exists():
                     full_path = candidate
                 else:
-                    # THIRD: Explicit fallback to GitHub path
-                    fixed_backend = Path("/Users/lytech/Documents/GitHub/auto-jmp/backend")
+                    # THIRD: Explicit fallback to service files path
+                    fixed_backend = Path("/Users/lstech/service/files")
                     fixed_candidate = (fixed_backend / relative_tasks).resolve()
                     if fixed_candidate.exists():
                         full_path = fixed_candidate
-                    else:
-                        # FOURTH: Also try with explicit service backend path
-                        service_backend = Path("/Users/lytech/Documents/service/auto-jmp/backend")
-                        service_candidate = (service_backend / relative_tasks).resolve()
-                        if service_candidate.exists():
-                            full_path = service_candidate
     
     if not full_path.exists() or not full_path.is_file():
         raise HTTPException(status_code=404, detail="File not found")

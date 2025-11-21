@@ -1,11 +1,12 @@
 'use client'
 
 import { useState, useEffect, useCallback, useRef } from 'react'
+import { useRouter } from 'next/navigation'
 import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
-import { Plus, X, Zap, Database, BarChart3, Settings, Move, Trash2, ArrowUp, ArrowDown, ArrowRight, Palette, ZoomIn, ZoomOut, Maximize2, Hash, Upload, FolderOpen, Trash, Play, FileText, Table, FileSpreadsheet } from 'lucide-react'
+import { Plus, X, Zap, Database, BarChart3, Settings, Move, Trash2, ArrowUp, ArrowDown, ArrowRight, Palette, ZoomIn, ZoomOut, Maximize2, Hash, Upload, FolderOpen, Trash, Play, FileText, Table, FileSpreadsheet, ExternalLink, GripVertical, Pencil } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { apiClient } from '@/lib/api'
 import { useSocket } from '@/lib/socket'
@@ -17,8 +18,11 @@ import BoxplotStatsConfig from './node-configs/BoxplotStatsConfig'
 import ExcelToNumericConfig from './node-configs/ExcelToNumericConfig'
 import FileUploaderConfig from './node-configs/FileUploaderConfig'
 import ExcelViewerConfig from './node-configs/ExcelViewerConfig'
-import { ExcelToNumericEmbedded, FileUploaderEmbedded, ExcelViewerEmbedded, OutlierRemoverEmbedded, DuckDBConvertEmbedded, Excel2JMPEmbedded } from './node-embedded'
+import { ExcelToNumericEmbedded, FileUploaderEmbedded, ExcelViewerEmbedded, OutlierRemoverEmbedded, OutlierRemoverDuckDBEmbedded, DuckDBConvertEmbedded, Excel2JMPEmbedded, DuckDB2JMPEmbedded } from './node-embedded'
 import AndonStatus, { type AndonStatus as AndonStatusType } from './node-embedded/AndonStatus'
+import DuckDB2JMPWizard from './node-embedded/DuckDB2JMPWizard'
+import Excel2JMPWizard from './node-embedded/Excel2JMPWizard'
+import DuckDBConvertWizard from './node-embedded/DuckDBConvertWizard'
 
 interface Node {
   id: string
@@ -73,7 +77,7 @@ const NODE_HEIGHT = 100  // Reduced from 120 to leave more space for arrows
 const PORT_SIZE = 12
 
 // Theme definitions
-type ThemeName = 'dark' | 'light' | 'colorful' | 'ocean' | 'forest' | 'sunset'
+type ThemeName = 'dark' | 'light' | 'colorful' | 'ocean' | 'forest' | 'sunset' | 'glory'
 
 interface EditorTheme {
   name: ThemeName
@@ -203,6 +207,24 @@ const themes: Record<ThemeName, EditorTheme> = {
     button: 'bg-gradient-to-r from-orange-600 to-red-600',
     buttonHover: 'hover:from-orange-700 hover:to-red-700',
   },
+  glory: {
+    name: 'glory',
+    displayName: 'Light Glory',
+    background: 'bg-gradient-to-br from-rose-200 via-amber-200 to-violet-200',
+    panel: 'bg-white/70 backdrop-blur-xl',
+    panelBorder: 'border-rose-300/50',
+    text: 'text-gray-800',
+    textSecondary: 'text-gray-700',
+    textMuted: 'text-gray-500',
+    grid: 'rgba(251, 146, 60, 0.2)',
+    gridHover: 'rgba(251, 146, 60, 0.3)',
+    nodeCard: 'bg-white/80',
+    nodeCardSelected: 'bg-rose-200/80',
+    connection: 'rgba(251, 146, 60, 0.6)',
+    connectionHover: 'rgba(236, 72, 153, 0.8)',
+    button: 'bg-gradient-to-r from-rose-400 to-pink-400',
+    buttonHover: 'hover:from-rose-500 hover:to-pink-500',
+  },
 }
 
 export default function NodeEditorView({
@@ -212,6 +234,7 @@ export default function NodeEditorView({
   connections,
   modules
 }: NodeEditorViewProps) {
+  const router = useRouter()
   const queryClient = useQueryClient()
   const { subscribeToWorkflow, unsubscribeFromWorkflow } = useSocket()
   const [selectedNode, setSelectedNode] = useState<string | null>(null)
@@ -240,9 +263,20 @@ export default function NodeEditorView({
   const [nodeContext, setNodeContext] = useState<NodeContext | null>(null)
   const [editingCheckpointName, setEditingCheckpointName] = useState(false)
   const [tempCheckpointName, setTempCheckpointName] = useState('')
+  const [editingNodeCheckpointName, setEditingNodeCheckpointName] = useState<string | null>(null)
+  const [tempNodeCheckpointName, setTempNodeCheckpointName] = useState('')
+  const [colorDialogNodeId, setColorDialogNodeId] = useState<string | null>(null)
+  const [colorDialogValue, setColorDialogValue] = useState('#ffffff')
+  const [showEditNameDialog, setShowEditNameDialog] = useState<string | null>(null)
+  const [editNameDialogValue, setEditNameDialogValue] = useState('')
+  const [editPositionX, setEditPositionX] = useState<number>(0)
+  const [editPositionY, setEditPositionY] = useState<number>(0)
   const [showNodeFolderDialog, setShowNodeFolderDialog] = useState(false)
   const [showNodeSummaryDialog, setShowNodeSummaryDialog] = useState(false)
   const [showDuckDBTablesDialog, setShowDuckDBTablesDialog] = useState(false)
+  const [showDuckDB2JMPWizard, setShowDuckDB2JMPWizard] = useState(false)
+  const [showExcel2JMPWizard, setShowExcel2JMPWizard] = useState(false)
+  const [showDuckDBConvertWizard, setShowDuckDBConvertWizard] = useState(false)
   const [theme, setTheme] = useState<ThemeName>(() => {
     // Load theme from localStorage or default to 'dark'
     if (typeof window !== 'undefined') {
@@ -252,10 +286,128 @@ export default function NodeEditorView({
     return 'dark'
   })
   const [isThemeMenuOpen, setIsThemeMenuOpen] = useState(false)
+  const [nodeDisplayOrder, setNodeDisplayOrder] = useState<string[]>([])
   const canvasRef = useRef<HTMLDivElement>(null)
   const svgRef = useRef<SVGSVGElement>(null)
 
   const currentTheme = themes[theme]
+
+  // Initialize node display order from nodes prop or localStorage
+  useEffect(() => {
+    if (nodes.length === 0) return
+
+    const storageKey = `node-display-order-${workflowId}`
+    
+    // Try to load from localStorage first
+    if (nodeDisplayOrder.length === 0 && typeof window !== 'undefined') {
+      const savedOrder = localStorage.getItem(storageKey)
+      if (savedOrder) {
+        try {
+          const parsedOrder = JSON.parse(savedOrder) as string[]
+          // Filter to only include nodes that still exist
+          const validOrder = parsedOrder.filter(id => nodes.some(n => n.id === id))
+          // Add any new nodes that weren't in the saved order
+          const newNodes = nodes.filter(n => !validOrder.includes(n.id))
+          setNodeDisplayOrder([...validOrder, ...newNodes.map(n => n.id)])
+          return
+        } catch (e) {
+          // Invalid JSON, fall through to default initialization
+        }
+      }
+    }
+
+    // Initialize with current node order if no saved order exists
+    if (nodeDisplayOrder.length === 0) {
+      setNodeDisplayOrder(nodes.map(n => n.id))
+    } else {
+      // Sync with nodes if nodes change (e.g., node added/removed)
+      const nodeIds = new Set(nodes.map(n => n.id))
+      const currentOrder = nodeDisplayOrder.filter(id => nodeIds.has(id))
+      const newNodes = nodes.filter(n => !nodeDisplayOrder.includes(n.id))
+      if (currentOrder.length !== nodeDisplayOrder.length || newNodes.length > 0) {
+        setNodeDisplayOrder([...currentOrder, ...newNodes.map(n => n.id)])
+      }
+    }
+  }, [nodes, workflowId])
+
+  // Save display order to localStorage when it changes
+  useEffect(() => {
+    if (nodeDisplayOrder.length > 0 && typeof window !== 'undefined') {
+      const storageKey = `node-display-order-${workflowId}`
+      localStorage.setItem(storageKey, JSON.stringify(nodeDisplayOrder))
+    }
+  }, [nodeDisplayOrder, workflowId])
+
+  // Get ordered nodes based on display order
+  const orderedNodes = nodeDisplayOrder.length > 0
+    ? nodeDisplayOrder
+        .map(id => nodes.find(n => n.id === id))
+        .filter((node): node is Node => node !== undefined)
+        .concat(nodes.filter(n => !nodeDisplayOrder.includes(n.id))) // Add any nodes not in order
+    : nodes
+
+  // Drag and drop state for reordering
+  const [draggedNodeId, setDraggedNodeId] = useState<string | null>(null)
+  const [dragOverIndex, setDragOverIndex] = useState<number | null>(null)
+
+  // Handle drag start
+  const handleDragStart = (nodeId: string) => {
+    setDraggedNodeId(nodeId)
+  }
+
+  // Handle drag over
+  const handleDragOver = (e: React.DragEvent, index: number) => {
+    e.preventDefault()
+    e.stopPropagation()
+    if (draggedNodeId) {
+      setDragOverIndex(index)
+    }
+  }
+
+  // Handle drag leave
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    // Only clear if we're leaving the card area, not entering a child
+    const rect = e.currentTarget.getBoundingClientRect()
+    const x = e.clientX
+    const y = e.clientY
+    if (x < rect.left || x > rect.right || y < rect.top || y > rect.bottom) {
+      setDragOverIndex(null)
+    }
+  }
+
+  // Handle drop
+  const handleDrop = (e: React.DragEvent, dropIndex: number) => {
+    e.preventDefault()
+    e.stopPropagation()
+    
+    if (!draggedNodeId) return
+
+    const dragIndex = nodeDisplayOrder.indexOf(draggedNodeId)
+    if (dragIndex === -1 || dragIndex === dropIndex) {
+      setDraggedNodeId(null)
+      setDragOverIndex(null)
+      return
+    }
+
+    // Reorder the nodes
+    setNodeDisplayOrder(prev => {
+      const newOrder = [...prev]
+      const [removed] = newOrder.splice(dragIndex, 1)
+      newOrder.splice(dropIndex, 0, removed)
+      return newOrder
+    })
+
+    setDraggedNodeId(null)
+    setDragOverIndex(null)
+  }
+
+  // Handle drag end
+  const handleDragEnd = () => {
+    setDraggedNodeId(null)
+    setDragOverIndex(null)
+  }
 
   // Save theme to localStorage when it changes
   useEffect(() => {
@@ -851,6 +1003,32 @@ export default function NodeEditorView({
     }
   }, [workflowId, subscribeToWorkflow, unsubscribeFromWorkflow, queryClient, selectedNode, nodeContext])
 
+  // Get node background color from config or return default
+  const getNodeBackgroundColor = (node: Node): string => {
+    if (node.config?.node_color) {
+      return node.config.node_color
+    }
+    return 'rgba(255, 255, 255, 0.7)' // Default white with transparency
+  }
+
+  const rgbaToHex = (color?: string) => {
+    if (!color) return '#ffffff'
+    if (color.startsWith('#')) return color
+    const match = color.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/)
+    if (!match) return '#ffffff'
+    const toHex = (value: number) => value.toString(16).padStart(2, '0')
+    const [r, g, b] = match.slice(1, 4).map(component => parseInt(component, 10))
+    return `#${toHex(r)}${toHex(g)}${toHex(b)}`
+  }
+
+  const hexToRgba = (hex: string, alpha = 0.7) => {
+    const normalized = hex.replace('#', '')
+    const r = parseInt(normalized.slice(0, 2), 16)
+    const g = parseInt(normalized.slice(2, 4), 16)
+    const b = parseInt(normalized.slice(4, 6), 16)
+    return `rgba(${r}, ${g}, ${b}, ${alpha})`
+  }
+
   const getNodeColor = (moduleType: string) => {
     const colors: Record<string, { bg: string; border: string; icon: React.ReactNode }> = {
       excel_loader: {
@@ -887,6 +1065,11 @@ export default function NodeEditorView({
         bg: 'bg-gradient-to-br from-orange-500 to-red-600',
         border: 'border-orange-400',
         icon: <FileSpreadsheet className="h-5 w-5" />
+      },
+      outlier_remover_duckdb: {
+        bg: 'bg-gradient-to-br from-blue-500 to-cyan-600',
+        border: 'border-blue-400',
+        icon: <Database className="h-5 w-5" />
       }
     }
     return colors[moduleType] || {
@@ -1177,6 +1360,17 @@ export default function NodeEditorView({
             onProcess={handleProcess}
           />
         )
+      case 'outlier_remover_duckdb':
+        return (
+          <OutlierRemoverDuckDBEmbedded
+            node={node}
+            workspaceId={workspaceId}
+            workflowId={workflowId}
+            hasInputSource={hasInputSource}
+            onConfigUpdate={handleConfigUpdate}
+            onProcess={handleProcess}
+          />
+        )
       case 'duckdb_convert':
         return (
           <DuckDBConvertEmbedded
@@ -1188,6 +1382,14 @@ export default function NodeEditorView({
       case 'excel2jmp':
         return (
           <Excel2JMPEmbedded
+            node={node}
+            workflowId={workflowId}
+            onConfigUpdate={handleConfigUpdate}
+          />
+        )
+      case 'duckdb2jmp':
+        return (
+          <DuckDB2JMPEmbedded
             node={node}
             workflowId={workflowId}
             onConfigUpdate={handleConfigUpdate}
@@ -1491,10 +1693,10 @@ export default function NodeEditorView({
         <motion.div 
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
-          className="h-full flex flex-col p-8 bg-white"
+          className="h-full flex flex-col p-6 bg-white/60 backdrop-blur-xl"
         >
-          <div className="flex items-center justify-between mb-8">
-            <h3 className="text-2xl font-semibold bg-gradient-to-r from-teal-600 to-cyan-600 bg-clip-text text-transparent">Confirm Connection</h3>
+          <div className="flex items-center justify-between mb-6">
+            <h3 className="text-xs font-semibold text-gray-800">Confirm Connection</h3>
             <Button
               variant="ghost"
               size="sm"
@@ -1513,13 +1715,13 @@ export default function NodeEditorView({
                 initial={{ scale: 0.9, opacity: 0, y: -20 }}
                 animate={{ scale: 1, opacity: 1, y: 0 }}
                 transition={{ delay: 0.1 }}
-                className="flex flex-col items-center space-y-3 p-6 bg-gradient-to-br from-teal-50 to-cyan-50 rounded-xl border-2 border-teal-200 w-full max-w-xs shadow-sm"
+                className="flex flex-col items-center space-y-2 p-5 bg-white/70 backdrop-blur-md rounded-2xl border border-white/40 w-full max-w-xs shadow-lg"
               >
-                <div className="text-xs font-semibold text-teal-600 uppercase tracking-wide">Source</div>
-                <div className="text-base font-semibold text-gray-800 text-center truncate w-full">
+                <div className="text-[10px] font-semibold text-gray-600 uppercase tracking-wide">Source</div>
+                <div className="text-xs font-semibold text-gray-800 text-center truncate w-full">
                   {sourceDisplayName}
                 </div>
-                <div className="text-xs text-gray-500">
+                <div className="text-[9px] text-gray-500">
                   {sourceModule?.display_name || sourceNode?.module_type}
                 </div>
               </motion.div>
@@ -1539,13 +1741,13 @@ export default function NodeEditorView({
                 initial={{ scale: 0.9, opacity: 0, y: 20 }}
                 animate={{ scale: 1, opacity: 1, y: 0 }}
                 transition={{ delay: 0.3 }}
-                className="flex flex-col items-center space-y-3 p-6 bg-gradient-to-br from-cyan-50 to-teal-50 rounded-xl border-2 border-cyan-200 w-full max-w-xs shadow-sm"
+                className="flex flex-col items-center space-y-2 p-5 bg-white/70 backdrop-blur-md rounded-2xl border border-white/40 w-full max-w-xs shadow-lg"
               >
-                <div className="text-xs font-semibold text-cyan-600 uppercase tracking-wide">Target</div>
-                <div className="text-base font-semibold text-gray-800 text-center truncate w-full">
+                <div className="text-[10px] font-semibold text-gray-600 uppercase tracking-wide">Target</div>
+                <div className="text-xs font-semibold text-gray-800 text-center truncate w-full">
                   {targetDisplayName}
                 </div>
-                <div className="text-xs text-gray-500">
+                <div className="text-[9px] text-gray-500">
                   {targetModule?.display_name || targetNode?.module_type}
                 </div>
               </motion.div>
@@ -1555,16 +1757,16 @@ export default function NodeEditorView({
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               transition={{ delay: 0.4 }}
-              className="text-sm text-gray-600 text-center px-4"
+              className="text-xs text-gray-600 text-center px-4"
             >
-              Create connection from <span className="font-semibold text-teal-600">{sourceDisplayName}</span> to <span className="font-semibold text-cyan-600">{targetDisplayName}</span>?
+              Create connection from <span className="font-semibold text-gray-800">{sourceDisplayName}</span> to <span className="font-semibold text-gray-800">{targetDisplayName}</span>?
             </motion.p>
             
-            <div className="flex justify-end space-x-3 pt-6 border-t border-teal-100 w-full">
+            <div className="flex justify-end space-x-2 pt-4 border-t border-white/20 w-full">
               <Button
                 variant="outline"
                 onClick={handleCancelConnection}
-                className="border-teal-200 text-gray-600 hover:bg-teal-50 hover:border-teal-300"
+                className="border-white/30 text-gray-600 hover:bg-white/60 rounded-full px-4 py-1.5 text-xs font-medium backdrop-blur-sm"
               >
                 Cancel
               </Button>
@@ -1575,9 +1777,9 @@ export default function NodeEditorView({
                 <Button
                   onClick={handleConfirmConnection}
                   disabled={createConnectionMutation.isPending}
-                  className="bg-gradient-to-r from-teal-500 to-cyan-500 hover:from-teal-600 hover:to-cyan-600 text-white shadow-md shadow-teal-200/50"
+                  className="bg-blue-500/90 hover:bg-blue-600 text-white shadow-md rounded-full px-4 py-1.5 text-xs font-medium backdrop-blur-sm"
                 >
-                  {createConnectionMutation.isPending ? 'Creating...' : 'Confirm Connection'}
+                  {createConnectionMutation.isPending ? 'Creating...' : 'Confirm'}
                 </Button>
               </motion.div>
             </div>
@@ -1593,15 +1795,15 @@ export default function NodeEditorView({
           animate={{ opacity: 1 }}
           className="flex items-center justify-center h-full text-gray-400"
         >
-          <div className="text-center space-y-4">
+          <div className="text-center space-y-3">
             <motion.div
               animate={{ rotate: [0, 10, -10, 0] }}
               transition={{ duration: 2, repeat: Infinity, repeatDelay: 1 }}
             >
-              <Settings className="h-16 w-16 mx-auto mb-4 text-teal-300" />
+              <Settings className="h-12 w-12 mx-auto mb-3 text-gray-400" />
             </motion.div>
-            <p className="text-lg font-semibold text-gray-600">Select a node to configure</p>
-            <p className="text-sm text-gray-400 mt-2">Click a node to select it, then click a grid cell to move it</p>
+            <p className="text-xs font-semibold text-gray-600">Select a node to configure</p>
+            <p className="text-[10px] text-gray-400 mt-1">Click a node to select it, then click a grid cell to move it</p>
           </div>
         </motion.div>
       )
@@ -1650,15 +1852,17 @@ export default function NodeEditorView({
       <motion.div 
         initial={{ opacity: 0, y: -10 }}
         animate={{ opacity: 1, y: 0 }}
-        className="p-6 border-b border-teal-100 bg-gradient-to-br from-teal-50/50 to-cyan-50/30"
+        className="p-4 border-b border-white/20 bg-white/50 backdrop-blur-md"
       >
-        <div className="flex items-center gap-3 mb-4">
-          <div className="p-3 rounded-xl bg-gradient-to-br from-teal-400 to-cyan-400 text-white shadow-sm">
-            {getNodeColor(selectedNodeData.module_type).icon}
+        <div className="flex items-center gap-2.5 mb-2.5">
+          <div className="p-1.5 rounded-full bg-gradient-to-br from-blue-400 to-cyan-400 text-white shadow-sm">
+            <div className="scale-75">
+              {getNodeColor(selectedNodeData.module_type).icon}
+            </div>
           </div>
           <div className="flex-1">
             {/* Module Name - Always shown */}
-            <div className="text-base font-semibold text-gray-800">
+            <div className="text-xs font-semibold text-gray-800">
               {module?.display_name || selectedNodeData.module_type}
             </div>
             {/* Checkpoint Name - User-defined, editable */}
@@ -1669,19 +1873,73 @@ export default function NodeEditorView({
                 onChange={(e) => setTempCheckpointName(e.target.value)}
                 onBlur={handleCheckpointNameBlur}
                 onKeyDown={handleCheckpointNameKeyDown}
-                className="w-full px-3 py-2 mt-2 bg-white border-2 border-teal-200 rounded-lg text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-teal-300 focus:border-teal-300 transition-all duration-200"
+                className="w-full px-2.5 py-1 mt-1.5 bg-white/80 backdrop-blur-sm border border-white/40 rounded-xl text-[10px] text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-300/50 focus:border-blue-300/50 transition-all duration-200"
                 placeholder="Enter checkpoint name (optional)"
                 autoFocus
               />
             ) : (
               <div
-                className="text-sm text-gray-500 mt-2 cursor-pointer hover:text-teal-600 transition-colors"
+                className="text-[10px] text-gray-500 mt-1 cursor-pointer hover:text-gray-700 transition-colors"
                 onClick={() => setEditingCheckpointName(true)}
                 title="Click to edit checkpoint name"
               >
                 {selectedNodeData.checkpoint_name || 'Click to add checkpoint name'}
               </div>
             )}
+          </div>
+        </div>
+        {/* Node Color Picker */}
+        <div className="mt-3 pt-3 border-t border-white/20">
+          <div className="flex items-center justify-between">
+            <label className="text-[10px] font-medium text-gray-700">Background Color</label>
+            <div className="flex items-center gap-2">
+              <input
+                type="color"
+                value={(() => {
+                  const nodeColor = selectedNodeData.config?.node_color
+                  if (!nodeColor) return '#ffffff'
+                  // Convert rgba to hex if needed
+                  if (nodeColor.startsWith('rgba')) {
+                    const match = nodeColor.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/)
+                    if (match) {
+                      const r = parseInt(match[1]).toString(16).padStart(2, '0')
+                      const g = parseInt(match[2]).toString(16).padStart(2, '0')
+                      const b = parseInt(match[3]).toString(16).padStart(2, '0')
+                      return `#${r}${g}${b}`
+                    }
+                  }
+                  // If it's already hex, return it
+                  if (nodeColor.startsWith('#')) return nodeColor
+                  return '#ffffff'
+                })()}
+                onChange={(e) => {
+                  const newColor = e.target.value
+                  // Convert hex to rgba with transparency for frosted glass effect
+                  const r = parseInt(newColor.slice(1, 3), 16)
+                  const g = parseInt(newColor.slice(3, 5), 16)
+                  const b = parseInt(newColor.slice(5, 7), 16)
+                  const rgbaColor = `rgba(${r}, ${g}, ${b}, 0.7)`
+                  handleSaveNodeConfig(selectedNodeData.id, {
+                    ...selectedNodeData.config,
+                    node_color: rgbaColor
+                  })
+                }}
+                className="h-6 w-6 rounded-lg border border-white/40 cursor-pointer"
+                title="Select background color"
+              />
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-5 w-5 p-0 text-gray-400 hover:text-gray-600 rounded-full"
+                onClick={() => {
+                  const { node_color, ...restConfig } = selectedNodeData.config || {}
+                  handleSaveNodeConfig(selectedNodeData.id, restConfig)
+                }}
+                title="Reset to default"
+              >
+                <X className="h-2.5 w-2.5" />
+              </Button>
+            </div>
           </div>
         </div>
       </motion.div>
@@ -1699,19 +1957,19 @@ export default function NodeEditorView({
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.2 }}
-              className="p-6 border-b border-teal-100 bg-white/50"
+              className="p-4 border-b border-white/20 bg-white/40 backdrop-blur-sm"
             >
-              <h3 className="text-sm font-semibold text-gray-700 mb-4">Connections</h3>
+              <h3 className="text-[10px] font-semibold text-gray-700 mb-2.5">Connections</h3>
               
               {/* Input Sources */}
-              <div className="mb-6">
-                <div className="flex items-center gap-2 mb-3">
-                  <ArrowDown className="h-4 w-4 text-teal-500" />
-                  <span className="text-xs font-semibold text-gray-700 uppercase tracking-wide">Input Sources</span>
-                  <span className="text-xs text-gray-400">({upstreamNodes.length})</span>
+              <div className="mb-4">
+                <div className="flex items-center gap-1.5 mb-2">
+                  <ArrowDown className="h-3 w-3 text-blue-500" />
+                  <span className="text-[9px] font-semibold text-gray-700 uppercase tracking-wide">Input Sources</span>
+                  <span className="text-[9px] text-gray-400">({upstreamNodes.length})</span>
                 </div>
                 {upstreamNodes.length > 0 ? (
-                  <div className="space-y-2">
+                  <div className="space-y-1.5">
                     {upstreamNodes.map((upstreamNode: { id: string; name: string; moduleType?: string }) => {
                       const upstreamModule = modules.find(m => m.module_type === upstreamNode.moduleType)
                       const upstreamNodeColor = getNodeColor(upstreamNode.moduleType || '')
@@ -1719,17 +1977,19 @@ export default function NodeEditorView({
                         <motion.div
                           key={upstreamNode.id}
                           whileHover={{ scale: 1.02, x: 4 }}
-                          className="flex items-center gap-3 p-3 rounded-lg bg-gradient-to-r from-teal-50 to-cyan-50 border border-teal-100 hover:border-teal-200 hover:shadow-sm cursor-pointer transition-all duration-200"
+                          className="flex items-center gap-2 p-2 rounded-xl bg-white/60 backdrop-blur-sm border border-white/40 hover:border-blue-300/60 hover:shadow-md cursor-pointer transition-all duration-200"
                           onClick={() => setSelectedNode(upstreamNode.id)}
                         >
-                          <div className="p-2 rounded-lg bg-gradient-to-br from-teal-400 to-cyan-400 text-white shadow-sm">
-                            {upstreamNodeColor.icon}
+                          <div className="p-1 rounded-full bg-gradient-to-br from-blue-400 to-cyan-400 text-white shadow-sm">
+                            <div className="scale-75">
+                              {upstreamNodeColor.icon}
+                            </div>
                           </div>
                           <div className="flex-1 min-w-0">
-                            <p className="text-sm font-medium text-gray-800 truncate">
+                            <p className="text-[10px] font-medium text-gray-800 truncate">
                               {upstreamNode.name}
                             </p>
-                            <p className="text-xs text-gray-500 truncate">
+                            <p className="text-[9px] text-gray-500 truncate">
                               {upstreamModule?.display_name || upstreamNode.moduleType}
                             </p>
                           </div>
@@ -1738,19 +1998,19 @@ export default function NodeEditorView({
                     })}
                   </div>
                 ) : (
-                  <p className="text-xs text-gray-400 italic">No input sources</p>
+                  <p className="text-[9px] text-gray-400 italic">No input sources</p>
                 )}
               </div>
 
               {/* Output Destinations */}
               <div>
-                <div className="flex items-center gap-2 mb-3">
-                  <ArrowUp className="h-4 w-4 text-cyan-500" />
-                  <span className="text-xs font-semibold text-gray-700 uppercase tracking-wide">Output Destinations</span>
-                  <span className="text-xs text-gray-400">({downstreamNodes.length})</span>
+                <div className="flex items-center gap-1.5 mb-2">
+                  <ArrowUp className="h-3 w-3 text-cyan-500" />
+                  <span className="text-[9px] font-semibold text-gray-700 uppercase tracking-wide">Output Destinations</span>
+                  <span className="text-[9px] text-gray-400">({downstreamNodes.length})</span>
                 </div>
                 {downstreamNodes.length > 0 ? (
-                  <div className="space-y-2">
+                  <div className="space-y-1.5">
                     {downstreamNodes.map((downstreamNode: { id: string; name: string; moduleType?: string }) => {
                       const downstreamModule = modules.find(m => m.module_type === downstreamNode.moduleType)
                       const downstreamNodeColor = getNodeColor(downstreamNode.moduleType || '')
@@ -1758,17 +2018,19 @@ export default function NodeEditorView({
                         <motion.div
                           key={downstreamNode.id}
                           whileHover={{ scale: 1.02, x: 4 }}
-                          className="flex items-center gap-3 p-3 rounded-lg bg-gradient-to-r from-cyan-50 to-teal-50 border border-cyan-100 hover:border-cyan-200 hover:shadow-sm cursor-pointer transition-all duration-200"
+                          className="flex items-center gap-2 p-2 rounded-xl bg-white/60 backdrop-blur-sm border border-white/40 hover:border-cyan-300/60 hover:shadow-md cursor-pointer transition-all duration-200"
                           onClick={() => setSelectedNode(downstreamNode.id)}
                         >
-                          <div className="p-2 rounded-lg bg-gradient-to-br from-cyan-400 to-teal-400 text-white shadow-sm">
-                            {downstreamNodeColor.icon}
+                          <div className="p-1 rounded-full bg-gradient-to-br from-cyan-400 to-blue-400 text-white shadow-sm">
+                            <div className="scale-75">
+                              {downstreamNodeColor.icon}
+                            </div>
                           </div>
                           <div className="flex-1 min-w-0">
-                            <p className="text-sm font-medium text-gray-800 truncate">
+                            <p className="text-[10px] font-medium text-gray-800 truncate">
                               {downstreamNode.name}
                             </p>
-                            <p className="text-xs text-gray-500 truncate">
+                            <p className="text-[9px] text-gray-500 truncate">
                               {downstreamModule?.display_name || downstreamNode.moduleType}
                             </p>
                           </div>
@@ -1777,7 +2039,7 @@ export default function NodeEditorView({
                     })}
                   </div>
                 ) : (
-                  <p className="text-xs text-gray-400 italic">No output destinations</p>
+                  <p className="text-[9px] text-gray-400 italic">No output destinations</p>
                 )}
               </div>
             </motion.div>
@@ -2187,10 +2449,10 @@ export default function NodeEditorView({
           <motion.div 
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
-            className="p-8 bg-white"
+            className="p-6 bg-white/60 backdrop-blur-md"
           >
-            <h3 className="text-lg font-semibold bg-gradient-to-r from-teal-600 to-cyan-600 bg-clip-text text-transparent mb-4">Node Configuration</h3>
-            <p className="text-gray-600">No configuration available for this node type.</p>
+            <h3 className="text-xs font-semibold text-gray-800 mb-2.5">Node Configuration</h3>
+            <p className="text-[10px] text-gray-600">No configuration available for this node type.</p>
           </motion.div>
         )
     }
@@ -2273,15 +2535,15 @@ export default function NodeEditorView({
         initial={{ x: -20, opacity: 0 }}
         animate={{ x: 0, opacity: 1 }}
         transition={{ duration: 0.5, ease: "easeOut" }}
-        className="w-64 border-r border-teal-100 bg-gradient-to-b from-teal-50/30 to-cyan-50/20 backdrop-blur-sm flex flex-col shadow-sm"
+        className="w-64 border-r border-white/20 bg-white/40 backdrop-blur-xl flex flex-col shadow-lg rounded-r-2xl"
       >
-        <div className="p-6 border-b border-teal-100/50">
-          <div className="flex items-center justify-between mb-6">
+        <div className="p-4 border-b border-white/20">
+          <div className="flex items-center justify-between mb-3">
             <motion.h2 
               initial={{ opacity: 0, y: -10 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.4, delay: 0.1 }}
-              className="text-xl font-semibold bg-gradient-to-r from-teal-600 to-cyan-600 bg-clip-text text-transparent"
+              className="text-xs font-semibold text-gray-700"
             >
               Workflow
             </motion.h2>
@@ -2302,17 +2564,17 @@ export default function NodeEditorView({
                 >
                   <Button 
                     size="sm"
-                    className="bg-gradient-to-r from-teal-500 to-cyan-500 hover:from-teal-600 hover:to-cyan-600 text-white shadow-md shadow-teal-200/50 transition-all duration-300"
+                    className="bg-white/60 backdrop-blur-md hover:bg-white/80 text-gray-700 border border-white/30 rounded-full px-3 py-1.5 text-xs font-medium shadow-sm transition-all duration-200"
                   >
-                    <Plus className="h-4 w-4 mr-1" />
+                    <Plus className="h-3 w-3 mr-1.5" />
                     Add Node
                   </Button>
                 </motion.div>
               </DialogTrigger>
-              <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto bg-white border-teal-100 shadow-xl">
+              <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto bg-white/90 backdrop-blur-xl border border-white/40 shadow-2xl rounded-2xl">
                 <DialogHeader>
-                  <DialogTitle className="text-2xl font-semibold bg-gradient-to-r from-teal-600 to-cyan-600 bg-clip-text text-transparent">Add Node</DialogTitle>
-                <DialogDescription className="text-gray-500">
+                  <DialogTitle className="text-base font-semibold text-gray-800">Add Node</DialogTitle>
+                <DialogDescription className="text-xs text-gray-500">
                   {selectedModule ? 'Enter a checkpoint name to mark what this node is doing' : 'Select a module to add to your workflow'}
                 </DialogDescription>
                 </DialogHeader>
@@ -2333,18 +2595,18 @@ export default function NodeEditorView({
                             whileTap={{ scale: 0.98 }}
                           >
                             <Card
-                              className="cursor-pointer bg-white border-2 border-teal-100 hover:border-teal-300 hover:shadow-lg transition-all duration-300 group"
+                              className="cursor-pointer bg-white/70 backdrop-blur-md border border-white/40 hover:border-blue-300/60 hover:shadow-xl transition-all duration-300 group rounded-2xl"
                               onClick={() => handleModuleSelect(module)}
                             >
-                              <CardContent className="p-5">
-                                <div className="flex items-center space-x-3 mb-3">
-                                  <div className={`p-2.5 rounded-lg bg-gradient-to-br from-teal-400 to-cyan-400 text-white shadow-sm group-hover:shadow-md transition-shadow`}>
+                              <CardContent className="p-4">
+                                <div className="flex items-center space-x-2.5 mb-2.5">
+                                  <div className={`p-2 rounded-full ${nodeColor.bg} text-white shadow-sm group-hover:shadow-md transition-shadow`}>
                                     {nodeColor.icon}
                                   </div>
-                                  <h3 className="font-semibold text-gray-800">{module.display_name}</h3>
+                                  <h3 className="text-sm font-semibold text-gray-800">{module.display_name}</h3>
                                 </div>
-                                <p className="text-sm text-gray-600 mb-3 leading-relaxed">{module.description}</p>
-                                <div className="flex items-center space-x-4 text-xs text-gray-400">
+                                <p className="text-xs text-gray-600 mb-2.5 leading-relaxed">{module.description}</p>
+                                <div className="flex items-center space-x-3 text-[10px] text-gray-400">
                                   <span>{module.inputs.length} inputs</span>
                                   <span>{module.outputs.length} outputs</span>
                                 </div>
@@ -2366,7 +2628,7 @@ export default function NodeEditorView({
                         type="text"
                         value={checkpointName}
                         onChange={(e) => setCheckpointName(e.target.value)}
-                        className="w-full px-4 py-3 bg-gray-50 border-2 border-teal-100 rounded-lg text-gray-800 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-teal-300 focus:border-teal-300 transition-all duration-200"
+                        className="w-full px-3 py-2 bg-white/80 backdrop-blur-sm border border-white/40 rounded-xl text-xs text-gray-800 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-300/50 focus:border-blue-300/50 transition-all duration-200"
                         placeholder="Enter checkpoint name (e.g., 'Load sales data', 'Calculate metrics')"
                         autoFocus
                         onKeyDown={(e) => {
@@ -2379,14 +2641,14 @@ export default function NodeEditorView({
                         }}
                       />
                     </div>
-                    <div className="flex justify-end space-x-3 pt-4">
+                    <div className="flex justify-end space-x-2 pt-3">
                       <Button
                         variant="outline"
                         onClick={() => {
                           setSelectedModule(null)
                           setCheckpointName('')
                         }}
-                        className="border-teal-200 text-gray-600 hover:bg-teal-50 hover:border-teal-300"
+                        className="border-white/30 text-gray-600 hover:bg-white/60 rounded-full px-4 py-1.5 text-xs font-medium backdrop-blur-sm"
                       >
                         Back
                       </Button>
@@ -2396,7 +2658,7 @@ export default function NodeEditorView({
                       >
                         <Button
                           onClick={handleAddNode}
-                          className="bg-gradient-to-r from-teal-500 to-cyan-500 hover:from-teal-600 hover:to-cyan-600 text-white shadow-md shadow-teal-200/50"
+                          className="bg-blue-500/90 hover:bg-blue-600 text-white shadow-md rounded-full px-4 py-1.5 text-xs font-medium backdrop-blur-sm"
                         >
                           Add Node
                         </Button>
@@ -2411,68 +2673,188 @@ export default function NodeEditorView({
         </div>
 
         {/* Node List */}
-        <div className="flex-1 overflow-y-auto p-6 space-y-3">
-          {nodes.map((node) => {
+        <div className="flex-1 overflow-y-auto p-3 space-y-2">
+          {orderedNodes.map((node, index) => {
             const module = modules.find(m => m.module_type === node.module_type)
             const isSelected = selectedNode === node.id
             const nodeColor = getNodeColor(node.module_type)
+            const isDragging = draggedNodeId === node.id
+            const isDragOver = dragOverIndex === index && draggedNodeId && draggedNodeId !== node.id
             
             // Get connections for this node
             const inputConnections = connectionsList.filter(c => c.target_node_id === node.id)
             const outputConnections = connectionsList.filter(c => c.source_node_id === node.id)
             
             return (
-              <Card
-                key={node.id}
-                className={`cursor-pointer transition-all duration-200 ${
-                  isSelected 
-                    ? 'bg-indigo-600 border-indigo-400' 
-                    : 'bg-slate-700 border-slate-600 hover:bg-slate-600'
-                }`}
-                onClick={() => setSelectedNode(isSelected ? null : node.id)}
-              >
-                <CardContent className="p-3">
-                  <div className="flex items-center space-x-2">
-                    <div className={`p-1.5 rounded ${nodeColor.bg} text-white`}>
-                      {nodeColor.icon}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      {/* Module Name - Always shown */}
-                      <p className="text-sm font-medium text-white truncate">
-                        {module?.display_name || node.module_type}
-                      </p>
-                      {/* Checkpoint Name - User-defined, shown if exists */}
-                      {node.checkpoint_name ? (
-                        <p className="text-xs text-slate-300 truncate mt-0.5">
-                          {node.checkpoint_name}
-                        </p>
-                      ) : (
-                        <p className="text-xs text-slate-500 truncate mt-0.5 italic">
-                          No checkpoint name
-                        </p>
-                      )}
-                    </div>
-                  </div>
-                  
-                  {/* Show connection counts */}
-                  {(inputConnections.length > 0 || outputConnections.length > 0) && (
-                    <div className="mt-2 flex items-center gap-3 text-xs">
-                      {inputConnections.length > 0 && (
-                        <div className="flex items-center gap-1 text-emerald-400">
-                          <ArrowDown className="h-3 w-3" />
-                          <span>{inputConnections.length} input{inputConnections.length > 1 ? 's' : ''}</span>
+              <div key={node.id}>
+                {/* Drop zone indicator */}
+                {isDragOver && (
+                  <div className="h-1 bg-indigo-400 rounded-full mb-2 transition-all" />
+                )}
+                <Card
+                  draggable
+                  onDragStart={(e) => {
+                    handleDragStart(node.id)
+                    e.dataTransfer.effectAllowed = 'move'
+                    e.dataTransfer.setData('text/plain', node.id)
+                  }}
+                  onDragOver={(e) => handleDragOver(e, index)}
+                  onDragLeave={handleDragLeave}
+                  onDrop={(e) => handleDrop(e, index)}
+                  onDragEnd={handleDragEnd}
+                  className={`cursor-move transition-all duration-200 rounded-xl backdrop-blur-md ${
+                    isSelected 
+                      ? 'border-2 border-blue-400 shadow-lg' 
+                      : 'border border-white/30 hover:shadow-md'
+                  } ${isDragging ? 'opacity-50' : ''} ${isDragOver ? 'border-blue-400 border-2' : ''}`}
+                  style={{
+                    backgroundColor: getNodeBackgroundColor(node)
+                  }}
+                  onClick={() => {
+                    if (!draggedNodeId) {
+                      setSelectedNode(isSelected ? null : node.id)
+                    }
+                  }}
+                >
+                  <CardContent className="p-2.5">
+                    <div className="flex items-center space-x-1.5">
+                      <div
+                        className="cursor-grab active:cursor-grabbing text-gray-400 hover:text-gray-600"
+                        onMouseDown={(e) => e.stopPropagation()}
+                        title="Drag to reorder"
+                      >
+                        <GripVertical className="h-2.5 w-2.5" />
+                      </div>
+                      <div className={`p-1.5 rounded-full ${nodeColor.bg} text-white shadow-sm`}>
+                        <div className="scale-75">
+                          {nodeColor.icon}
                         </div>
-                      )}
-                      {outputConnections.length > 0 && (
-                        <div className="flex items-center gap-1 text-blue-400">
-                          <ArrowUp className="h-3 w-3" />
-                          <span>{outputConnections.length} output{outputConnections.length > 1 ? 's' : ''}</span>
-                        </div>
-                      )}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        {/* Module Name - Always shown */}
+                        <p className={`text-[10px] font-medium truncate ${
+                          isSelected ? 'text-gray-800' : 'text-gray-700'
+                        }`}>
+                          {module?.display_name || node.module_type}
+                        </p>
+                        {/* Checkpoint Name - User-defined, editable */}
+                        {editingNodeCheckpointName === node.id ? (
+                          <input
+                            type="text"
+                            value={tempNodeCheckpointName}
+                            onChange={(e) => setTempNodeCheckpointName(e.target.value)}
+                            onBlur={() => {
+                              if (tempNodeCheckpointName !== (node.checkpoint_name || '')) {
+                                handleUpdateCheckpointName(node.id, tempNodeCheckpointName)
+                              }
+                              setEditingNodeCheckpointName(null)
+                            }}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') {
+                                e.currentTarget.blur()
+                              } else if (e.key === 'Escape') {
+                                setTempNodeCheckpointName(node.checkpoint_name || '')
+                                setEditingNodeCheckpointName(null)
+                              }
+                            }}
+                            className="w-full px-1.5 py-0.5 mt-0.5 bg-white/90 backdrop-blur-sm border border-blue-300/50 rounded text-[9px] text-gray-800 focus:outline-none focus:ring-1 focus:ring-blue-400/50 focus:border-blue-400/50 transition-all duration-200"
+                            placeholder="Enter name..."
+                            autoFocus
+                            onClick={(e) => e.stopPropagation()}
+                            onMouseDown={(e) => e.stopPropagation()}
+                          />
+                        ) : (
+                          <div
+                            className={`text-[9px] truncate mt-0.5 cursor-pointer hover:text-blue-600 transition-colors ${
+                              isSelected ? 'text-gray-600' : node.checkpoint_name ? 'text-gray-500' : 'text-gray-400 italic'
+                            }`}
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              setEditingNodeCheckpointName(node.id)
+                              setTempNodeCheckpointName(node.checkpoint_name || '')
+                            }}
+                            title="Click to edit name"
+                          >
+                            {node.checkpoint_name || 'Click to add name'}
+                          </div>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-0.5">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-4 w-4 p-0 text-gray-400 hover:text-blue-500 hover:bg-blue-50/60 rounded-full transition-all"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            setShowEditNameDialog(node.id)
+                            setEditNameDialogValue(node.checkpoint_name || '')
+                            setEditPositionX(node.position_x)
+                            setEditPositionY(node.position_y)
+                          }}
+                          title="Edit name"
+                        >
+                          <Pencil className="h-2 w-2" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-4 w-4 p-0 text-gray-400 hover:text-purple-500 hover:bg-purple-50/60 rounded-full transition-all"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            setColorDialogNodeId(node.id)
+                            setColorDialogValue(rgbaToHex(node.config?.node_color))
+                          }}
+                          title="Set color"
+                        >
+                          <Palette className="h-2 w-2" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-4 w-4 p-0 text-gray-400 hover:text-gray-700 hover:bg-white/50 rounded-full transition-all"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            window.open(`/modules/${node.module_type}?workflow=${workflowId}&node=${node.id}`, '_blank')
+                          }}
+                          title="Open in new window"
+                        >
+                          <ExternalLink className="h-2 w-2" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-4 w-4 p-0 text-gray-400 hover:text-red-500 hover:bg-red-50/60 rounded-full transition-all"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            deleteNodeMutation.mutate(node.id)
+                          }}
+                          title="Delete node"
+                        >
+                          <Trash className="h-2 w-2" />
+                        </Button>
+                      </div>
                     </div>
-                  )}
-                </CardContent>
-              </Card>
+                    
+                    {/* Show connection counts */}
+                    {(inputConnections.length > 0 || outputConnections.length > 0) && (
+                      <div className="mt-1.5 flex items-center gap-2 text-[9px]">
+                        {inputConnections.length > 0 && (
+                          <div className="flex items-center gap-1 text-emerald-400">
+                            <ArrowDown className="h-2.5 w-2.5" />
+                            <span>{inputConnections.length} input{inputConnections.length > 1 ? 's' : ''}</span>
+                          </div>
+                        )}
+                        {outputConnections.length > 0 && (
+                          <div className="flex items-center gap-1 text-blue-400">
+                            <ArrowUp className="h-2.5 w-2.5" />
+                            <span>{outputConnections.length} output{outputConnections.length > 1 ? 's' : ''}</span>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              </div>
             )
           })}
         </div>
@@ -2483,7 +2865,7 @@ export default function NodeEditorView({
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         transition={{ duration: 0.6 }}
-        className="flex-1 relative bg-white overflow-auto" 
+        className="flex-1 relative bg-gray-50/30 backdrop-blur-sm overflow-auto" 
         ref={canvasRef} 
         onClick={handleCanvasClick}
         onMouseMove={handleCanvasMouseMove}
@@ -2495,18 +2877,18 @@ export default function NodeEditorView({
         }}
       >
         {/* Zoom Controls - Fixed position in top-right corner */}
-        <div className="absolute top-4 right-4 z-50 flex flex-col gap-2 bg-white/90 backdrop-blur-sm rounded-lg border border-gray-200 shadow-lg p-2">
+        <div className="absolute top-4 right-4 z-50 flex flex-col gap-2 bg-white/60 backdrop-blur-xl rounded-2xl border border-white/30 shadow-lg p-2">
           <Button
             variant="ghost"
             size="sm"
             onClick={handleZoomIn}
             disabled={viewport.zoom >= 2}
-            className="h-8 w-8 p-0 hover:bg-gray-100 disabled:opacity-50"
+            className="h-7 w-7 p-0 hover:bg-white/60 rounded-full disabled:opacity-50 transition-all"
             title="Zoom In (Ctrl/Cmd + Scroll)"
           >
-            <ZoomIn className="h-4 w-4" />
+            <ZoomIn className="h-3.5 w-3.5 text-gray-600" />
           </Button>
-          <div className="text-xs text-center text-gray-600 font-medium min-w-[3rem] py-1">
+          <div className="text-[10px] text-center text-gray-600 font-medium min-w-[3rem] py-1">
             {Math.round(viewport.zoom * 100)}%
           </div>
           <Button
@@ -2514,19 +2896,19 @@ export default function NodeEditorView({
             size="sm"
             onClick={handleZoomOut}
             disabled={viewport.zoom <= 0.5}
-            className="h-8 w-8 p-0 hover:bg-gray-100 disabled:opacity-50"
+            className="h-7 w-7 p-0 hover:bg-white/60 rounded-full disabled:opacity-50 transition-all"
             title="Zoom Out (Ctrl/Cmd + Scroll)"
           >
-            <ZoomOut className="h-4 w-4" />
+            <ZoomOut className="h-3.5 w-3.5 text-gray-600" />
           </Button>
           <Button
             variant="ghost"
             size="sm"
             onClick={handleZoomReset}
-            className="h-8 w-8 p-0 hover:bg-gray-100"
+            className="h-7 w-7 p-0 hover:bg-white/60 rounded-full transition-all"
             title="Reset Zoom"
           >
-            <Maximize2 className="h-4 w-4" />
+            <Maximize2 className="h-3.5 w-3.5 text-gray-600" />
           </Button>
         </div>
         {/* Subtle Grid Background - Cell-based with dashed black lines */}
@@ -2568,13 +2950,13 @@ export default function NodeEditorView({
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
-            className="absolute border-2 border-dashed border-teal-300 pointer-events-none rounded-lg"
+            className="absolute border-2 border-dashed border-blue-300/60 pointer-events-none rounded-2xl backdrop-blur-sm"
             style={{
               left: (hoveredGridCell.x * GRID_CELL_WIDTH * viewport.zoom) + viewport.x,
               top: (hoveredGridCell.y * GRID_CELL_HEIGHT * viewport.zoom) + viewport.y,
               width: `${GRID_CELL_WIDTH * viewport.zoom}px`,
               height: `${GRID_CELL_HEIGHT * viewport.zoom}px`,
-              backgroundColor: 'rgba(20, 184, 166, 0.08)'
+              backgroundColor: 'rgba(59, 130, 246, 0.08)'
             }}
           />
         )}
@@ -2584,13 +2966,13 @@ export default function NodeEditorView({
           <motion.div
             initial={{ scale: 0.95, opacity: 0 }}
             animate={{ scale: 1, opacity: 1 }}
-            className="absolute border-2 border-teal-400 pointer-events-none rounded-lg z-40 shadow-lg"
+            className="absolute border-2 border-blue-400/80 pointer-events-none rounded-2xl z-40 shadow-xl backdrop-blur-md"
             style={{
               left: (dragState.currentCol * GRID_CELL_WIDTH * viewport.zoom) + viewport.x,
               top: (dragState.currentRow * GRID_CELL_HEIGHT * viewport.zoom) + viewport.y,
               width: `${GRID_CELL_WIDTH * viewport.zoom}px`,
               height: `${GRID_CELL_HEIGHT * viewport.zoom}px`,
-              backgroundColor: 'rgba(20, 184, 166, 0.12)'
+              backgroundColor: 'rgba(59, 130, 246, 0.15)'
             }}
           />
         )}
@@ -2795,163 +3177,241 @@ export default function NodeEditorView({
                 onMouseDown={(e) => handleNodeMouseDown(e, node.id)}
                 onClick={(e) => handleNodeClick(e, node.id)}
               >
-                <Card className={`h-full bg-white border-2 ${
+                <Card className={`h-full backdrop-blur-md border border-white/40 ${
                   isSelected 
-                    ? 'border-teal-400 shadow-xl shadow-teal-200/50' 
-                    : 'border-teal-200 hover:border-teal-300 shadow-md hover:shadow-lg'
-                } cursor-pointer transition-all duration-300`}>
-                  <CardContent className="p-3 h-full flex flex-col">
-                    {/* Node Header */}
-                    <div className="flex items-center justify-between mb-2">
-                      <div className="flex-1 min-w-0">
-                        {/* Module Name - Always shown */}
-                        <h3 className={`text-xs font-semibold truncate ${
-                          isSelected ? 'text-teal-700' : 'text-gray-800'
-                        }`}>
-                          {module?.display_name || node.module_type}
-                        </h3>
-                        {/* Checkpoint Name - User-defined, shown if exists */}
-                        {node.checkpoint_name && (
-                          <p className={`text-[10px] truncate mt-0.5 ${
-                            isSelected ? 'text-teal-600' : 'text-gray-500'
-                          }`}>
-                            {node.checkpoint_name}
-                          </p>
-                        )}
-                      </div>
-                      <div className="flex items-center gap-1">
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="h-4 w-4 p-0 text-gray-400 hover:text-blue-400 hover:bg-blue-50"
+                    ? 'border-blue-400/80 shadow-xl shadow-blue-200/30 ring-2 ring-blue-200/30' 
+                    : 'hover:border-blue-300/60 shadow-md hover:shadow-lg'
+                } cursor-pointer transition-all duration-300 rounded-2xl`}
+                style={{
+                  backgroundColor: getNodeBackgroundColor(node)
+                }}>
+                  <CardContent className="p-2.5 h-full flex flex-col">
+                    {/* Node Header - Title only */}
+                    <div className="mb-1.5">
+                      {/* Module Name - Always shown */}
+                      <h3 className={`text-[10px] font-semibold truncate ${
+                        isSelected ? 'text-gray-800' : 'text-gray-700'
+                      }`}>
+                        {module?.display_name || node.module_type}
+                      </h3>
+                      {/* Checkpoint Name - User-defined, editable */}
+                      {editingNodeCheckpointName === node.id ? (
+                        <input
+                          type="text"
+                          value={tempNodeCheckpointName}
+                          onChange={(e) => setTempNodeCheckpointName(e.target.value)}
+                          onBlur={() => {
+                            if (tempNodeCheckpointName !== (node.checkpoint_name || '')) {
+                              handleUpdateCheckpointName(node.id, tempNodeCheckpointName)
+                            }
+                            setEditingNodeCheckpointName(null)
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              e.currentTarget.blur()
+                            } else if (e.key === 'Escape') {
+                              setTempNodeCheckpointName(node.checkpoint_name || '')
+                              setEditingNodeCheckpointName(null)
+                            }
+                          }}
+                          className="w-full px-1.5 py-0.5 mt-0.5 bg-white/90 backdrop-blur-sm border border-blue-300/50 rounded text-[9px] text-gray-800 focus:outline-none focus:ring-1 focus:ring-blue-400/50 focus:border-blue-400/50 transition-all duration-200"
+                          placeholder="Enter name..."
+                          autoFocus
+                          onClick={(e) => e.stopPropagation()}
+                          onMouseDown={(e) => e.stopPropagation()}
+                        />
+                      ) : (
+                        <div
+                          className={`text-[9px] truncate mt-0.5 cursor-pointer hover:text-blue-600 transition-colors ${
+                            isSelected ? 'text-gray-600' : 'text-gray-500'
+                          }`}
                           onClick={(e) => {
                             e.stopPropagation()
-                            setSelectedNode(node.id)
-                            setShowNodeFolderDialog(true)
+                            setEditingNodeCheckpointName(node.id)
+                            setTempNodeCheckpointName(node.checkpoint_name || '')
                           }}
-                          title="Show node folder"
+                          title="Click to edit name"
                         >
-                          <FolderOpen className="h-2.5 w-2.5" />
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="h-4 w-4 p-0 text-gray-400 hover:text-green-400 hover:bg-green-50"
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            setSelectedNode(node.id)
-                            setShowNodeSummaryDialog(true)
-                          }}
-                          title="Show file summary"
-                        >
-                          <FileText className="h-2.5 w-2.5" />
-                        </Button>
-                        {/* DuckDB-specific buttons */}
-                        {node.module_type === 'duckdb_convert' && (
-                          <>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="h-4 w-4 p-0 text-gray-400 hover:text-cyan-400 hover:bg-cyan-50"
-                              onClick={(e) => {
-                                e.stopPropagation()
-                                setSelectedNode(node.id)
-                                setShowDuckDBTablesDialog(true)
-                              }}
-                              title="View DuckDB tables"
-                            >
-                              <Table className="h-2.5 w-2.5" />
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="h-4 w-4 p-0 text-gray-400 hover:text-purple-400 hover:bg-purple-50"
-                              onClick={(e) => {
-                                e.stopPropagation()
-                                setSelectedNode(node.id)
-                                handleExecuteDuckDBNode(node.id)
-                              }}
-                              title="Execute DuckDB node"
-                              disabled={executeDuckDBMutation.isPending}
-                            >
-                              <Play className="h-2.5 w-2.5" />
-                            </Button>
-                          </>
-                        )}
-                        {/* Regular execute button for non-DuckDB nodes */}
-                        {node.module_type !== 'duckdb_convert' && (
+                          {node.checkpoint_name || <span className="italic text-gray-400">Click to add name</span>}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Node Content - Center - Embedded Interface or Description */}
+                    <div className="flex-1 flex items-center justify-center gap-2 text-[9px] text-gray-400 mb-1.5">
+                      {renderEmbeddedInterface(node) || (
+                        <span className="truncate text-center">{module?.description || node.module_type}</span>
+                      )}
+                    </div>
+
+                    {/* Action Buttons Row - Bottom */}
+                    <div className="flex items-center justify-center gap-0.5 flex-wrap">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-4 w-4 p-0 text-gray-400 hover:text-blue-500 hover:bg-blue-50/60 rounded-full transition-all"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          setSelectedNode(node.id)
+                          setShowNodeFolderDialog(true)
+                        }}
+                        title="Show node folder"
+                      >
+                        <FolderOpen className="h-2 w-2" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-4 w-4 p-0 text-gray-400 hover:text-green-500 hover:bg-green-50/60 rounded-full transition-all"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          setSelectedNode(node.id)
+                          setShowNodeSummaryDialog(true)
+                        }}
+                        title="Show file summary"
+                      >
+                        <FileText className="h-2 w-2" />
+                      </Button>
+                      {/* DuckDB-specific buttons */}
+                      {node.module_type === 'duckdb_convert' && (
+                        <>
                           <Button
                             variant="ghost"
                             size="sm"
-                            className="h-4 w-4 p-0 text-gray-400 hover:text-purple-400 hover:bg-purple-50"
+                            className="h-4 w-4 p-0 text-gray-400 hover:text-cyan-500 hover:bg-cyan-50/60 rounded-full transition-all"
                             onClick={(e) => {
                               e.stopPropagation()
                               setSelectedNode(node.id)
-                              handleExecuteNode(node.id)
+                              setShowDuckDBTablesDialog(true)
                             }}
-                            title="Execute node"
+                            title="View DuckDB tables"
                           >
-                            <Play className="h-2.5 w-2.5" />
+                            <Table className="h-2 w-2" />
                           </Button>
-                        )}
-                        {/* Config button - only show when no input source */}
-                        {(() => {
-                          const hasInputSource = connections.some(conn => conn.target_node_id === node.id)
-                          return !hasInputSource && (
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="h-4 w-4 p-0 text-gray-400 hover:text-orange-400 hover:bg-orange-50"
-                              onClick={(e) => {
-                                e.stopPropagation()
-                                setSelectedNode(node.id)
-                                // Config dialog is shown when node is selected
-                              }}
-                              title="Configure node"
-                            >
-                              <Settings className="h-2.5 w-2.5" />
-                            </Button>
-                          )
-                        })()}
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-4 w-4 p-0 text-gray-400 hover:text-purple-500 hover:bg-purple-50/60 rounded-full transition-all"
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              setSelectedNode(node.id)
+                              handleExecuteDuckDBNode(node.id)
+                            }}
+                            title="Execute DuckDB node"
+                            disabled={executeDuckDBMutation.isPending}
+                          >
+                            <Play className="h-2 w-2" />
+                          </Button>
+                        </>
+                      )}
+                      {/* Regular execute button for non-DuckDB nodes */}
+                      {node.module_type !== 'duckdb_convert' && (
                         <Button
                           variant="ghost"
                           size="sm"
-                          className="h-4 w-4 p-0 text-gray-400 hover:text-red-400 hover:bg-red-50"
+                          className="h-4 w-4 p-0 text-gray-400 hover:text-purple-500 hover:bg-purple-50/60 rounded-full transition-all"
                           onClick={(e) => {
                             e.stopPropagation()
-                            deleteNodeMutation.mutate(node.id)
+                            setSelectedNode(node.id)
+                            handleExecuteNode(node.id)
                           }}
+                          title="Execute node"
                         >
-                          <X className="h-2.5 w-2.5" />
+                          <Play className="h-2 w-2" />
                         </Button>
-                      </div>
-                    </div>
-
-                    {/* Node Content - Center - Embedded Interface or Description with Andon */}
-                    <div className="flex-1 flex items-center justify-center gap-2 text-xs text-gray-400">
-                      {/* Andon Status Indicator - Three Buttons */}
-                      <NodeAndonStatus
-                        node={node}
-                        nodes={nodes}
-                        connections={connections}
-                        workflowId={workflowId}
-                        queryClient={queryClient}
-                        getNodeAndonStatus={getNodeAndonStatus}
-                      />
-                      {renderEmbeddedInterface(node) || (
-                        <span className="truncate">{module?.description || node.module_type}</span>
                       )}
+                      {/* Config button for nodes with embedded configure interfaces */}
+                      {node.module_type === 'duckdb2jmp' && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-4 w-4 p-0 text-gray-400 hover:text-orange-500 hover:bg-orange-50/60 rounded-full transition-all"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            setSelectedNode(node.id)
+                            setShowDuckDB2JMPWizard(true)
+                          }}
+                          title="Configure"
+                        >
+                          <Database className="h-2 w-2" />
+                        </Button>
+                      )}
+                      {node.module_type === 'excel2jmp' && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-4 w-4 p-0 text-gray-400 hover:text-orange-500 hover:bg-orange-50/60 rounded-full transition-all"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            setSelectedNode(node.id)
+                            setShowExcel2JMPWizard(true)
+                          }}
+                          title="Configure"
+                        >
+                          <FileSpreadsheet className="h-2 w-2" />
+                        </Button>
+                      )}
+                      {node.module_type === 'duckdb_convert' && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-4 w-4 p-0 text-gray-400 hover:text-orange-500 hover:bg-orange-50/60 rounded-full transition-all"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            setSelectedNode(node.id)
+                            setShowDuckDBConvertWizard(true)
+                          }}
+                          title="Configure"
+                        >
+                          <Database className="h-2 w-2" />
+                        </Button>
+                      )}
+                      {/* Config button - only show when no input source (for other node types) */}
+                      {(() => {
+                        const hasInputSource = connections.some(conn => conn.target_node_id === node.id)
+                        const needsConfigButton = !hasInputSource && 
+                          node.module_type !== 'duckdb2jmp' && 
+                          node.module_type !== 'excel2jmp' && 
+                          node.module_type !== 'duckdb_convert'
+                        return needsConfigButton && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-4 w-4 p-0 text-gray-400 hover:text-orange-500 hover:bg-orange-50/60 rounded-full transition-all"
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              setSelectedNode(node.id)
+                              // Config dialog is shown when node is selected
+                            }}
+                            title="Configure node"
+                          >
+                            <Settings className="h-2 w-2" />
+                          </Button>
+                        )
+                      })()}
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-4 w-4 p-0 text-gray-400 hover:text-red-500 hover:bg-red-50/60 rounded-full transition-all"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          deleteNodeMutation.mutate(node.id)
+                        }}
+                        title="Delete node"
+                      >
+                        <X className="h-2 w-2" />
+                      </Button>
                     </div>
 
                     {/* Input Socket Button - Left Side */}
                     <motion.div
-                      className={`absolute -left-1.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 rounded-full border border-white shadow-sm z-20 flex items-center justify-center ${
+                      className={`absolute -left-2 top-1/2 -translate-y-1/2 w-4 h-4 rounded-full border-2 border-white/80 shadow-lg z-20 flex items-center justify-center backdrop-blur-sm ${
                         connectionState?.targetNodeId === node.id && 
                         connectionState?.targetPort === 'input'
-                          ? 'bg-gradient-to-br from-teal-500 to-teal-600 ring-1 ring-teal-300'
-                          : 'bg-gradient-to-br from-teal-400 to-teal-500 hover:from-teal-500 hover:to-teal-600'
+                          ? 'bg-blue-500 ring-2 ring-blue-300/50'
+                          : 'bg-blue-400/90 hover:bg-blue-500'
                       } cursor-pointer transition-all duration-200`}
-                      whileHover={{ scale: 1.2 }}
+                      whileHover={{ scale: 1.15 }}
                       whileTap={{ scale: 1.05 }}
                       onClick={(e) => handleSocketClick(e, node.id, 'input')}
                       title={connectionState?.targetNodeId === node.id && connectionState?.targetPort === 'input'
@@ -2960,18 +3420,18 @@ export default function NodeEditorView({
                         ? 'Click to complete connection (output -> input)'
                         : 'Input Socket - Click to start or complete connection'}
                     >
-                      <div className="w-1.5 h-1.5 rounded-full bg-white"></div>
+                      <div className="w-2 h-2 rounded-full bg-white/90"></div>
                     </motion.div>
 
                     {/* Output Socket Button - Right Side */}
                     <motion.div
-                      className={`absolute -right-1.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 rounded-full border border-white shadow-sm z-20 flex items-center justify-center ${
+                      className={`absolute -right-2 top-1/2 -translate-y-1/2 w-4 h-4 rounded-full border-2 border-white/80 shadow-lg z-20 flex items-center justify-center backdrop-blur-sm ${
                         connectionState?.sourceNodeId === node.id && 
                         connectionState?.sourcePort === 'output'
-                          ? 'bg-gradient-to-br from-cyan-500 to-cyan-600 ring-1 ring-cyan-300'
-                          : 'bg-gradient-to-br from-cyan-400 to-cyan-500 hover:from-cyan-500 hover:to-cyan-600'
+                          ? 'bg-cyan-500 ring-2 ring-cyan-300/50'
+                          : 'bg-cyan-400/90 hover:bg-cyan-500'
                       } cursor-pointer transition-all duration-200`}
-                      whileHover={{ scale: 1.2 }}
+                      whileHover={{ scale: 1.15 }}
                       whileTap={{ scale: 1.05 }}
                       onClick={(e) => handleSocketClick(e, node.id, 'output')}
                       title={connectionState?.sourceNodeId === node.id && connectionState?.sourcePort === 'output'
@@ -2980,7 +3440,7 @@ export default function NodeEditorView({
                         ? 'Click to complete connection (output -> input)'
                         : 'Output Socket - Click to start or complete connection'}
                     >
-                      <div className="w-1.5 h-1.5 rounded-full bg-white"></div>
+                      <div className="w-2 h-2 rounded-full bg-white/90"></div>
                     </motion.div>
                   </CardContent>
                 </Card>
@@ -2992,7 +3452,7 @@ export default function NodeEditorView({
       </motion.div>
 
       {/* Right Panel - Node Configuration */}
-      <div className={`w-96 border-l ${currentTheme.panelBorder} ${currentTheme.panel} overflow-y-auto`}>
+      <div className={`w-96 border-l border-white/20 bg-white/40 backdrop-blur-xl overflow-y-auto rounded-l-2xl shadow-lg`}>
         {renderNodeConfig()}
       </div>
 
@@ -3092,6 +3552,261 @@ export default function NodeEditorView({
           open={showDuckDBTablesDialog}
           onOpenChange={setShowDuckDBTablesDialog}
         />
+      )}
+      {showDuckDB2JMPWizard && selectedNode && (
+        <DuckDB2JMPWizard
+          node={nodes.find(n => n.id === selectedNode)!}
+          workflowId={workflowId}
+          open={showDuckDB2JMPWizard}
+          onOpenChange={setShowDuckDB2JMPWizard}
+          onConfigUpdate={(config) => {
+            if (selectedNode) {
+              handleSaveNodeConfig(selectedNode, config)
+            }
+          }}
+        />
+      )}
+      {showExcel2JMPWizard && selectedNode && (
+        <Excel2JMPWizard
+          node={nodes.find(n => n.id === selectedNode)!}
+          workflowId={workflowId}
+          open={showExcel2JMPWizard}
+          onOpenChange={setShowExcel2JMPWizard}
+          onConfigUpdate={(config) => {
+            if (selectedNode) {
+              handleSaveNodeConfig(selectedNode, config)
+            }
+          }}
+        />
+      )}
+      {showDuckDBConvertWizard && selectedNode && (
+        <DuckDBConvertWizard
+          node={nodes.find(n => n.id === selectedNode)!}
+          workflowId={workflowId}
+          open={showDuckDBConvertWizard}
+          onOpenChange={setShowDuckDBConvertWizard}
+          onConfigUpdate={(config) => {
+            if (selectedNode) {
+              handleSaveNodeConfig(selectedNode, config)
+            }
+          }}
+        />
+      )}
+      {/* Edit Name Dialog */}
+      {showEditNameDialog && (
+        <Dialog open={!!showEditNameDialog} onOpenChange={(open) => {
+          if (!open) {
+            setShowEditNameDialog(null)
+            setEditNameDialogValue('')
+            setEditPositionX(0)
+            setEditPositionY(0)
+          }
+        }}>
+          <DialogContent className="bg-white/60 backdrop-blur-xl border border-white/30 rounded-2xl shadow-xl p-6 max-w-md">
+            <DialogHeader>
+              <DialogTitle className="text-xs font-semibold text-gray-800">Edit Node</DialogTitle>
+              <DialogDescription className="text-[10px] text-gray-600 mt-1">
+                Edit node name and position
+              </DialogDescription>
+            </DialogHeader>
+            <div className="mt-4 space-y-4">
+              <div>
+                <label className="text-[10px] font-medium text-gray-700 mb-1.5 block">Node Name</label>
+                <input
+                  type="text"
+                  value={editNameDialogValue}
+                  onChange={(e) => setEditNameDialogValue(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      const nodeId = showEditNameDialog
+                      if (nodeId) {
+                        handleUpdateCheckpointName(nodeId, editNameDialogValue)
+                        updateNodeMutation.mutate({
+                          nodeId,
+                          data: { position_x: editPositionX, position_y: editPositionY }
+                        })
+                        setShowEditNameDialog(null)
+                        setEditNameDialogValue('')
+                        setEditPositionX(0)
+                        setEditPositionY(0)
+                      }
+                    } else if (e.key === 'Escape') {
+                      setShowEditNameDialog(null)
+                      setEditNameDialogValue('')
+                      setEditPositionX(0)
+                      setEditPositionY(0)
+                    }
+                  }}
+                  className="w-full px-3 py-2 bg-white/80 backdrop-blur-sm border border-white/40 rounded-xl text-xs text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-300/50 focus:border-blue-300/50 transition-all duration-200"
+                  placeholder="Enter node name (optional)"
+                  autoFocus
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-[10px] font-medium text-gray-700 mb-1.5 block">Position X</label>
+                  <input
+                    type="number"
+                    value={editPositionX}
+                    onChange={(e) => setEditPositionX(parseInt(e.target.value) || 0)}
+                    className="w-full px-3 py-2 bg-white/80 backdrop-blur-sm border border-white/40 rounded-xl text-xs text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-300/50 focus:border-blue-300/50 transition-all duration-200"
+                    placeholder="X position"
+                    min="0"
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] font-medium text-gray-700 mb-1.5 block">Position Y</label>
+                  <input
+                    type="number"
+                    value={editPositionY}
+                    onChange={(e) => setEditPositionY(parseInt(e.target.value) || 0)}
+                    className="w-full px-3 py-2 bg-white/80 backdrop-blur-sm border border-white/40 rounded-xl text-xs text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-300/50 focus:border-blue-300/50 transition-all duration-200"
+                    placeholder="Y position"
+                    min="0"
+                  />
+                </div>
+              </div>
+              <div className="flex items-center justify-end gap-2">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="px-3 py-1.5 text-xs font-medium text-gray-600 hover:text-gray-800 hover:bg-white/50 rounded-full"
+                  onClick={() => {
+                    setShowEditNameDialog(null)
+                    setEditNameDialogValue('')
+                    setEditPositionX(0)
+                    setEditPositionY(0)
+                  }}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  variant="default"
+                  size="sm"
+                  className="px-4 py-1.5 text-xs font-medium bg-blue-500 hover:bg-blue-600 text-white rounded-full"
+                  onClick={() => {
+                    const nodeId = showEditNameDialog
+                    if (nodeId) {
+                      handleUpdateCheckpointName(nodeId, editNameDialogValue)
+                      updateNodeMutation.mutate({
+                        nodeId,
+                        data: { position_x: editPositionX, position_y: editPositionY }
+                      })
+                      setShowEditNameDialog(null)
+                      setEditNameDialogValue('')
+                      setEditPositionX(0)
+                      setEditPositionY(0)
+                    }
+                  }}
+                >
+                  Save
+                </Button>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
+      )}
+      {/* Node Color Dialog */}
+      {colorDialogNodeId && (
+        <Dialog open={!!colorDialogNodeId} onOpenChange={(open) => {
+          if (!open) {
+            setColorDialogNodeId(null)
+            setColorDialogValue('#ffffff')
+          }
+        }}>
+          <DialogContent className="bg-white/70 backdrop-blur-2xl border border-white/40 rounded-2xl shadow-xl p-6 max-w-md">
+            <DialogHeader>
+              <DialogTitle className="text-xs font-semibold text-gray-800">Set Node Background Color</DialogTitle>
+              <DialogDescription className="text-[10px] text-gray-600 mt-1">
+                Choose a background color for this node. This color will appear in the node list and on the canvas.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="mt-4 space-y-4">
+              <div className="flex items-center gap-3">
+                <input
+                  type="color"
+                  value={colorDialogValue}
+                  onChange={(e) => setColorDialogValue(e.target.value)}
+                  className="h-10 w-10 rounded-xl border border-white/50 shadow-inner cursor-pointer"
+                  title="Select background color"
+                />
+                <div className="flex flex-col text-[10px] text-gray-600">
+                  <span className="font-medium text-gray-800">Hex</span>
+                  <input
+                    type="text"
+                    value={colorDialogValue}
+                    onChange={(e) => setColorDialogValue(e.target.value.startsWith('#') ? e.target.value : `#${e.target.value}`)}
+                    className="px-2 py-1 mt-1 bg-white/80 border border-white/40 rounded-lg focus:outline-none focus:ring-1 focus:ring-rose-200"
+                  />
+                </div>
+              </div>
+              <div className="flex flex-wrap gap-2 text-[10px] text-gray-500">
+                {['#fb7185', '#f97316', '#facc15', '#4ade80', '#38bdf8', '#a78bfa'].map(color => (
+                  <button
+                    key={color}
+                    type="button"
+                    className="h-8 w-8 rounded-full border border-white/60 shadow-md transition-transform hover:scale-105"
+                    style={{ backgroundColor: color }}
+                    onClick={() => setColorDialogValue(color)}
+                    title={`Use ${color}`}
+                  />
+                ))}
+              </div>
+              <div className="flex items-center justify-between text-[10px] text-gray-500">
+                <span>Applies macOS-style frosted overlay automatically</span>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="px-3 py-1 text-[10px] text-gray-500 hover:text-gray-700 hover:bg-white/60 rounded-full"
+                  onClick={() => {
+                    const nodeId = colorDialogNodeId
+                    if (nodeId) {
+                      const node = nodes.find(n => n.id === nodeId)
+                      const { node_color, ...restConfig } = node?.config || {}
+                      handleSaveNodeConfig(nodeId, restConfig)
+                    }
+                    setColorDialogNodeId(null)
+                    setColorDialogValue('#ffffff')
+                  }}
+                >
+                  Reset to default
+                </Button>
+              </div>
+              <div className="flex items-center justify-end gap-2">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="px-3 py-1.5 text-xs font-medium text-gray-600 hover:text-gray-800 hover:bg-white/50 rounded-full"
+                  onClick={() => {
+                    setColorDialogNodeId(null)
+                    setColorDialogValue('#ffffff')
+                  }}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  variant="default"
+                  size="sm"
+                  className="px-4 py-1.5 text-xs font-medium bg-gradient-to-r from-rose-400 to-pink-400 text-white rounded-full hover:from-rose-500 hover:to-pink-500"
+                  onClick={() => {
+                    const nodeId = colorDialogNodeId
+                    if (nodeId) {
+                      const node = nodes.find(n => n.id === nodeId)
+                      handleSaveNodeConfig(nodeId, {
+                        ...node?.config,
+                        node_color: hexToRgba(colorDialogValue)
+                      })
+                    }
+                    setColorDialogNodeId(null)
+                    setColorDialogValue('#ffffff')
+                  }}
+                >
+                  Save Color
+                </Button>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
       )}
 
     </div>

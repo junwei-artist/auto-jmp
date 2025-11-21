@@ -4,7 +4,7 @@ Simple CLI to test JMPRunner with a CSV and JSL on macOS.
 
 Usage examples:
   python test_run_jmp.py \
-    --folder /Users/lytech/Documents/service/auto-jmp/backend/tasks/task_20251030_145820
+    --folder /Users/lstech/service/files/tasks/task_20251030_145820
 
   python test_run_jmp.py \
     --csv /path/to/data.csv \
@@ -33,7 +33,7 @@ def find_first(path: Path, pattern: str) -> Optional[Path]:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Run JMPRunner test with CSV and JSL")
-    parser.add_argument("--folder", type=str, default="/Users/lytech/Documents/service/auto-jmp/backend/tasks/task_20251030_145820",
+    parser.add_argument("--folder", type=str, default="/Users/lstech/service/files/tasks/task_20251030_145820",
                         help="Folder containing CSV and JSL (default: given task folder)")
     parser.add_argument("--csv", type=str, default=None, help="Path to CSV file (overrides --folder search)")
     parser.add_argument("--jsl", type=str, default=None, help="Path to JSL file (overrides --folder search)")

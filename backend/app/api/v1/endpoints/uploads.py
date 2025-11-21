@@ -245,8 +245,8 @@ async def file_serve_query(
             if candidate.exists():
                 full_path = candidate
             else:
-                # THIRD: Explicit fallback to GitHub path
-                fixed_backend = Path("/Users/lytech/Documents/GitHub/auto-jmp/backend")
+                # THIRD: Explicit fallback to service files path
+                fixed_backend = Path("/Users/lstech/service/files")
                 fixed_candidate = (fixed_backend / task_path).resolve()
                 if fixed_candidate.exists():
                     full_path = fixed_candidate
@@ -432,8 +432,8 @@ async def download_run_zip(
                     if candidate2.exists():
                         full_task_dir = candidate2
                     else:
-                        # FOURTH: Explicit fallback to GitHub path
-                        fixed_backend = Path("/Users/lytech/Documents/GitHub/auto-jmp/backend")
+                        # FOURTH: Explicit fallback to service files path
+                        fixed_backend = Path("/Users/lstech/service/files")
                         candidate3 = (fixed_backend / task_dir_rel).resolve()
                         if candidate3.exists():
                             full_task_dir = candidate3
