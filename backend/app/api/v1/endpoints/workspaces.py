@@ -4341,6 +4341,18 @@ async def execute_duckdb2jmp_node(
     list_check_values: Optional[str] = Form(None),  # JSON array of strings
     value_order: Optional[str] = Form(None),  # JSON array of strings
     caption_box_statistics: Optional[str] = Form(None),  # JSON array of strings
+    add_usl: bool = Form(True),  # Whether to add USL reference line
+    add_target: bool = Form(True),  # Whether to add Target reference line
+    add_lsl: bool = Form(True),  # Whether to add LSL reference line
+    add_nominal: bool = Form(False),  # Whether to add Nominal reference line (value: 0)
+    add_tol_upper: bool = Form(False),  # Whether to add TOL+ reference line
+    add_tol_lower: bool = Form(False),  # Whether to add TOL- reference line
+    usl_color: str = Form("Dark Blue"),  # Color for USL reference line (Dark Blue, Dark Red, Dark Yellow)
+    target_color: str = Form("Dark Blue"),  # Color for Target reference line (Dark Blue, Dark Red, Dark Yellow)
+    lsl_color: str = Form("Dark Blue"),  # Color for LSL reference line (Dark Blue, Dark Red, Dark Yellow)
+    nominal_color: str = Form("Dark Blue"),  # Color for Nominal reference line (Dark Blue, Dark Red, Dark Yellow)
+    tol_upper_color: str = Form("Dark Blue"),  # Color for TOL+ reference line (Dark Blue, Dark Red, Dark Yellow)
+    tol_lower_color: str = Form("Dark Blue"),  # Color for TOL- reference line (Dark Blue, Dark Red, Dark Yellow)
     db: AsyncSession = Depends(get_db),
     current_user: Optional[AppUser] = Depends(get_current_user)
 ):
@@ -4464,6 +4476,12 @@ async def execute_duckdb2jmp_node(
             if table_name not in tables:
                 continue  # Skip if table doesn't exist
             
+            # Only process the "data" table (case-insensitive)
+            # Categorical variable settings only apply to the data table
+            if table_name.lower() != "data":
+                print(f"Info: Skipping table {table_name} - categorical variable settings only apply to 'data' table")
+                continue
+            
             # Load table (with chunking for large tables)
             table_result = file_handler.load_table(table_name, chunk_size=chunk_size)
             if not table_result.get("success"):
@@ -4473,19 +4491,23 @@ async def execute_duckdb2jmp_node(
             df_data = file_handler.df_data_raw
             fai_columns = file_handler.fai_columns
             
-            # Set categorical variable
+            # Set categorical variable (only for data table)
             set_cat_result = file_handler.set_categorical_variable(cat_var)
             if not set_cat_result.get("success"):
                 print(f"Warning: Failed to set categorical variable for {table_name}: {set_cat_result.get('error')}")
                 continue
             
+            # Use the actual categorical variable name found (case-insensitive match)
+            actual_cat_var = file_handler.selected_cat_var or set_cat_result.get("categorical_variable") or cat_var
+            
             # Validate data (using sample if chunked)
-            validation_result = validator.run_full_validation(df_meta, df_data, cat_var)
+            validation_result = validator.run_full_validation(df_meta, df_data, actual_cat_var)
             if not validation_result.get("success"):
                 print(f"Warning: Data validation failed for {table_name}: {validation_result.get('error')}")
                 continue
             
             # Process data (using all data from DuckDB for boundaries calculation)
+            # Use actual_cat_var which was set above
             is_large = table_result.get("is_chunked", False)
             if is_large:
                 # For large tables, calculate boundaries from all data in DuckDB
@@ -4493,24 +4515,40 @@ async def execute_duckdb2jmp_node(
                     df_meta, 
                     df_data,  # Sample for validation only
                     fai_columns, 
-                    cat_var,
+                    actual_cat_var,  # Use actual categorical variable name
                     duckdb_path=str(duckdb_file_path),
-                    table_name=table_name
+                    table_name=table_name,
+                    add_usl=add_usl,
+                    add_target=add_target,
+                    add_lsl=add_lsl,
+                    add_tol_upper=add_tol_upper,
+                    add_tol_lower=add_tol_lower
                 )
             else:
                 # For small tables, use the loaded data
-                process_result = data_processor.process_data(df_meta, df_data, fai_columns, cat_var)
+                process_result = data_processor.process_data(
+                    df_meta, 
+                    df_data, 
+                    fai_columns, 
+                    actual_cat_var,  # Use actual categorical variable name
+                    add_usl=add_usl,
+                    add_target=add_target,
+                    add_lsl=add_lsl,
+                    add_tol_upper=add_tol_upper,
+                    add_tol_lower=add_tol_lower
+                )
             
             if not process_result.get("success"):
                 print(f"Warning: Data processing failed for {table_name}: {process_result.get('error')}")
                 continue
             
             # Generate files (with chunked processing if needed)
+            # Use actual_cat_var for file generation to ensure correct column name is used
             file_result = file_processor.generate_files(
                 df_meta,
                 df_data if not is_large else None,  # Only pass df_data for small tables
                 process_result["boundaries"],
-                cat_var,
+                actual_cat_var,  # Use actual categorical variable name
                 fai_columns,
                 color_by,
                 duckdb_path=str(duckdb_file_path) if is_large else None,
@@ -4518,7 +4556,19 @@ async def execute_duckdb2jmp_node(
                 chunk_size=chunk_size if is_large else None,
                 list_check_values=list_check_list,
                 value_order=value_order_list,
-                caption_box_statistics=caption_box_stats_list
+                caption_box_statistics=caption_box_stats_list,
+                add_usl=add_usl,
+                add_target=add_target,
+                add_lsl=add_lsl,
+                add_nominal=add_nominal,
+                add_tol_upper=add_tol_upper,
+                add_tol_lower=add_tol_lower,
+                usl_color=usl_color,
+                target_color=target_color,
+                lsl_color=lsl_color,
+                nominal_color=nominal_color,
+                tol_upper_color=tol_upper_color,
+                tol_lower_color=tol_lower_color
             )
             
             if not file_result.get("success"):
@@ -4562,6 +4612,18 @@ async def execute_duckdb2jmp_node(
                 "list_check_values": list_check_list,
                 "value_order": value_order_list,
                 "caption_box_statistics": caption_box_stats_list,
+                "add_usl": add_usl,
+                "add_target": add_target,
+                "add_lsl": add_lsl,
+                "add_nominal": add_nominal,
+                "add_tol_upper": add_tol_upper,
+                "add_tol_lower": add_tol_lower,
+                "usl_color": usl_color,
+                "target_color": target_color,
+                "lsl_color": lsl_color,
+                "nominal_color": nominal_color,
+                "tol_upper_color": tol_upper_color,
+                "tol_lower_color": tol_lower_color,
                 "created_at": datetime.now().isoformat()
             }
             
@@ -4748,12 +4810,18 @@ async def run_jmp_from_pair(
             
             # Add owner as member
             if current_user:
+                # Ensure default roles exist
+                from app.core.roles import ensure_default_roles, get_role_id_by_name
+                await ensure_default_roles(db)
+                owner_role_id = await get_role_id_by_name(db, "OWNER")
+                
                 await db.execute(text("""
                     INSERT INTO project_member (project_id, user_id, role, role_id) 
-                    VALUES (:project_id, :user_id, 'OWNER'::role, '00000000-0000-0000-0000-000000000001'::uuid)
+                    VALUES (:project_id, :user_id, 'OWNER', CAST(:role_id AS uuid))
                 """), {
                     "project_id": str(new_project.id),
-                    "user_id": str(current_user.id)
+                    "user_id": str(current_user.id),
+                    "role_id": owner_role_id
                 })
                 await db.commit()
             
@@ -6765,7 +6833,24 @@ async def process_outlier_remover_duckdb(
                                     print(f"Error in sigma calculation for column {col}: {e}")
                                     pass
                             
-                            if action == "remove_row":
+                            elif condition == "standardized_to_nominal":
+                                # Standardize to nominal: calculate mean and replace each value with (value - mean)
+                                try:
+                                    # Get numeric values only (exclude NaN)
+                                    numeric_values = pd.to_numeric(df[col], errors='coerce')
+                                    numeric_values_clean = numeric_values.dropna()
+                                    
+                                    if len(numeric_values_clean) > 0:
+                                        mean_val = numeric_values_clean.mean()
+                                        # Replace each value with (value - mean)
+                                        df[col] = numeric_values - mean_val
+                                        removed_count = len(numeric_values_clean)  # Count of standardized values
+                                except (ValueError, TypeError) as e:
+                                    print(f"Error in standardization for column {col}: {e}")
+                                    pass
+                            
+                            # Collect rows to remove (not applicable for standardized_to_nominal)
+                            if condition != "standardized_to_nominal" and action == "remove_row":
                                 all_rows_to_remove.update(rows_to_remove)
                             
                             if removed_count > 0:
@@ -6773,8 +6858,8 @@ async def process_outlier_remover_duckdb(
                                     "table": table_name,
                                     "column": col,
                                     "condition": condition,
-                                    "value": str(value),
-                                    "action": action,
+                                    "value": str(value) if condition != "standardized_to_nominal" else "N/A",
+                                    "action": action if condition != "standardized_to_nominal" else "standardize",
                                     "removed_count": int(removed_count),
                                     "timestamp": datetime.now().isoformat()
                                 })
@@ -6783,7 +6868,7 @@ async def process_outlier_remover_duckdb(
                             print(f"Error applying rule to column {col} in table {table_name}: {str(e)}")
                             continue
                     
-                    if action == "remove_row" and all_rows_to_remove:
+                    if condition != "standardized_to_nominal" and action == "remove_row" and all_rows_to_remove:
                         df = df.drop(index=list(all_rows_to_remove))
                         df = df.reset_index(drop=True)
                 
@@ -6986,6 +7071,523 @@ async def download_processed_duckdb(
         import traceback
         print(f"Error downloading DuckDB file: {str(e)}\n{traceback.format_exc()}")
         raise HTTPException(status_code=500, detail=f"Error downloading file: {str(e)}")
+
+
+# ==================== DuckDB2Norminal Endpoints ====================
+
+# Get DuckDB data for normalization (list tables and get table data)
+@router.get("/workflows/{workflow_id}/nodes/{node_id}/duckdb2norminal-data")
+async def get_duckdb2norminal_data(
+    workflow_id: str,
+    node_id: str,
+    table_name: Optional[str] = Query(None, description="Table name to get data from"),
+    file_path: Optional[str] = Query(None, description="DuckDB file path (filename only)"),
+    version: str = Query("original", description="Version: 'original' or 'processed'"),
+    load_all: Optional[bool] = Query(False, description="Load all rows (default: first 50)"),
+    limit: int = Query(50, description="Number of rows to load (default: 50)"),
+    offset: int = Query(0, description="Row offset for pagination"),
+    db: AsyncSession = Depends(get_db),
+    current_user: Optional[AppUser] = Depends(get_current_user)
+):
+    """Get DuckDB data for normalization - list tables or get table data"""
+    try:
+        # Check workflow and node
+        workflow_result = await db.execute(
+            select(Workflow).where(Workflow.id == uuid.UUID(workflow_id))
+        )
+        workflow = workflow_result.scalar_one_or_none()
+        
+        if not workflow:
+            raise HTTPException(status_code=404, detail="Workflow not found")
+        
+        node_result = await db.execute(
+            select(WorkflowNode).where(WorkflowNode.id == uuid.UUID(node_id))
+        )
+        node = node_result.scalar_one_or_none()
+        
+        if not node or str(node.workflow_id) != workflow_id:
+            raise HTTPException(status_code=404, detail="Node not found")
+        
+        if node.module_type != "duckdb2norminal":
+            raise HTTPException(status_code=400, detail="Node is not a DuckDB2Norminal node")
+        
+        node_path = local_storage.get_workflow_node_path(workflow_id, node_id)
+        
+        if version == "processed":
+            # Look for processed file in output folder
+            output_path = node_path / "output"
+            if not output_path.exists():
+                return {
+                    "workflow_id": workflow_id,
+                    "node_id": node_id,
+                    "tables": [],
+                    "message": "No processed DuckDB file found - output folder does not exist"
+                }
+            
+            duckdb_files = list(output_path.glob("*.duckdb"))
+            
+            # When viewing processed files, file_path refers to the input file filename
+            if file_path:
+                input_path = node_path / "input"
+                input_file_path = input_path / file_path
+                if input_file_path.exists():
+                    current_input_file = str(input_file_path.relative_to(local_storage.base_path))
+                    
+                    # Find processed file that matches this input file
+                    matched_files = []
+                    for duckdb_file in duckdb_files:
+                        try:
+                            file_stem = duckdb_file.stem
+                            metadata_file = output_path / f"{file_stem}_metadata.json"
+                            if metadata_file.exists():
+                                with open(metadata_file, 'r', encoding='utf-8') as f:
+                                    metadata = json.load(f)
+                                    processed_input_file = metadata.get("input_file")
+                                    if processed_input_file:
+                                        processed_path_normalized = str(Path(processed_input_file)).replace('\\', '/')
+                                        current_path_normalized = str(Path(current_input_file)).replace('\\', '/')
+                                        processed_filename = Path(processed_input_file).name
+                                        current_filename = Path(current_input_file).name
+                                        
+                                        if processed_path_normalized == current_path_normalized or processed_filename == current_filename:
+                                            matched_files.append(duckdb_file)
+                        except Exception as e:
+                            print(f"Warning: Could not read metadata for {duckdb_file}: {e}")
+                            continue
+                    
+                    if matched_files:
+                        duckdb_files = matched_files
+                    else:
+                        return {
+                            "workflow_id": workflow_id,
+                            "node_id": node_id,
+                            "tables": [],
+                            "message": "No processed file found for the current input file. Please process the file first.",
+                            "version": version
+                        }
+        else:
+            # Original file from input folder
+            input_path = node_path / "input"
+            if not input_path.exists():
+                return {
+                    "workflow_id": workflow_id,
+                    "node_id": node_id,
+                    "tables": [],
+                    "message": "No input DuckDB file found"
+                }
+            
+            duckdb_files = list(input_path.glob("*.duckdb"))
+            
+            if file_path:
+                file_path_obj = Path(file_path)
+                if file_path_obj.is_absolute():
+                    duckdb_file_path = file_path_obj
+                else:
+                    duckdb_file_path = input_path / file_path
+                if duckdb_file_path.exists() and duckdb_file_path.is_file():
+                    duckdb_files = [duckdb_file_path]
+        
+        if not duckdb_files:
+            return {
+                "workflow_id": workflow_id,
+                "node_id": node_id,
+                "tables": [],
+                "message": "No DuckDB file found"
+            }
+        
+        # Use first file
+        duckdb_file_path = duckdb_files[0]
+        
+        # Connect to DuckDB
+        import duckdb
+        conn = duckdb.connect(str(duckdb_file_path), read_only=True)
+        
+        try:
+            # Get list of tables
+            tables_result = conn.execute("SHOW TABLES").fetchall()
+            table_names = [row[0] for row in tables_result]
+            
+            if not table_name:
+                # Return list of tables
+                tables_info = []
+                for tbl_name in table_names:
+                    # Get row count and columns for each table
+                    try:
+                        row_count = conn.execute(f"SELECT COUNT(*) FROM {tbl_name}").fetchone()[0]
+                        columns_result = conn.execute(f"DESCRIBE {tbl_name}").fetchall()
+                        columns = [col[0] for col in columns_result]
+                        tables_info.append({
+                            "name": tbl_name,
+                            "row_count": row_count,
+                            "columns": columns
+                        })
+                    except Exception as e:
+                        print(f"Error getting info for table {tbl_name}: {e}")
+                        tables_info.append({
+                            "name": tbl_name,
+                            "row_count": 0,
+                            "columns": []
+                        })
+                
+                return {
+                    "workflow_id": workflow_id,
+                    "node_id": node_id,
+                    "tables": tables_info,
+                    "file_path": str(duckdb_file_path.relative_to(local_storage.base_path)),
+                    "version": version
+                }
+            else:
+                # Get data from specific table
+                if table_name not in table_names:
+                    return {
+                        "workflow_id": workflow_id,
+                        "node_id": node_id,
+                        "tables": [],
+                        "message": f"Table '{table_name}' not found"
+                    }
+                
+                # Get columns
+                columns_result = conn.execute(f"DESCRIBE {table_name}").fetchall()
+                columns = [col[0] for col in columns_result]
+                
+                # Get total row count
+                total_rows = conn.execute(f"SELECT COUNT(*) FROM {table_name}").fetchone()[0]
+                
+                # Get data with pagination
+                if load_all:
+                    df = conn.execute(f"SELECT * FROM {table_name}").df()
+                else:
+                    df = conn.execute(f"SELECT * FROM {table_name} LIMIT {limit} OFFSET {offset}").df()
+                
+                # Convert to list of dictionaries
+                data = []
+                for _, row in df.iterrows():
+                    row_dict = {}
+                    for col in columns:
+                        value = row[col]
+                        if pd.isna(value):
+                            row_dict[col] = None
+                        else:
+                            row_dict[col] = str(value)
+                    data.append(row_dict)
+                
+                return {
+                    "workflow_id": workflow_id,
+                    "node_id": node_id,
+                    "table_name": table_name,
+                    "columns": columns,
+                    "data": data,
+                    "total_rows": int(total_rows),
+                    "displayed_rows": len(data),
+                    "limit": limit if not load_all else total_rows,
+                    "offset": offset,
+                    "version": version
+                }
+        finally:
+            conn.close()
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        import traceback
+        print(f"Error getting DuckDB data for normalization: {str(e)}\n{traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail=f"Error getting DuckDB data: {str(e)}")
+
+
+# Process DuckDB file with normalization
+class DuckDB2NorminalRequest(BaseModel):
+    selected_columns: Dict[str, List[str]]  # {table_name: [column_names]}
+    file_key: Optional[str] = None  # Optional: specify which input file to process
+
+# Progress tracking storage for normalization
+norminal_progress_store: Dict[str, Dict[str, Any]] = {}
+
+@router.post("/workflows/{workflow_id}/nodes/{node_id}/process-duckdb2norminal")
+async def process_duckdb2norminal(
+    workflow_id: str,
+    node_id: str,
+    request: DuckDB2NorminalRequest = Body(...),
+    db: AsyncSession = Depends(get_db),
+    current_user: Optional[AppUser] = Depends(get_current_user)
+):
+    """Process DuckDB file by normalizing selected columns (subtract mean from each value)"""
+    progress_key = f"{workflow_id}_{node_id}_norminal"
+    norminal_progress_store[progress_key] = {"status": "processing", "progress": 0, "message": "Starting normalization..."}
+    
+    try:
+        # Check workflow and node
+        workflow_result = await db.execute(
+            select(Workflow).where(Workflow.id == uuid.UUID(workflow_id))
+        )
+        workflow = workflow_result.scalar_one_or_none()
+        
+        if not workflow:
+            raise HTTPException(status_code=404, detail="Workflow not found")
+        
+        node_result = await db.execute(
+            select(WorkflowNode).where(WorkflowNode.id == uuid.UUID(node_id))
+        )
+        node = node_result.scalar_one_or_none()
+        
+        if not node or str(node.workflow_id) != workflow_id:
+            raise HTTPException(status_code=404, detail="Node not found")
+        
+        if node.module_type != "duckdb2norminal":
+            raise HTTPException(status_code=400, detail="Node is not a DuckDB2Norminal node")
+    except ValueError as e:
+        norminal_progress_store[progress_key] = {"status": "error", "progress": 0, "message": f"Invalid ID format: {str(e)}"}
+        raise HTTPException(status_code=400, detail=f"Invalid ID format: {str(e)}")
+    except Exception as e:
+        import traceback
+        norminal_progress_store[progress_key] = {"status": "error", "progress": 0, "message": f"Error checking workflow/node: {str(e)}"}
+        print(f"Error checking workflow/node: {str(e)}\n{traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail=f"Error checking workflow/node: {str(e)}")
+    
+    # Process DuckDB file
+    try:
+        import numpy as np
+        from datetime import datetime
+        import duckdb
+        
+        norminal_progress_store[progress_key] = {"status": "processing", "progress": 10, "message": "Loading DuckDB file..."}
+        
+        node_path = local_storage.get_workflow_node_path(workflow_id, node_id)
+        input_path = node_path / "input"
+        output_path = node_path / "output"
+        output_path.mkdir(parents=True, exist_ok=True)
+        
+        # Get the current input file from request or node config
+        file_key = request.file_key
+        if not file_key:
+            node_config = node.config or {}
+            file_key = node_config.get("file_key")
+            if not file_key:
+                try:
+                    config_file = local_storage.load_node_config(workflow_id, node_id)
+                    if config_file:
+                        file_key = config_file.get("file_key")
+                except Exception as e:
+                    print(f"Warning: Could not load config file: {e}")
+        
+        # Find DuckDB file in input folder
+        duckdb_files = list(input_path.glob("*.duckdb"))
+        
+        if not duckdb_files:
+            norminal_progress_store[progress_key] = {"status": "error", "progress": 0, "message": "No DuckDB file found in input folder"}
+            raise HTTPException(status_code=404, detail="No DuckDB file found in input folder")
+        
+        # If file_key is specified, use that file
+        duckdb_file_path = None
+        if file_key:
+            filename_from_key = file_key.split('/')[-1] if '/' in file_key else file_key
+            potential_path = input_path / filename_from_key
+            if potential_path.exists() and potential_path.is_file():
+                duckdb_file_path = potential_path
+            else:
+                if file_key:
+                    norminal_progress_store[progress_key] = {"status": "error", "progress": 0, "message": f"File specified in file_key not found"}
+                    raise HTTPException(status_code=404, detail=f"File specified in file_key ({file_key}) not found")
+        
+        if not duckdb_file_path:
+            duckdb_file_path = duckdb_files[0]
+        
+        filename = duckdb_file_path.name
+        input_original_filename = filename
+        
+        norminal_progress_store[progress_key] = {"status": "processing", "progress": 20, "message": "Connecting to DuckDB..."}
+        
+        # Connect to input DuckDB
+        conn = duckdb.connect(str(duckdb_file_path), read_only=True)
+        
+        try:
+            # Get list of tables
+            tables_result = conn.execute("SHOW TABLES").fetchall()
+            table_names = [row[0] for row in tables_result]
+            
+            if not table_names:
+                norminal_progress_store[progress_key] = {"status": "error", "progress": 0, "message": "No tables found in DuckDB file"}
+                raise HTTPException(status_code=400, detail="No tables found in DuckDB file")
+            
+            norminal_progress_store[progress_key] = {"status": "processing", "progress": 30, "message": f"Processing {len(table_names)} tables..."}
+            
+            # Create output DuckDB database
+            import tempfile
+            import os
+            # Generate a unique temp file path - DuckDB will create the file
+            temp_dir = tempfile.gettempdir()
+            temp_filename = f"duckdb_norminal_output_{uuid.uuid4().hex}.duckdb"
+            temp_output_path = os.path.join(temp_dir, temp_filename)
+            
+            output_conn = duckdb.connect(temp_output_path)
+            normalization_summary = []
+            processed_tables = {}
+            
+            total_tables = len(table_names)
+            for table_idx, table_name in enumerate(table_names):
+                progress_pct = 30 + int((table_idx / total_tables) * 50)
+                norminal_progress_store[progress_key] = {"status": "processing", "progress": progress_pct, "message": f"Processing table {table_name} ({table_idx + 1}/{total_tables})..."}
+                
+                # Read table into pandas DataFrame for processing
+                df = conn.execute(f"SELECT * FROM {table_name}").df()
+                
+                # Get columns to normalize for this table
+                columns_to_normalize = request.selected_columns.get(table_name, [])
+                
+                # If no columns specified, copy table as-is
+                if not columns_to_normalize:
+                    output_conn.register('temp_df', df)
+                    output_conn.execute(f"CREATE TABLE {table_name} AS SELECT * FROM temp_df")
+                    output_conn.unregister('temp_df')
+                    processed_tables[table_name] = df
+                    continue
+                
+                # Normalize each selected column
+                for col in columns_to_normalize:
+                    if col not in df.columns:
+                        continue
+                    
+                    try:
+                        # Convert to numeric, coercing errors to NaN
+                        numeric_values = pd.to_numeric(df[col], errors='coerce')
+                        
+                        # Calculate mean (excluding NaN values)
+                        mean_val = numeric_values.mean()
+                        
+                        # Skip if all values are NaN or mean is NaN
+                        if pd.isna(mean_val):
+                            continue
+                        
+                        # Normalize: subtract mean from each value
+                        df[col] = numeric_values - mean_val
+                        
+                        # Record normalization in summary
+                        normalization_summary.append({
+                            "table": table_name,
+                            "column": col,
+                            "mean": float(mean_val),
+                            "timestamp": datetime.now().isoformat()
+                        })
+                    
+                    except Exception as e:
+                        print(f"Error normalizing column {col} in table {table_name}: {str(e)}")
+                        continue
+                
+                # Write processed table to output database
+                output_conn.register('temp_df', df)
+                output_conn.execute(f"CREATE TABLE {table_name} AS SELECT * FROM temp_df")
+                output_conn.unregister('temp_df')
+                processed_tables[table_name] = df
+            
+            # Create summary table
+            if normalization_summary:
+                summary_df = pd.DataFrame(normalization_summary)
+                summary_table_name = f"Normalization_Summary_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+            else:
+                # Create empty summary if no normalizations
+                summary_df = pd.DataFrame({
+                    "table": [],
+                    "column": [],
+                    "mean": [],
+                    "timestamp": []
+                })
+                summary_table_name = f"Normalization_Summary_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+            
+            output_conn.register('temp_summary_df', summary_df)
+            output_conn.execute(f"CREATE TABLE {summary_table_name} AS SELECT * FROM temp_summary_df")
+            output_conn.unregister('temp_summary_df')
+            processed_tables[summary_table_name] = summary_df
+            
+            # Close output connection
+            output_conn.close()
+            
+            # Generate output filename
+            input_filename_base = input_original_filename
+            if input_filename_base.startswith("processed_"):
+                input_filename_base = input_filename_base[len("processed_"):]
+            
+            if not input_filename_base.endswith('.duckdb'):
+                input_filename_base = f"{input_filename_base}.duckdb"
+            
+            output_filename = f"processed_{input_filename_base}"
+            output_file_path = output_path / output_filename
+            
+            # Remove existing processed file if it exists
+            if output_file_path.exists():
+                output_file_path.unlink()
+                metadata_file_path = output_path / f"{output_file_path.stem}_metadata.json"
+                if metadata_file_path.exists():
+                    metadata_file_path.unlink()
+            
+            # Copy temp file to output location
+            import shutil
+            shutil.copy2(temp_output_path, output_file_path)
+            
+            # Save metadata
+            metadata = {
+                "input_file": str(duckdb_file_path.relative_to(local_storage.base_path)),
+                "output_file": str(output_file_path.relative_to(local_storage.base_path)),
+                "filename": output_filename,
+                "tables_processed": list(processed_tables.keys()),
+                "summary_table": summary_table_name,
+                "total_normalizations": len(normalization_summary),
+                "normalization_summary": normalization_summary,
+                "timestamp": datetime.now().isoformat()
+            }
+            
+            metadata_file_path = output_path / f"{output_file_path.stem}_metadata.json"
+            with open(metadata_file_path, 'w', encoding='utf-8') as f:
+                json.dump(metadata, f, indent=2)
+            
+            # Clean up temp file
+            os.unlink(temp_output_path)
+            
+            norminal_progress_store[progress_key] = {"status": "completed", "progress": 100, "message": "Normalization completed successfully"}
+            
+            return {
+                "workflow_id": workflow_id,
+                "node_id": node_id,
+                "original_file": str(duckdb_file_path.relative_to(local_storage.base_path)),
+                "processed_file": str(output_file_path.relative_to(local_storage.base_path)),
+                "filename": output_filename,
+                "tables_processed": list(processed_tables.keys()),
+                "summary_table": summary_table_name,
+                "total_normalizations": len(normalization_summary),
+                "normalization_summary": normalization_summary
+            }
+        
+        finally:
+            if 'conn' in locals():
+                try:
+                    conn.close()
+                except:
+                    pass
+            if 'output_conn' in locals():
+                try:
+                    output_conn.close()
+                except:
+                    pass
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        import traceback
+        norminal_progress_store[progress_key] = {"status": "error", "progress": 0, "message": f"Error processing DuckDB: {str(e)}"}
+        print(f"Error processing DuckDB with normalization: {str(e)}\n{traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail=f"Error processing DuckDB: {str(e)}")
+
+
+# Get normalization progress
+@router.get("/workflows/{workflow_id}/nodes/{node_id}/duckdb2norminal-progress")
+async def get_duckdb2norminal_progress(
+    workflow_id: str,
+    node_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: Optional[AppUser] = Depends(get_current_user)
+):
+    """Get progress of DuckDB normalization operation"""
+    progress_key = f"{workflow_id}_{node_id}_norminal"
+    progress = norminal_progress_store.get(progress_key, {"status": "idle", "progress": 0, "message": "No operation in progress"})
+    return progress
 
 
 # Download converted DuckDB file (for duckdb_convert module)

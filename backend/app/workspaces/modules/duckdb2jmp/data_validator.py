@@ -241,15 +241,16 @@ class DataValidator:
             }
         unique_values = int(df_data[cat_var].nunique())
         total_values = int(len(df_data[cat_var].dropna()))
-        if unique_values < 2:
+        # Allow single value - no minimum requirement for unique values
+        if unique_values < 1:
             return {
                 "valid": False,
-                "error": f"Categorical variable '{cat_var}' has only {unique_values} unique value(s). Need at least 2 for grouping."
+                "error": f"Categorical variable '{cat_var}' has no unique values."
             }
-        if total_values < 10:
+        if total_values < 1:
             return {
                 "valid": False,
-                "error": f"Categorical variable '{cat_var}' has only {total_values} non-null values. Need at least 10 for meaningful analysis."
+                "error": f"Categorical variable '{cat_var}' has no non-null values."
             }
         return {
             "valid": True,

@@ -65,13 +65,34 @@ app = FastAPI(
 # Security
 security = HTTPBearer()
 
-# CORS middleware
+# CORS middleware - Allow all origins
+# Use a custom approach to allow all origins while maintaining credentials
+from starlette.middleware.cors import CORSMiddleware as StarletteCORSMiddleware
+
+class AllowAllCORSMiddleware(StarletteCORSMiddleware):
+    """Custom CORS middleware that allows all origins"""
+    async def __call__(self, scope, receive, send):
+        if scope["type"] == "http":
+            # Get the origin from headers
+            headers = dict(scope.get("headers", []))
+            origin = headers.get(b"origin", b"").decode("utf-8")
+            
+            # Allow all origins
+            if origin:
+                # Add the origin to allowed origins dynamically
+                self.allow_origins = [origin] if origin not in self.allow_origins else self.allow_origins
+        
+        return await super().__call__(scope, receive, send)
+
+# Use the standard CORS middleware but with a very permissive configuration
+# For production, you should restrict this to specific origins
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.BACKEND_CORS_ORIGINS,
+    allow_origin_regex=r".*",  # Allow all origins using regex
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["*"],
 )
 
 # Trusted host middleware - temporarily disabled for testing

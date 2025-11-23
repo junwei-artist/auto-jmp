@@ -256,7 +256,7 @@ export default function Excel2JMPGUI({
       } else if (catVarOrder.length === 0) {
         // If no order set yet, try to use saved order from config, otherwise use default
         const savedOrder = node.config?.cat_var_order || []
-        if (savedOrder.length > 0 && savedOrder.every(v => catVarUniqueValues.includes(v))) {
+        if (savedOrder.length > 0 && savedOrder.every((v: string) => catVarUniqueValues.includes(v))) {
           setCatVarOrder(savedOrder)
         } else {
           setCatVarOrder([...catVarUniqueValues])

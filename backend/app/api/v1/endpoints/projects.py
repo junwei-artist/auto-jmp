@@ -113,14 +113,21 @@ async def create_project(
     await db.commit()
     await db.refresh(project)
     
-    # Add owner as member using raw SQL to handle enum casting
+    # Add owner as member using raw SQL
     from sqlalchemy import text
+    from app.core.roles import ensure_default_roles, get_role_id_by_name
+    
+    # Ensure default roles exist
+    await ensure_default_roles(db)
+    owner_role_id = await get_role_id_by_name(db, "OWNER")
+    
     await db.execute(text("""
         INSERT INTO project_member (project_id, user_id, role, role_id) 
-        VALUES (:project_id, :user_id, 'OWNER'::role, '00000000-0000-0000-0000-000000000001'::uuid)
+        VALUES (:project_id, :user_id, 'OWNER', CAST(:role_id AS uuid))
     """), {
         "project_id": str(project.id),
-        "user_id": str(current_user.id)
+        "user_id": str(current_user.id),
+        "role_id": owner_role_id
     })
     
     # Add admin@admin.com as a member to every new project (if admin exists and is not the owner)
@@ -139,12 +146,14 @@ async def create_project(
         
         if not existing_admin_member.fetchone():
             # Add admin as MEMBER role
+            member_role_id = await get_role_id_by_name(db, "MEMBER")
             await db.execute(text("""
                 INSERT INTO project_member (project_id, user_id, role, role_id) 
-                VALUES (:project_id, :user_id, 'member'::role, '00000000-0000-0000-0000-000000000002'::uuid)
+                VALUES (:project_id, :user_id, 'MEMBER', CAST(:role_id AS uuid))
             """), {
                 "project_id": str(project.id),
-                "user_id": str(admin_user.id)
+                "user_id": str(admin_user.id),
+                "role_id": member_role_id
             })
     
     await db.commit()
@@ -833,8 +842,8 @@ async def download_public_artifact(
             if candidate.exists():
                 full_path = candidate
             else:
-                # THIRD: Explicit fallback to service files path
-                fixed_backend = Path("/Users/lstech/service/files")
+                # THIRD: Explicit fallback to GitHub path
+                fixed_backend = Path("/Users/lytech/Documents/GitHub/auto-jmp/backend")
                 fixed_candidate = (fixed_backend / task_path).resolve()
                 if fixed_candidate.exists():
                     full_path = fixed_candidate
@@ -862,11 +871,17 @@ async def download_public_artifact(
                 if candidate.exists():
                     full_path = candidate
                 else:
-                    # THIRD: Explicit fallback to service files path
-                    fixed_backend = Path("/Users/lstech/service/files")
+                    # THIRD: Explicit fallback to GitHub path
+                    fixed_backend = Path("/Users/lytech/Documents/GitHub/auto-jmp/backend")
                     fixed_candidate = (fixed_backend / relative_tasks).resolve()
                     if fixed_candidate.exists():
                         full_path = fixed_candidate
+                    else:
+                        # FOURTH: Also try with explicit service backend path
+                        service_backend = Path("/Users/lytech/Documents/service/auto-jmp/backend")
+                        service_candidate = (service_backend / relative_tasks).resolve()
+                        if service_candidate.exists():
+                            full_path = service_candidate
     
     if not full_path.exists() or not full_path.is_file():
         raise HTTPException(status_code=404, detail="File not found")

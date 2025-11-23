@@ -102,14 +102,14 @@ const translations = {
     'common.yes': 'Yes',
     'common.no': 'No',
     'common.ok': 'OK',
-    
+
     // Navigation
     'nav.dashboard': 'Dashboard',
     'nav.profile': 'Profile',
     'nav.profileSettings': 'Profile Settings',
     'nav.logout': 'Logout',
     'nav.language': 'Language',
-    
+
     // Auth
     'auth.login': 'Login',
     'auth.register': 'Register',
@@ -134,7 +134,7 @@ const translations = {
     'auth.tryAsGuest': 'Try as Guest',
     'auth.guestDescription': 'Experience the platform without creating an account',
     'auth.guestWarning': 'Guest access has limited features and file size restrictions. Create an account for full access.',
-    
+
     // Profile
     'profile.title': 'Profile Settings',
     'profile.subtitle': 'Manage your account settings and preferences',
@@ -170,7 +170,7 @@ const translations = {
     'profile.danger.deleteAccount': 'Delete Account',
     'profile.danger.deleteWarning': 'Once you delete your account, there is no going back. This will permanently delete your account and remove all your data from our servers.',
     'profile.danger.deletingAccount': 'Deleting Account...',
-    
+
     // Dashboard
     'dashboard.title': 'Data Analysis Platform',
     'dashboard.welcome': 'Welcome back',
@@ -202,7 +202,7 @@ const translations = {
     'dashboard.welcomeMessage': 'Manage your projects and view your analysis results.',
     'dashboard.enterProjectName': 'Enter project name',
     'dashboard.enterProjectDescription': 'Enter project description',
-    
+
     // Projects
     'projects.backToDashboard': 'Back to Dashboard',
     'projects.startAnalysis': 'Start New Analysis',
@@ -237,7 +237,7 @@ const translations = {
     'projects.copied': 'Copied to clipboard!',
     'projects.deleteProject': 'Delete Project',
     'projects.deleteConfirm': 'Are you sure you want to delete this project? This action cannot be undone.',
-    
+
     // Messages
     'messages.passwordChanged': 'Password changed successfully',
     'messages.profileUpdated': 'Profile updated successfully',
@@ -262,12 +262,12 @@ const translations = {
     'messages.uploadFailed': 'Upload failed',
     'messages.analysisFailed': 'Analysis failed',
     'messages.authenticationFailed': 'Authentication failed',
-    
+
     // Plugin Cards
     'plugin.card.supportedFormats': 'Supported Formats:',
     'plugin.card.usePlugin': 'Use Plugin',
     'plugin.card.version': 'v',
-    
+
     // Plugin Names and Descriptions
     'plugin.excel2boxplotv1.name': 'Excel to Boxplot V1',
     'plugin.excel2boxplotv1.description': 'Convert Excel files to CSV and JSL scripts with three-checkpoint validation system',
@@ -275,11 +275,11 @@ const translations = {
     'plugin.excel2boxplotv2.description': 'Excel to CSV/JSL with V2 column mapping',
     'plugin.excel2processcapability.name': 'Excel to Process Capability',
     'plugin.excel2processcapability.description': 'Convert Excel data to process capability analysis (Cp, Cpk, Pp, Ppk)',
-    
+
     // Plugin Categories
     'plugin.category.analysis': 'Analysis',
     'plugin.category.statistics': 'Statistics',
-    
+
     // Plugin Features
     'plugin.excel2boxplotv1.features.0': 'Three-checkpoint validation system',
     'plugin.excel2boxplotv1.features.1': 'Automatic file fixing for corrupted Excel files',
@@ -295,7 +295,7 @@ const translations = {
     'plugin.excel2processcapability.features.1': 'Statistical process control',
     'plugin.excel2processcapability.features.2': 'Capability indices calculation',
     'plugin.excel2processcapability.features.3': 'Control charts generation',
-    
+
     // Admin Plugin Management
     'admin.plugins.title': 'Plugin Management',
     'admin.plugins.subtitle': 'Manage installed plugins and their descriptions',
@@ -322,7 +322,7 @@ const translations = {
     'admin.plugins.chineseCancel': '取消',
     'admin.plugins.chineseEdit': '编辑中文',
     'admin.plugins.englishEdit': 'Edit English',
-    
+
     // Landing Page
     'landing.title': 'Data Analysis Platform',
     'landing.subtitle': 'Upload your CSV and JSL files to generate beautiful boxplot visualizations with JMP. Real-time processing, interactive galleries, and seamless sharing.',
@@ -336,7 +336,7 @@ const translations = {
     'landing.features.realTime.description': 'Watch your analysis progress in real-time with live updates',
     'landing.features.share.title': 'Share & Collaborate',
     'landing.features.share.description': 'Share your results with team members or create public links',
-    
+
     // Landing page additional text
     'landing.badge': 'Real-time Data Analysis Platform',
     'landing.cta.tryNow': 'Try It Now',
@@ -346,7 +346,7 @@ const translations = {
     'landing.auth.title': 'Get Started Today',
     'landing.auth.subtitle': 'Choose how you\'d like to access the platform',
     'landing.footer.platform': 'Advanced Data Visualization Platform',
-    
+
     // Home Page Carousel
     'home.carousel.allFunctions.title': 'Welcome to Data Analysis Platform',
     'home.carousel.allFunctions.subtitle': 'Explore All Functions',
@@ -366,13 +366,13 @@ const translations = {
     'home.carousel.modules.subtitle': 'Powerful Analysis Functions',
     'home.carousel.modules.description': 'Access a wide range of specialized modules for comprehensive data analysis',
     'home.carousel.startNow': 'Start Now',
-    
+
     // Home Page Interface Labels
     'home.interface.dashboard': 'Dashboard',
     'home.interface.workspaces': 'Workspaces',
     'home.interface.workflows': 'Workflows',
     'home.interface.modules': 'Modules',
-    
+
     // Home Page Portal Cards
     'home.portal.title': 'Explore Our Interfaces',
     'home.portal.subtitle': 'Choose from our powerful tools to analyze, organize, automate, and process your data',
@@ -388,12 +388,48 @@ const translations = {
     'home.portal.modules.title': 'Modules',
     'home.portal.modules.description': 'Access specialized data analysis functions and tools for comprehensive analysis',
     'home.portal.modules.cta': 'Browse Modules',
-    
+
+    // Homepage New Content
+    'nav.platformName': 'Core Data Analysis',
+    'home.hero.badge': 'Experience the Magic',
+    'home.hero.title': 'Data Analysis Reimagined',
+    'home.hero.subtitle': 'Unlock the power of your data with a platform that feels as good as it looks.',
+    'home.hero.getStarted': 'Get Started',
+    'home.hero.viewDemo': 'View Demo',
+    'home.welcomeBack': 'Welcome back',
+    'home.quality.title': 'Why Data Analysis Matters',
+    'home.quality.subtitle': 'Empower your quality management system with precision, foresight, and actionable intelligence.',
+    'home.quality.defectReduction.title': 'Defect Reduction',
+    'home.quality.defectReduction.description': 'Identify anomalies early to prevent defects.',
+    'home.quality.processControl.title': 'Process Control',
+    'home.quality.processControl.description': 'Monitor stability in real-time.',
+    'home.quality.rootCause.title': 'Root Cause Analysis',
+    'home.quality.rootCause.description': 'Deep dive into failure modes.',
+    'home.quality.continuousImprovement.title': 'Continuous Improvement',
+    'home.quality.continuousImprovement.description': 'Drive Kaizen with data-backed insights.',
+    'home.quality.compliance.title': 'Compliance Assurance',
+    'home.quality.compliance.description': 'Automate reporting for regulatory standards.',
+    'home.quality.predictive.title': 'Predictive Maintenance',
+    'home.quality.predictive.description': 'Forecast equipment failures before they occur.',
+    'home.quality.supplyChain.title': 'Supply Chain Visibility',
+    'home.quality.supplyChain.description': 'Track quality across the entire value chain.',
+    'home.quality.customerSat.title': 'Customer Satisfaction',
+    'home.quality.customerSat.description': 'Deliver consistent quality to build trust.',
+    'home.app.dashboard.title': 'Dashboard',
+    'home.app.dashboard.description': 'JMP Visualization - Transform your data into powerful insights and visualizations',
+    'home.app.workspaces.title': 'Workspaces',
+    'home.app.workspaces.description': 'Organize and categorize your tasks, projects, and workflows efficiently',
+    'home.app.workflows.title': 'Workflows',
+    'home.app.workflows.description': 'Automate processes with visual node-based workflow automation',
+    'home.app.modules.title': 'Modules',
+    'home.app.modules.description': 'Access specialized data analysis functions and tools for comprehensive analysis',
+    'home.footer.developedBy': 'Developed By Dr J. Sun',
+
     // SVG Text
     'svg.dataAnalysis': 'Data Analysis',
     'svg.liveDemo': 'Live Demo',
     'svg.clickToUpload': 'Click to upload and process',
-    
+
     // Help
     'help.title': 'Help',
     'help.center': 'Help Center',
@@ -404,7 +440,7 @@ const translations = {
     'help.support': 'Support & Contact',
     'help.navigation': 'Navigation',
     'help.back': 'Back',
-    
+
     // Dashboard Additional Translations
     'dashboard.createProject.title': 'Create New Project',
     'dashboard.createProject.subtitle': 'Create a new project to organize your data analysis tasks',
@@ -427,7 +463,7 @@ const translations = {
     'dashboard.plugins.quickAnalysis.description': 'Upload Excel file and generate boxplot analysis instantly',
     'dashboard.plugins.quickAnalysis.start': 'Start Boxplot Analysis',
     'dashboard.recentRuns.title': 'Recent Runs',
-    
+
     // Project Membership Management
     'membership.title': 'Project Members',
     'membership.subtitle': 'Manage project members and their roles.',
@@ -461,7 +497,7 @@ const translations = {
     'membership.addMemberFailed': 'Failed to add member',
     'membership.updateRoleFailed': 'Failed to update member role',
     'membership.removeMemberFailed': 'Failed to remove member',
-    
+
     // Notifications
     'notifications.title': 'Notifications',
     'notifications.subtitle': 'Stay updated with project activities and team changes.',
@@ -478,7 +514,7 @@ const translations = {
     'notifications.markReadFailed': 'Failed to mark notification as read',
     'notifications.markAllReadFailed': 'Failed to mark all notifications as read',
     'notifications.markAllReadSuccess': 'All notifications marked as read',
-    
+
     // Project Comments
     'comments.title': 'Project Comments',
     'comments.subtitle': 'Discuss and collaborate on this project',
@@ -511,7 +547,7 @@ const translations = {
     'comments.updateFailed': 'Failed to update comment',
     'comments.deleteFailed': 'Failed to delete comment',
     'comments.pleaseEnterComment': 'Please enter a comment',
-    
+
     // Project Page Additional Translations
     'project.tabs.analysis': 'Analysis',
     'project.tabs.members': 'Members',
@@ -570,7 +606,7 @@ const translations = {
     'project.startRunFailed': 'Failed to start run',
     'project.copiedToClipboard': 'Copied to clipboard!',
     'project.copyFailed': 'Failed to copy to clipboard',
-    
+
     // Help Illustrations
     'help.illustrations.loginFlow': 'Login Flow',
     'help.illustrations.pluginWorkflow': 'Plugin Workflow',
@@ -605,7 +641,7 @@ const translations = {
     'attachments.fileSizeExceeded': 'File size must be less than 200MB',
     'attachments.by': 'by',
     'attachments.fileSizeUnits': ['Bytes', 'KB', 'MB', 'GB'],
-    
+
     // PowerPoint Generator
     'powerpoint.wizard.title': 'PowerPoint Generator',
     'powerpoint.wizard.subtitle': 'Prepare workspace and configure your presentation',
@@ -631,7 +667,7 @@ const translations = {
     'powerpoint.wizard.prepare': 'Prepare Workspace',
     'powerpoint.wizard.folder': 'Folder',
     'powerpoint.wizard.images': 'images',
-    
+
     // PowerPoint Editor
     'powerpoint.editor.title': 'PowerPoint Layout Editor',
     'powerpoint.editor.subtitle': 'Design your presentation layout',
@@ -668,7 +704,7 @@ const translations = {
     'powerpoint.editor.download': 'Download',
     'powerpoint.editor.createdAt': 'Created',
     'powerpoint.editor.slideCount': '{count} slides',
-    
+
     // PowerPoint Messages
     'powerpoint.messages.workspacePrepared': 'Workspace prepared successfully!',
     'powerpoint.messages.workspaceFailed': 'Failed to prepare workspace',
@@ -677,7 +713,7 @@ const translations = {
     'powerpoint.messages.presentationGenerated': 'PowerPoint generated successfully!',
     'powerpoint.messages.presentationGenerateFailed': 'Failed to generate PowerPoint',
     'powerpoint.messages.deleteConfirm': 'Are you sure you want to delete this presentation? This action cannot be undone.',
-    
+
     // Drawing Folder from PDF
     'drawing.createFromPdf.title': 'Create Drawing Folder from PDF',
     'drawing.createFromPdf.description': 'Upload a PDF file to automatically detect FAI bubbles and create annotations',
@@ -692,7 +728,7 @@ const translations = {
     'drawing.createFromPdf.selectPdfError': 'Please select a PDF file',
     'drawing.createFromPdf.success': 'PDF processed successfully! FAI annotations have been extracted.',
     'drawing.createFromPdf.failed': 'Failed to process PDF',
-    
+
     // Annotation Editor
     'annotation.editor.title': 'Annotation Editor',
     'annotation.editor.loading': 'Loading annotations...',
@@ -757,7 +793,7 @@ const translations = {
     'annotation.editor.invalidBbox': 'Invalid bbox or image not loaded',
     'annotation.editor.noCurrentAnnotation': 'No current annotation found',
     'annotation.editor.pageNum': 'Page',
-    
+
     // Project Drawings Tab
     'drawings.tab': 'Drawing',
     'drawings.title': 'Drawing Folders',
@@ -805,6 +841,103 @@ const translations = {
     'drawings.downloading': 'Downloading...',
     'drawings.zipDownloaded': 'Folder downloaded successfully!',
     'drawings.zipDownloadFailed': 'Failed to download folder',
+
+    // Community Hub
+    'community.title': 'Community Hub',
+    'community.subtitle': 'Share knowledge, ask questions, and collaborate with the community',
+    'community.startDiscussion': 'Start a Discussion',
+    'community.allZones': 'All Zones',
+    'community.uncategorized': 'Uncategorized',
+    'community.loading': 'Loading posts...',
+    'community.noPosts': 'No posts yet',
+    'community.noPostsMessage': 'Be the first to start a discussion!',
+    'community.createPost': 'Create Post',
+    'community.editPost': 'Edit Post',
+    'community.deletePost': 'Delete Post',
+    'community.postTitle': 'Post Title',
+    'community.postContent': 'Content',
+    'community.selectZone': 'Select a zone',
+    'community.postType': 'Post Type',
+    'community.postTypeSharing': 'Sharing',
+    'community.postTypeQuestion': 'Question',
+    'community.postTypeAnnouncement': 'Announcement',
+    'community.cancel': 'Cancel',
+    'community.save': 'Save',
+    'community.delete': 'Delete',
+    'community.deleteConfirm': 'Are you sure you want to delete this post? This action cannot be undone.',
+    'community.addImages': 'Add Images',
+    'community.addAttachments': 'Add Attachments',
+    'community.addMore': 'Add More',
+    'community.images': 'Images',
+    'community.files': 'Files',
+    'community.upload': 'Upload',
+    'community.uploading': 'Uploading...',
+    'community.postCreated': 'Post created successfully!',
+    'community.postUpdated': 'Post updated successfully!',
+    'community.postDeleted': 'Post deleted successfully!',
+    'community.loadFailed': 'Failed to load posts',
+    'community.createFailed': 'Failed to create post',
+    'community.updateFailed': 'Failed to update post',
+    'community.deleteFailed': 'Failed to delete post',
+    'community.pleaseEnterTitle': 'Please enter a post title',
+    'community.pleaseEnterContent': 'Please enter post content',
+    'community.selectZoneError': 'Please select a zone',
+    'community.maxImages': 'Maximum 10 images allowed per post',
+    'community.maxFiles': 'Maximum 20 attachments allowed per post',
+    'community.fileTooLarge': 'is too large. Maximum size is',
+    'community.notImageFile': 'is not an image file',
+    'community.attachments': 'Attachments',
+    'community.newAttachmentsToUpload': 'New attachments to upload:',
+    'community.backToCommunity': 'Back to Community',
+    'community.postNotFound': 'Post not found',
+    'community.comments': 'Comments',
+    'community.addComment': 'Add a Comment',
+    'community.writeComment': 'Write a comment...',
+    'community.shareThoughts': 'Share your thoughts...',
+    'community.postComment': 'Post Comment',
+    'community.posting': 'Posting...',
+    'community.ctrlEnterToPost': 'Ctrl+Enter to post',
+    'community.addImagesOrAttachments': 'Add images or attachments',
+    'community.commentPosted': 'Comment posted!',
+    'community.commentUpdated': 'Comment updated!',
+    'community.commentDeleted': 'Comment deleted!',
+    'community.pleaseLoginToComment': 'Please login to comment',
+    'community.pleaseEnterComment': 'Please enter a comment or add an attachment',
+    'community.commentFailed': 'Failed to post comment',
+    'community.updateCommentFailed': 'Failed to update comment',
+    'community.deleteCommentFailed': 'Failed to delete comment',
+    'community.deleteCommentConfirm': 'Are you sure you want to delete this comment? This action cannot be undone.',
+    'community.editComment': 'Edit',
+    'community.deleteComment': 'Delete',
+    'community.saveComment': 'Save',
+    'community.cancelEdit': 'Cancel',
+    'community.noComments': 'No comments yet. Be the first to comment!',
+    'community.anonymous': 'Anonymous',
+    'community.ago': 'ago',
+    'community.justNow': 'Just now',
+    'community.minutesAgo': 'minutes ago',
+    'community.hoursAgo': 'hours ago',
+    'community.daysAgo': 'days ago',
+    'community.weeksAgo': 'weeks ago',
+    'community.monthsAgo': 'months ago',
+    'community.yearsAgo': 'years ago',
+    'community.views': 'views',
+    'community.likes': 'likes',
+    'community.replies': 'replies',
+    'community.attachmentDeleted': 'Attachment deleted successfully!',
+    'community.deleteAttachmentFailed': 'Failed to delete attachment',
+    'community.deleteAttachmentConfirm': 'Are you sure you want to delete this attachment?',
+    'community.attachmentsUploaded': 'Attachments uploaded successfully!',
+    'community.uploadAttachmentsFailed': 'Failed to upload attachments',
+    'community.selectFilesToUpload': 'Please select files to upload',
+    'community.maxCommentImages': 'Maximum 5 images allowed per comment',
+    'community.maxCommentFiles': 'Maximum 5 attachments allowed per comment',
+    'community.commentImages': 'Images (Optional, max 5)',
+    'community.commentAttachments': 'Attachments (Optional, max 5) - PDF, Word, Excel, ZIP, etc.',
+    'community.addCommentTitle': 'Add a Comment',
+    'community.comment': 'Comment',
+    'community.by': 'by',
+    'community.edited': '(edited)',
   },
   zh: {
     // Plugins Listing
@@ -892,14 +1025,14 @@ const translations = {
     'common.yes': '是',
     'common.no': '否',
     'common.ok': '确定',
-    
+
     // Navigation
     'nav.dashboard': '仪表板',
     'nav.profile': '个人资料',
     'nav.profileSettings': '个人资料设置',
     'nav.logout': '退出登录',
     'nav.language': '语言',
-    
+
     // Auth
     'auth.login': '登录',
     'auth.register': '注册',
@@ -924,7 +1057,7 @@ const translations = {
     'auth.tryAsGuest': '游客试用',
     'auth.guestDescription': '无需创建账户即可体验平台',
     'auth.guestWarning': '游客访问功能有限且文件大小受限。创建账户以获得完整访问权限。',
-    
+
     // Profile
     'profile.title': '个人资料设置',
     'profile.subtitle': '管理您的账户设置和偏好',
@@ -960,7 +1093,7 @@ const translations = {
     'profile.danger.deleteAccount': '删除账户',
     'profile.danger.deleteWarning': '一旦删除您的账户，将无法恢复。这将永久删除您的账户并从我们的服务器中移除所有数据。',
     'profile.danger.deletingAccount': '删除账户中...',
-    
+
     // Dashboard
     'dashboard.title': '数据分析平台',
     'dashboard.welcome': '欢迎回来',
@@ -992,7 +1125,7 @@ const translations = {
     'dashboard.welcomeMessage': '管理您的项目并查看分析结果。',
     'dashboard.enterProjectName': '输入项目名称',
     'dashboard.enterProjectDescription': '输入项目描述',
-    
+
     // Projects
     'projects.backToDashboard': '返回仪表板',
     'projects.startAnalysis': '开始新分析',
@@ -1027,7 +1160,7 @@ const translations = {
     'projects.copied': '已复制到剪贴板！',
     'projects.deleteProject': '删除项目',
     'projects.deleteConfirm': '您确定要删除此项目吗？此操作无法撤销。',
-    
+
     // Messages
     'messages.passwordChanged': '密码修改成功',
     'messages.profileUpdated': '个人资料更新成功',
@@ -1052,12 +1185,12 @@ const translations = {
     'messages.uploadFailed': '上传失败',
     'messages.analysisFailed': '分析失败',
     'messages.authenticationFailed': '身份验证失败',
-    
+
     // Plugin Cards
     'plugin.card.supportedFormats': '支持格式：',
     'plugin.card.usePlugin': '使用插件',
     'plugin.card.version': '版本',
-    
+
     // Plugin Names and Descriptions
     'plugin.excel2boxplotv1.name': 'Excel转箱线图 V1',
     'plugin.excel2boxplotv1.description': '将Excel文件转换为CSV和JSL脚本，具有三点验证系统',
@@ -1065,11 +1198,11 @@ const translations = {
     'plugin.excel2boxplotv2.description': 'Excel转CSV/JSL，使用V2列映射',
     'plugin.excel2processcapability.name': 'Excel转过程能力分析',
     'plugin.excel2processcapability.description': '将Excel数据转换为过程能力分析（Cp、Cpk、Pp、Ppk）',
-    
+
     // Plugin Categories
     'plugin.category.analysis': '分析',
     'plugin.category.statistics': '统计',
-    
+
     // Plugin Features
     'plugin.excel2boxplotv1.features.0': '三点验证系统',
     'plugin.excel2boxplotv1.features.1': '自动修复损坏的Excel文件',
@@ -1085,7 +1218,7 @@ const translations = {
     'plugin.excel2processcapability.features.1': '统计过程控制',
     'plugin.excel2processcapability.features.2': '能力指数计算',
     'plugin.excel2processcapability.features.3': '控制图生成',
-    
+
     // Admin Plugin Management
     'admin.plugins.title': '插件管理',
     'admin.plugins.subtitle': '管理已安装的插件及其描述',
@@ -1112,7 +1245,7 @@ const translations = {
     'admin.plugins.chineseCancel': '取消',
     'admin.plugins.chineseEdit': '编辑中文',
     'admin.plugins.englishEdit': '编辑英文',
-    
+
     // Landing Page
     'landing.title': '数据分析平台',
     'landing.subtitle': '上传您的CSV和JSL文件，使用JMP生成美观的箱线图可视化。实时处理、交互式画廊和无缝分享。',
@@ -1126,7 +1259,7 @@ const translations = {
     'landing.features.realTime.description': '通过实时更新观看您的分析进度',
     'landing.features.share.title': '分享与协作',
     'landing.features.share.description': '与团队成员分享您的结果或创建公开链接',
-    
+
     // Landing page additional text
     'landing.badge': '实时数据分析平台',
     'landing.cta.tryNow': '立即试用',
@@ -1136,7 +1269,7 @@ const translations = {
     'landing.auth.title': '今天就开始',
     'landing.auth.subtitle': '选择您希望如何访问平台',
     'landing.footer.platform': '高级数据可视化平台',
-    
+
     // Home Page Carousel
     'home.carousel.allFunctions.title': '欢迎使用数据分析平台',
     'home.carousel.allFunctions.subtitle': '探索所有功能',
@@ -1156,13 +1289,13 @@ const translations = {
     'home.carousel.modules.subtitle': '强大的分析功能',
     'home.carousel.modules.description': '访问各种专业模块，进行全面的数据分析',
     'home.carousel.startNow': '立即开始',
-    
+
     // Home Page Interface Labels
     'home.interface.dashboard': '仪表板',
     'home.interface.workspaces': '工作空间',
     'home.interface.workflows': '工作流',
     'home.interface.modules': '模块',
-    
+
     // Home Page Portal Cards
     'home.portal.title': '探索我们的界面',
     'home.portal.subtitle': '从我们强大的工具中选择，用于分析、组织、自动化和处理您的数据',
@@ -1176,14 +1309,49 @@ const translations = {
     'home.portal.workflows.description': '使用可视化基于节点的工作流自动化流程',
     'home.portal.workflows.cta': '创建工作流',
     'home.portal.modules.title': '模块',
-    'home.portal.modules.description': '访问专业的数据分析功能和工具，进行全面的分析',
+    'home.portal.modules.description': '访问专业的数据分析功能和工具，进行全面分析',
     'home.portal.modules.cta': '浏览模块',
-    
+
+    // Homepage New Content
+    'nav.platformName': 'Core Data Analysis',
+    'home.hero.badge': '体验魔力',
+    'home.hero.title': '重新定义数据分析',
+    'home.hero.subtitle': '释放数据的力量，享受如丝般顺滑的平台体验。',
+    'home.hero.getStarted': '开始使用',
+    'home.hero.viewDemo': '查看演示',
+    'home.welcomeBack': '欢迎回来',
+    'home.quality.title': '数据分析的重要性',
+    'home.quality.subtitle': '通过精确、前瞻和可操作的智能赋能您的质量管理系统。',
+    'home.quality.defectReduction.title': '缺陷减少',
+    'home.quality.defectReduction.description': '及早识别异常以防止缺陷。',
+    'home.quality.processControl.title': '过程控制',
+    'home.quality.processControl.description': '实时监控稳定性。',
+    'home.quality.rootCause.title': '根本原因分析',
+    'home.quality.rootCause.description': '深入分析故障模式。',
+    'home.quality.continuousImprovement.title': '持续改进',
+    'home.quality.continuousImprovement.description': '通过数据驱动的洞察推动改善。',
+    'home.quality.compliance.title': '合规保证',
+    'home.quality.compliance.description': '自动化监管标准报告。',
+    'home.quality.predictive.title': '预测性维护',
+    'home.quality.predictive.description': '在设备故障发生前进行预测。',
+    'home.quality.supplyChain.title': '供应链可见性',
+    'home.quality.supplyChain.description': '跟踪整个价值链的质量。',
+    'home.quality.customerSat.title': '客户满意度',
+    'home.quality.customerSat.description': '提供一致的质量以建立信任。',
+    'home.app.dashboard.title': '仪表板',
+    'home.app.dashboard.description': 'JMP可视化 - 将您的数据转化为强大的洞察和可视化',
+    'home.app.workspaces.title': '工作空间',
+    'home.app.workspaces.description': '高效地组织和分类您的任务、项目和工作流',
+    'home.app.workflows.title': '工作流',
+    'home.app.workflows.description': '使用可视化节点式工作流自动化流程',
+    'home.app.modules.title': '模块',
+    'home.app.modules.description': '访问专业的数据分析功能和工具进行全面分析',
+    'home.footer.developedBy': 'Developed By Dr J. Sun',
     // SVG Text
     'svg.dataAnalysis': '数据分析',
     'svg.liveDemo': '实时演示',
     'svg.clickToUpload': '点击上传和处理',
-    
+
     // Help
     'help.title': '帮助',
     'help.center': '帮助中心',
@@ -1194,7 +1362,7 @@ const translations = {
     'help.support': '支持与联系',
     'help.navigation': '导航',
     'help.back': '返回',
-    
+
     // Dashboard Additional Translations
     'dashboard.createProject.title': '创建新项目',
     'dashboard.createProject.subtitle': '创建新项目以组织您的数据分析任务',
@@ -1217,7 +1385,7 @@ const translations = {
     'dashboard.plugins.quickAnalysis.description': '上传Excel文件并立即生成箱线图分析',
     'dashboard.plugins.quickAnalysis.start': '开始箱线图分析',
     'dashboard.recentRuns.title': '最近运行',
-    
+
     // Project Membership Management
     'membership.title': '项目成员',
     'membership.subtitle': '管理项目成员及其角色。',
@@ -1251,7 +1419,7 @@ const translations = {
     'membership.addMemberFailed': '添加成员失败',
     'membership.updateRoleFailed': '更新成员角色失败',
     'membership.removeMemberFailed': '移除成员失败',
-    
+
     // Notifications
     'notifications.title': '通知',
     'notifications.subtitle': '了解项目活动和团队变化。',
@@ -1268,7 +1436,7 @@ const translations = {
     'notifications.markReadFailed': '标记为已读失败',
     'notifications.markAllReadFailed': '全部标记为已读失败',
     'notifications.markAllReadSuccess': '所有通知已标记为已读',
-    
+
     // Project Comments
     'comments.title': '项目评论',
     'comments.subtitle': '讨论并协作此项目',
@@ -1301,7 +1469,7 @@ const translations = {
     'comments.updateFailed': '更新评论失败',
     'comments.deleteFailed': '删除评论失败',
     'comments.pleaseEnterComment': '请输入评论',
-    
+
     // Project Page Additional Translations
     'project.tabs.analysis': '分析',
     'project.tabs.members': '成员',
@@ -1360,7 +1528,7 @@ const translations = {
     'project.startRunFailed': '开始运行失败',
     'project.copiedToClipboard': '已复制到剪贴板！',
     'project.copyFailed': '复制到剪贴板失败',
-    
+
     // Help Illustrations
     'help.illustrations.loginFlow': '登录流程',
     'help.illustrations.pluginWorkflow': '插件工作流',
@@ -1395,7 +1563,7 @@ const translations = {
     'attachments.fileSizeExceeded': '文件大小必须小于200MB',
     'attachments.by': '由',
     'attachments.fileSizeUnits': ['字节', 'KB', 'MB', 'GB'],
-    
+
     // PowerPoint Generator (中文)
     'powerpoint.wizard.title': 'PowerPoint生成器',
     'powerpoint.wizard.subtitle': '准备工作区并配置您的演示文稿',
@@ -1421,7 +1589,7 @@ const translations = {
     'powerpoint.wizard.prepare': '准备工作区',
     'powerpoint.wizard.folder': '文件夹',
     'powerpoint.wizard.images': '张图片',
-    
+
     // PowerPoint Editor (中文)
     'powerpoint.editor.title': 'PowerPoint布局编辑器',
     'powerpoint.editor.subtitle': '设计您的演示文稿布局',
@@ -1458,7 +1626,7 @@ const translations = {
     'powerpoint.editor.download': '下载',
     'powerpoint.editor.createdAt': '创建于',
     'powerpoint.editor.slideCount': '{count} 张幻灯片',
-    
+
     // PowerPoint Messages (中文)
     'powerpoint.messages.workspacePrepared': '工作区准备成功！',
     'powerpoint.messages.workspaceFailed': '准备工作区失败',
@@ -1467,7 +1635,7 @@ const translations = {
     'powerpoint.messages.presentationGenerated': 'PowerPoint生成成功！',
     'powerpoint.messages.presentationGenerateFailed': '生成PowerPoint失败',
     'powerpoint.messages.deleteConfirm': '您确定要删除此演示文稿吗？此操作无法撤销。',
-    
+
     // Drawing Folder from PDF (中文)
     'drawing.createFromPdf.title': '从PDF创建绘图文件夹',
     'drawing.createFromPdf.description': '上传PDF文件以自动检测FAI气泡并创建标注',
@@ -1482,7 +1650,7 @@ const translations = {
     'drawing.createFromPdf.selectPdfError': '请选择PDF文件',
     'drawing.createFromPdf.success': 'PDF处理成功！FAI标注已提取。',
     'drawing.createFromPdf.failed': '处理PDF失败',
-    
+
     // Annotation Editor (中文)
     'annotation.editor.title': '标注编辑器',
     'annotation.editor.loading': '正在加载标注...',
@@ -1547,7 +1715,7 @@ const translations = {
     'annotation.editor.invalidBbox': '无效的边界框或图片未加载',
     'annotation.editor.noCurrentAnnotation': '未找到当前标注',
     'annotation.editor.pageNum': '页面',
-    
+
     // Project Drawings Tab (中文)
     'drawings.tab': '绘图',
     'drawings.title': '绘图文件夹',
@@ -1595,6 +1763,103 @@ const translations = {
     'drawings.downloading': '正在下载...',
     'drawings.zipDownloaded': '文件夹下载成功！',
     'drawings.zipDownloadFailed': '下载文件夹失败',
+
+    // Community Hub (中文)
+    'community.title': '社区中心',
+    'community.subtitle': '分享知识、提出问题并与社区协作',
+    'community.startDiscussion': '发起讨论',
+    'community.allZones': '所有区域',
+    'community.uncategorized': '未分类',
+    'community.loading': '正在加载帖子...',
+    'community.noPosts': '暂无帖子',
+    'community.noPostsMessage': '成为第一个发起讨论的人！',
+    'community.createPost': '创建帖子',
+    'community.editPost': '编辑帖子',
+    'community.deletePost': '删除帖子',
+    'community.postTitle': '帖子标题',
+    'community.postContent': '内容',
+    'community.selectZone': '选择一个区域',
+    'community.postType': '帖子类型',
+    'community.postTypeSharing': '分享',
+    'community.postTypeQuestion': '问题',
+    'community.postTypeAnnouncement': '公告',
+    'community.cancel': '取消',
+    'community.save': '保存',
+    'community.delete': '删除',
+    'community.deleteConfirm': '您确定要删除此帖子吗？此操作无法撤销。',
+    'community.addImages': '添加图片',
+    'community.addAttachments': '添加附件',
+    'community.addMore': '添加更多',
+    'community.images': '图片',
+    'community.files': '文件',
+    'community.upload': '上传',
+    'community.uploading': '上传中...',
+    'community.postCreated': '帖子创建成功！',
+    'community.postUpdated': '帖子更新成功！',
+    'community.postDeleted': '帖子删除成功！',
+    'community.loadFailed': '加载帖子失败',
+    'community.createFailed': '创建帖子失败',
+    'community.updateFailed': '更新帖子失败',
+    'community.deleteFailed': '删除帖子失败',
+    'community.pleaseEnterTitle': '请输入帖子标题',
+    'community.pleaseEnterContent': '请输入帖子内容',
+    'community.selectZoneError': '请选择一个区域',
+    'community.maxImages': '每个帖子最多允许10张图片',
+    'community.maxFiles': '每个帖子最多允许20个附件',
+    'community.fileTooLarge': '文件过大。最大大小为',
+    'community.notImageFile': '不是图片文件',
+    'community.attachments': '附件',
+    'community.newAttachmentsToUpload': '待上传的新附件：',
+    'community.backToCommunity': '返回社区',
+    'community.postNotFound': '未找到帖子',
+    'community.comments': '评论',
+    'community.addComment': '添加评论',
+    'community.writeComment': '写评论...',
+    'community.shareThoughts': '分享您的想法...',
+    'community.postComment': '发布评论',
+    'community.posting': '发布中...',
+    'community.ctrlEnterToPost': '按 Ctrl+Enter 发布',
+    'community.addImagesOrAttachments': '添加图片或附件',
+    'community.commentPosted': '评论已发布！',
+    'community.commentUpdated': '评论已更新！',
+    'community.commentDeleted': '评论已删除！',
+    'community.pleaseLoginToComment': '请登录以发表评论',
+    'community.pleaseEnterComment': '请输入评论或添加附件',
+    'community.commentFailed': '发布评论失败',
+    'community.updateCommentFailed': '更新评论失败',
+    'community.deleteCommentFailed': '删除评论失败',
+    'community.deleteCommentConfirm': '您确定要删除此评论吗？此操作无法撤销。',
+    'community.editComment': '编辑',
+    'community.deleteComment': '删除',
+    'community.saveComment': '保存',
+    'community.cancelEdit': '取消',
+    'community.noComments': '暂无评论。成为第一个评论的人！',
+    'community.anonymous': '匿名',
+    'community.ago': '前',
+    'community.justNow': '刚刚',
+    'community.minutesAgo': '分钟前',
+    'community.hoursAgo': '小时前',
+    'community.daysAgo': '天前',
+    'community.weeksAgo': '周前',
+    'community.monthsAgo': '个月前',
+    'community.yearsAgo': '年前',
+    'community.views': '次浏览',
+    'community.likes': '个赞',
+    'community.replies': '条回复',
+    'community.attachmentDeleted': '附件删除成功！',
+    'community.deleteAttachmentFailed': '删除附件失败',
+    'community.deleteAttachmentConfirm': '您确定要删除此附件吗？',
+    'community.attachmentsUploaded': '附件上传成功！',
+    'community.uploadAttachmentsFailed': '上传附件失败',
+    'community.selectFilesToUpload': '请选择要上传的文件',
+    'community.maxCommentImages': '每个评论最多允许5张图片',
+    'community.maxCommentFiles': '每个评论最多允许5个附件',
+    'community.commentImages': '图片（可选，最多5张）',
+    'community.commentAttachments': '附件（可选，最多5个）- PDF、Word、Excel、ZIP等',
+    'community.addCommentTitle': '添加评论',
+    'community.comment': '评论',
+    'community.by': '由',
+    'community.edited': '（已编辑）',
   }
 }
 
@@ -1602,11 +1867,18 @@ export function LanguageProvider({ children }: { children: ReactNode }) {
   const [language, setLanguage] = useState<Language>('en')
   const { getPluginDescription } = usePluginDescriptions()
 
-  // Load language from localStorage on mount
+  // Load language from localStorage or detect browser language on mount
   useEffect(() => {
     const savedLanguage = localStorage.getItem('language') as Language
     if (savedLanguage && (savedLanguage === 'en' || savedLanguage === 'zh')) {
       setLanguage(savedLanguage)
+    } else {
+      // Auto-detect browser language
+      const browserLang = navigator.language.toLowerCase()
+      // Check if browser language is Chinese (zh, zh-CN, zh-TW, etc.)
+      const detectedLang: Language = browserLang.startsWith('zh') ? 'zh' : 'en'
+      setLanguage(detectedLang)
+      localStorage.setItem('language', detectedLang)
     }
   }, [])
 
@@ -1622,13 +1894,13 @@ export function LanguageProvider({ children }: { children: ReactNode }) {
       const dynamicName = getPluginDescription(pluginId, language, 'name', '')
       if (dynamicName !== undefined) return dynamicName as string
     }
-    
+
     if (key.startsWith('plugin.') && key.includes('.description')) {
       const pluginId = key.split('.')[1]
       const dynamicDesc = getPluginDescription(pluginId, language, 'description', '')
       if (dynamicDesc !== undefined) return dynamicDesc as string
     }
-    
+
     if (key.startsWith('plugin.') && key.includes('.features.')) {
       const parts = key.split('.')
       const pluginId = parts[1]
@@ -1641,14 +1913,14 @@ export function LanguageProvider({ children }: { children: ReactNode }) {
 
     // Fall back to hardcoded translations
     let translation: any = translations[language][key as keyof typeof translations[typeof language]] || key
-    
+
     // Handle parameter interpolation only for strings
     if (params && typeof translation === 'string') {
       Object.keys(params).forEach(paramKey => {
         translation = translation.replace(new RegExp(`{${paramKey}}`, 'g'), params[paramKey])
       })
     }
-    
+
     return translation
   }
 

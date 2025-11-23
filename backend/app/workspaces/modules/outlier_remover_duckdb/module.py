@@ -282,8 +282,24 @@ class OutlierRemoverDuckDBNode(BaseNode):
                                         print(f"Error in sigma calculation for column {col}: {e}")
                                         pass
                                 
-                                # Collect rows to remove
-                                if action == "remove_row":
+                                elif condition == "standardized_to_nominal":
+                                    # Standardize to nominal: calculate mean and replace each value with (value - mean)
+                                    try:
+                                        # Get numeric values only (exclude NaN)
+                                        numeric_values = pd.to_numeric(df[col], errors='coerce')
+                                        numeric_values_clean = numeric_values.dropna()
+                                        
+                                        if len(numeric_values_clean) > 0:
+                                            mean_val = numeric_values_clean.mean()
+                                            # Replace each value with (value - mean)
+                                            df[col] = numeric_values - mean_val
+                                            removed_count = len(numeric_values_clean)  # Count of standardized values
+                                    except (ValueError, TypeError) as e:
+                                        print(f"Error in standardization for column {col}: {e}")
+                                        pass
+                                
+                                # Collect rows to remove (not applicable for standardized_to_nominal)
+                                if condition != "standardized_to_nominal" and action == "remove_row":
                                     all_rows_to_remove.update(rows_to_remove)
                                 
                                 # Record removal in summary
@@ -292,8 +308,8 @@ class OutlierRemoverDuckDBNode(BaseNode):
                                         "table": table_name,
                                         "column": col,
                                         "condition": condition,
-                                        "value": str(value),
-                                        "action": action,
+                                        "value": str(value) if condition != "standardized_to_nominal" else "N/A",
+                                        "action": action if condition != "standardized_to_nominal" else "standardize",
                                         "removed_count": int(removed_count),
                                         "timestamp": datetime.now().isoformat()
                                     })
@@ -302,8 +318,8 @@ class OutlierRemoverDuckDBNode(BaseNode):
                                 print(f"Error applying rule to column {col} in table {table_name}: {str(e)}")
                                 continue
                         
-                        # Remove rows if action is remove_row
-                        if action == "remove_row" and all_rows_to_remove:
+                        # Remove rows if action is remove_row (not applicable for standardized_to_nominal)
+                        if condition != "standardized_to_nominal" and action == "remove_row" and all_rows_to_remove:
                             df = df.drop(index=list(all_rows_to_remove))
                             df = df.reset_index(drop=True)
                     
@@ -436,7 +452,7 @@ class OutlierRemoverDuckDBNode(BaseNode):
                             },
                             "condition": {
                                 "type": "string",
-                                "enum": ["greater_than", "less_than", "equals", "contains", "iqr", "sigma"],
+                                "enum": ["greater_than", "less_than", "equals", "contains", "iqr", "sigma", "standardized_to_nominal"],
                                 "title": "Condition"
                             },
                             "value": {
@@ -450,7 +466,7 @@ class OutlierRemoverDuckDBNode(BaseNode):
                                 "default": "clear_cell"
                             }
                         },
-                        "required": ["condition", "value"]
+                        "required": ["condition"]
                     },
                     "default": []
                 }

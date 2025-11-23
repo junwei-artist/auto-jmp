@@ -5,7 +5,7 @@ import { AuthProvider } from '@/lib/auth'
 import { QueryProvider } from '@/lib/query-provider'
 import { SocketProvider } from '@/lib/socket'
 import { LanguageProvider } from '@/lib/language'
-import Navbar from '@/components/Navbar'
+import { ConditionalNavbar } from '@/components/ConditionalNavbar'
 import { ThemeProvider } from '@/lib/theme'
 
 const inter = Inter({ subsets: ['latin'] })
@@ -28,7 +28,7 @@ export default function RootLayout({
             <LanguageProvider>
               <AuthProvider>
                 <SocketProvider>
-                  <Navbar />
+                  <ConditionalNavbar />
                   <main className="min-h-screen bg-gray-50">
                     {children}
                   </main>

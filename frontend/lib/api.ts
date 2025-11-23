@@ -17,11 +17,11 @@ export class ApiClient {
     const headers: HeadersInit = {
       'Content-Type': 'application/json',
     }
-    
+
     if (token) {
       headers['Authorization'] = `Bearer ${token}`
     }
-    
+
     return headers
   }
 
@@ -35,22 +35,32 @@ export class ApiClient {
         window.location.href = '/'
         throw new Error('Authentication failed')
       }
-      
+
       const errorData = await response.json().catch(() => ({ detail: 'Unknown error' }))
+
+      // Handle FastAPI validation errors (array of errors)
+      if (Array.isArray(errorData.detail)) {
+        const messages = errorData.detail.map((err: any) => {
+          const field = err.loc ? err.loc[err.loc.length - 1] : 'Field'
+          return `${field}: ${err.msg}`
+        }).join(', ')
+        throw new Error(messages)
+      }
+
       throw new Error(errorData.detail || `HTTP ${response.status}`)
     }
-    
+
     // Handle 204 No Content responses (empty body)
     if (response.status === 204) {
       return null as T
     }
-    
+
     // Check if response has content
     const contentType = response.headers.get('content-type')
     if (!contentType || !contentType.includes('application/json')) {
       return null as T
     }
-    
+
     return response.json()
   }
 
@@ -59,13 +69,13 @@ export class ApiClient {
       method: 'GET',
       headers: this.getAuthHeaders(),
     })
-    
+
     return this.handleResponse<T>(response)
   }
 
   async post<T>(endpoint: string, data?: any): Promise<T> {
     const isFormData = data instanceof FormData
-    
+
     // If data is FormData, don't stringify and don't set Content-Type (browser will set it with boundary)
     let headers: HeadersInit
     if (isFormData) {
@@ -78,13 +88,13 @@ export class ApiClient {
     } else {
       headers = this.getAuthHeaders()
     }
-    
+
     const response = await fetch(`${this.baseURL}${endpoint}`, {
       method: 'POST',
       headers: headers,
       body: data ? (isFormData ? data : JSON.stringify(data)) : undefined,
     })
-    
+
     return this.handleResponse<T>(response)
   }
 
@@ -94,7 +104,7 @@ export class ApiClient {
       headers: this.getAuthHeaders(),
       body: data ? JSON.stringify(data) : undefined,
     })
-    
+
     return this.handleResponse<T>(response)
   }
 
@@ -104,7 +114,7 @@ export class ApiClient {
       headers: this.getAuthHeaders(),
       body: data ? JSON.stringify(data) : undefined,
     })
-    
+
     return this.handleResponse<T>(response)
   }
 
@@ -113,7 +123,7 @@ export class ApiClient {
       method: 'DELETE',
       headers: this.getAuthHeaders(),
     })
-    
+
     return this.handleResponse<T>(response)
   }
 }
@@ -144,7 +154,7 @@ export const authApi = {
     if (!token) {
       throw new Error('No refresh token available')
     }
-    
+
     // Use relative URL - Next.js will rewrite it
     const response = await fetch('/api/v1/auth/refresh', {
       method: 'POST',
@@ -154,7 +164,7 @@ export const authApi = {
       },
       body: JSON.stringify({})
     })
-    
+
     if (!response.ok) {
       if (response.status === 401) {
         // Token expired or invalid, clear auth data
@@ -165,11 +175,11 @@ export const authApi = {
         window.location.href = '/'
         throw new Error('Authentication failed')
       }
-      
+
       const errorData = await response.json().catch(() => ({ detail: 'Unknown error' }))
       throw new Error(errorData.detail || `HTTP ${response.status}`)
     }
-    
+
     return response.json()
   }
 }
@@ -224,7 +234,7 @@ export const projectApi = {
   async createDrawingFolder(projectId: string, description: string): Promise<any> {
     const formData = new FormData()
     formData.append('description', description || '')
-    
+
     const token = localStorage.getItem('access_token')
     const response = await fetch(`/api/v1/projects/${projectId}/drawing-folders`, {
       method: 'POST',
@@ -233,12 +243,12 @@ export const projectApi = {
       },
       body: formData,
     })
-    
+
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({ detail: 'Failed to create folder' }))
       throw new Error(errorData.detail || 'Failed to create folder')
     }
-    
+
     return response.json()
   },
 
@@ -248,7 +258,7 @@ export const projectApi = {
     if (description) {
       formData.append('description', description)
     }
-    
+
     const token = localStorage.getItem('access_token')
     const response = await fetch(`/api/v1/projects/${projectId}/drawing-folders/from-pdf`, {
       method: 'POST',
@@ -257,19 +267,19 @@ export const projectApi = {
       },
       body: formData,
     })
-    
+
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({ detail: 'Failed to create folder from PDF' }))
       throw new Error(errorData.detail || 'Failed to create folder from PDF')
     }
-    
+
     return response.json()
   },
 
   async updateDrawingFolder(projectId: string, folderId: string, description: string): Promise<any> {
     const formData = new FormData()
     formData.append('description', description || '')
-    
+
     const token = localStorage.getItem('access_token')
     const response = await fetch(`/api/v1/projects/${projectId}/drawing-folders/${folderId}`, {
       method: 'PATCH',
@@ -278,12 +288,12 @@ export const projectApi = {
       },
       body: formData,
     })
-    
+
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({ detail: 'Failed to update folder' }))
       throw new Error(errorData.detail || 'Failed to update folder')
     }
-    
+
     return response.json()
   },
 
@@ -302,7 +312,7 @@ export const projectApi = {
   async uploadDrawingImage(projectId: string, folderId: string, file: File): Promise<any> {
     const formData = new FormData()
     formData.append('file', file)
-    
+
     const token = localStorage.getItem('access_token')
     const response = await fetch(`/api/v1/projects/${projectId}/drawing-folders/${folderId}/images`, {
       method: 'POST',
@@ -311,12 +321,12 @@ export const projectApi = {
       },
       body: formData,
     })
-    
+
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({ detail: 'Failed to upload image' }))
       throw new Error(errorData.detail || 'Failed to upload image')
     }
-    
+
     return response.json()
   },
 
@@ -328,19 +338,19 @@ export const projectApi = {
     const token = localStorage.getItem('access_token')
     const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:4700'
     const url = `${backendUrl}/api/v1/projects/${projectId}/drawing-folders/${folderId}/download-zip`
-    
+
     const response = await fetch(url, {
       method: 'GET',
       headers: {
         'Authorization': `Bearer ${token}`,
       },
     })
-    
+
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({ detail: 'Failed to download folder' }))
       throw new Error(errorData.detail || 'Failed to download folder')
     }
-    
+
     // Get filename from Content-Disposition header or use default
     const contentDisposition = response.headers.get('Content-Disposition')
     let filename = `drawing_folder_${folderId}.zip`
@@ -350,7 +360,7 @@ export const projectApi = {
         filename = filenameMatch[1]
       }
     }
-    
+
     // Create blob and download
     const blob = await response.blob()
     const downloadUrl = window.URL.createObjectURL(blob)
@@ -377,19 +387,19 @@ export const projectApi = {
       },
       body: JSON.stringify(annotations),
     })
-    
+
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({ detail: 'Failed to update annotations' }))
       throw new Error(errorData.detail || 'Failed to update annotations')
     }
-    
+
     return response.json()
   },
 
   async generateDrawingOutput(projectId: string, folderId: string, drawYolo: boolean = false): Promise<any> {
     const formData = new FormData()
     formData.append('draw_yolo', drawYolo.toString())
-    
+
     const token = localStorage.getItem('access_token')
     const response = await fetch(`/api/v1/projects/${projectId}/drawing-folders/${folderId}/generate-output`, {
       method: 'POST',
@@ -398,12 +408,12 @@ export const projectApi = {
       },
       body: formData,
     })
-    
+
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({ detail: 'Failed to generate output' }))
       throw new Error(errorData.detail || 'Failed to generate output')
     }
-    
+
     return response.json()
   }
 }
@@ -451,5 +461,94 @@ export const profileApi = {
 
   async deleteAccount(): Promise<any> {
     return apiClient.delete('/v1/profile/account')
+  }
+}
+
+// Community-specific API methods
+export const communityApi = {
+  async getPosts(params?: {
+    q?: string
+    zone_id?: string
+    type?: string
+    tag?: string
+    limit?: number
+    offset?: number
+  }): Promise<any[]> {
+    const queryParams = new URLSearchParams()
+    if (params?.q) queryParams.append('q', params.q)
+    if (params?.zone_id) queryParams.append('zone_id', params.zone_id)
+    if (params?.type) queryParams.append('type', params.type)
+    if (params?.tag) queryParams.append('tag', params.tag)
+    if (params?.limit) queryParams.append('limit', params.limit.toString())
+    if (params?.offset) queryParams.append('offset', params.offset.toString())
+
+    const query = queryParams.toString()
+    return apiClient.get(`/v1/community/posts${query ? `?${query}` : ''}`)
+  },
+
+  async getPost(id: string): Promise<any> {
+    return apiClient.get(`/v1/community/posts/${id}`)
+  },
+
+  async createPost(data: {
+    title: string
+    content: string
+    type: string
+    zone_id?: string
+    tags?: string[]
+  }): Promise<any> {
+    return apiClient.post('/v1/community/posts', data)
+  },
+
+  async updatePost(id: string, data: any): Promise<any> {
+    return apiClient.patch(`/v1/community/posts/${id}`, data)
+  },
+
+  async deletePost(id: string): Promise<any> {
+    return apiClient.delete(`/v1/community/posts/${id}`)
+  },
+
+  async likePost(id: string): Promise<any> {
+    return apiClient.post(`/v1/community/posts/${id}/like`)
+  },
+
+  async getZones(): Promise<any[]> {
+    return apiClient.get('/v1/community/zones?active_only=true')
+  },
+
+  async getComments(postId: string): Promise<any[]> {
+    return apiClient.get(`/v1/community/posts/${postId}/comments`)
+  },
+
+  async createComment(postId: string, data: { content: string; parent_id?: string }): Promise<any> {
+    return apiClient.post(`/v1/community/posts/${postId}/comments`, data)
+  },
+
+  async uploadPostAttachment(postId: string, file: File): Promise<any> {
+    const formData = new FormData()
+    formData.append('file', file)
+    return apiClient.post(`/v1/community/posts/${postId}/attachments`, formData)
+  },
+
+  async deletePostAttachment(postId: string, attachmentId: string): Promise<any> {
+    return apiClient.delete(`/v1/community/posts/${postId}/attachments/${attachmentId}`)
+  },
+
+  async updateComment(postId: string, commentId: string, data: { content: string }): Promise<any> {
+    return apiClient.patch(`/v1/community/posts/${postId}/comments/${commentId}`, data)
+  },
+
+  async deleteComment(postId: string, commentId: string): Promise<any> {
+    return apiClient.delete(`/v1/community/posts/${postId}/comments/${commentId}`)
+  },
+
+  async uploadCommentAttachment(postId: string, commentId: string, file: File): Promise<any> {
+    const formData = new FormData()
+    formData.append('file', file)
+    return apiClient.post(`/v1/community/posts/${postId}/comments/${commentId}/attachments`, formData)
+  },
+
+  async deleteCommentAttachment(postId: string, commentId: string, attachmentId: string): Promise<any> {
+    return apiClient.delete(`/v1/community/posts/${postId}/comments/${commentId}/attachments/${attachmentId}`)
   }
 }

@@ -802,22 +802,29 @@ export default function OutlierRemoverDuckDBGUI({
       const defaultValue = tempRule.condition === 'iqr' ? '1.5' : '3'
       setTempRule({ ...tempRule, value: defaultValue })
     }
-    if (!tempRule.value && tempRule.condition !== 'iqr' && tempRule.condition !== 'sigma') {
+    // standardized_to_nominal doesn't require a value
+    if (!tempRule.value && tempRule.condition !== 'iqr' && tempRule.condition !== 'sigma' && tempRule.condition !== 'standardized_to_nominal') {
       toast.error('Please fill in value')
       return
     }
 
     // Create a single rule with sheets and columns
+    // Ensure value is always a string (use empty string for conditions that don't need a value)
+    const ruleValue = tempRule.condition === 'standardized_to_nominal' ? '' : (tempRule.value || '')
+    
     const newRule: {
+      sequence?: number
       sheets?: string[]
       columns?: Record<string, string[]>
+      sheet?: string
+      column?: string
       condition: string
       value: string
       action?: 'clear_cell' | 'remove_row'
     } = {
       condition: tempRule.condition,
-      value: tempRule.value,
-      action: tempRule.action || 'clear_cell'
+      value: ruleValue,
+      action: tempRule.condition === 'standardized_to_nominal' ? undefined : (tempRule.action || 'clear_cell')
     }
 
     // Only include sheets if not applying to all sheets
@@ -2924,12 +2931,14 @@ export default function OutlierRemoverDuckDBGUI({
                   <option value="contains">Contains</option>
                   <option value="iqr">IQR (Interquartile Range)</option>
                   <option value="sigma">Sigma (Standard Deviation)</option>
+                  <option value="standardized_to_nominal">Standardized to Nominal</option>
                 </select>
               </div>
               <div>
                 <Label className="text-sm">
                   {tempRule.condition === 'iqr' ? 'IQR Multiplier *' : 
                    tempRule.condition === 'sigma' ? 'Sigma Multiplier *' : 
+                   tempRule.condition === 'standardized_to_nominal' ? 'Value (not required)' :
                    'Value *'}
                 </Label>
                 <Input
@@ -2938,10 +2947,12 @@ export default function OutlierRemoverDuckDBGUI({
                   placeholder={
                     tempRule.condition === 'iqr' ? '1.5 (default)' :
                     tempRule.condition === 'sigma' ? '3 (default)' :
+                    tempRule.condition === 'standardized_to_nominal' ? 'Not required for standardization' :
                     'Value to compare'
                   }
                   type={tempRule.condition === 'iqr' || tempRule.condition === 'sigma' ? 'number' : 'text'}
                   step={tempRule.condition === 'iqr' || tempRule.condition === 'sigma' ? '0.1' : undefined}
+                  disabled={tempRule.condition === 'standardized_to_nominal'}
                   className="mt-1 h-9 text-sm"
                 />
                 {tempRule.condition === 'iqr' && (
@@ -2954,12 +2965,18 @@ export default function OutlierRemoverDuckDBGUI({
                     Values outside [mean - {tempRule.value || '3'}σ, mean + {tempRule.value || '3'}σ] will be treated as outliers
                   </p>
                 )}
+                {tempRule.condition === 'standardized_to_nominal' && (
+                  <p className="text-xs text-gray-500 mt-1">
+                    Each value will be replaced with (value - mean). The mean is calculated for each selected column.
+                  </p>
+                )}
               </div>
               <div>
                 <Label className="text-sm">Action</Label>
                 <select
                   value={tempRule.action || 'clear_cell'}
                   onChange={(e) => setTempRule({ ...tempRule, action: e.target.value as 'clear_cell' | 'remove_row' })}
+                  disabled={tempRule.condition === 'standardized_to_nominal'}
                   className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
                 >
                   <option value="clear_cell">Clear Cell</option>
@@ -2975,7 +2992,7 @@ export default function OutlierRemoverDuckDBGUI({
                 </Button>
                 <Button
                   onClick={handleSaveRule}
-                  disabled={!tempRule.condition || !tempRule.value}
+                  disabled={!tempRule.condition || (tempRule.condition !== 'standardized_to_nominal' && !tempRule.value)}
                 >
                   {editingRuleIndex !== null ? 'Save Changes' : 'Add Rule'}
                 </Button>

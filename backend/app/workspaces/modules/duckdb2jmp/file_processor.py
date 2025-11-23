@@ -172,7 +172,19 @@ class FileProcessor:
                     cat_var: str, color_by: Optional[str] = None,
                     list_check_values: Optional[List[str]] = None,
                     value_order: Optional[List[str]] = None,
-                    caption_box_statistics: Optional[List[str]] = None) -> str:
+                    caption_box_statistics: Optional[List[str]] = None,
+                    add_usl: bool = True,
+                    add_target: bool = True,
+                    add_lsl: bool = True,
+                    add_nominal: bool = False,
+                    add_tol_upper: bool = False,
+                    add_tol_lower: bool = False,
+                    usl_color: str = "Dark Blue",
+                    target_color: str = "Dark Blue",
+                    lsl_color: str = "Dark Blue",
+                    nominal_color: str = "Dark Blue",
+                    tol_upper_color: str = "Dark Blue",
+                    tol_lower_color: str = "Dark Blue") -> str:
         """
         Generate JSL script content
         
@@ -184,6 +196,18 @@ class FileProcessor:
             list_check_values: Optional list check values
             value_order: Optional value order
             caption_box_statistics: Optional caption box statistics
+            add_usl: Whether to add USL reference line (default: True)
+            add_target: Whether to add Target reference line (default: True)
+            add_lsl: Whether to add LSL reference line (default: True)
+            add_nominal: Whether to add Nominal reference line with value 0 (default: False)
+            add_tol_upper: Whether to add TOL+ reference line (default: False)
+            add_tol_lower: Whether to add TOL- reference line (default: False)
+            usl_color: Color for USL reference line - "Dark Blue", "Dark Red", or "Dark Yellow" (default: "Dark Blue")
+            target_color: Color for Target reference line - "Dark Blue", "Dark Red", or "Dark Yellow" (default: "Dark Blue")
+            lsl_color: Color for LSL reference line - "Dark Blue", "Dark Red", or "Dark Yellow" (default: "Dark Blue")
+            nominal_color: Color for Nominal reference line - "Dark Blue", "Dark Red", or "Dark Yellow" (default: "Dark Blue")
+            tol_upper_color: Color for TOL+ reference line - "Dark Blue", "Dark Red", or "Dark Yellow" (default: "Dark Blue")
+            tol_lower_color: Color for TOL- reference line - "Dark Blue", "Dark Red", or "Dark Yellow" (default: "Dark Blue")
             
         Returns:
             JSL script content as string
@@ -193,7 +217,8 @@ class FileProcessor:
             
             # Add categorical variable settings after Open() header (will be inserted by caller)
             cat_var_settings = []
-            if list_check_values or value_order:
+            # Allow List Check and Value Order even with single value (len >= 1)
+            if (list_check_values and len(list_check_values) >= 1) or (value_order and len(value_order) >= 1):
                 cat_var_settings.append("dt = Current Data Table();")
                 cat_var_settings.append("")
                 cat_var_settings.append("// 1. Ensure type + modeling are OK")
@@ -203,9 +228,9 @@ class FileProcessor:
                 cat_var_settings.append(f", );")
                 cat_var_settings.append("")
                 
-                # Add List Check if provided
-                if list_check_values:
-                    # Format list check values as JSL array
+                # Add List Check if provided (allow single value)
+                if list_check_values and len(list_check_values) >= 1:
+                    # Format list check values as JSL array (works for single or multiple values)
                     list_check_formatted = ", ".join([f'"{v}"' for v in list_check_values])
                     cat_var_settings.append("// 2. Set List Check (this is what the UI calls \"List Check\")")
                     cat_var_settings.append(f"Try(")
@@ -213,9 +238,9 @@ class FileProcessor:
                     cat_var_settings.append(f", );")
                     cat_var_settings.append("")
                 
-                # Add Value Order if provided
-                if value_order:
-                    # Format value order as JSL array
+                # Add Value Order if provided (allow single value)
+                if value_order and len(value_order) >= 1:
+                    # Format value order as JSL array (works for single or multiple values)
                     value_order_formatted = ", ".join([f'"{v}"' for v in value_order])
                     cat_var_settings.append("// 3. (Optional but recommended) also set Value Order for reports/graphs")
                     cat_var_settings.append(f"Try(")
@@ -254,12 +279,36 @@ class FileProcessor:
                 # Format y_vars for JSL
                 y_vars_quoted = ',\n\t\t\t\t'.join([f'"{y}"' for y in y_vars])
                 
-                # Generate reference lines
+                # Generate reference lines based on individual options with individual colors
                 ref_lines = []
-                for tag, txt in (("usl", "USL"), ("target", "Target"), ("lsl", "LSL")):
-                    v = self.format_excel_number(mrow.get(tag))
+                if add_usl:
+                    v = self.format_excel_number(mrow.get("usl"))
                     if not np.isnan(v):
-                        ref_lines.append(f'Add Ref Line( {v}, "Solid", "Dark Blue", "{txt} {v}", 1 )')
+                        ref_lines.append(f'Add Ref Line( {v}, "Solid", "{usl_color}", "USL {v}", 1 )')
+                
+                if add_target:
+                    v = self.format_excel_number(mrow.get("target"))
+                    if not np.isnan(v):
+                        ref_lines.append(f'Add Ref Line( {v}, "Solid", "{target_color}", "Target {v}", 1 )')
+                
+                if add_lsl:
+                    v = self.format_excel_number(mrow.get("lsl"))
+                    if not np.isnan(v):
+                        ref_lines.append(f'Add Ref Line( {v}, "Solid", "{lsl_color}", "LSL {v}", 1 )')
+                
+                if add_nominal:
+                    # Nominal reference line always has value 0
+                    ref_lines.append(f'Add Ref Line( 0, "Solid", "{nominal_color}", "Nominal 0", 1 )')
+                
+                if add_tol_upper:
+                    v = self.format_excel_number(mrow.get("tol_upper"))
+                    if not np.isnan(v):
+                        ref_lines.append(f'Add Ref Line( {v}, "Solid", "{tol_upper_color}", "TOL+ {v}", 1 )')
+                
+                if add_tol_lower:
+                    v = self.format_excel_number(mrow.get("tol_lower"))
+                    if not np.isnan(v):
+                        ref_lines.append(f'Add Ref Line( {v}, "Solid", "{tol_lower_color}", "TOL- {v}", 1 )')
                 
                 ref_block = ',\n\t\t\t' + ',\n\t\t\t'.join(ref_lines) if ref_lines else ""
                 
@@ -350,7 +399,19 @@ If( Is Scriptable( gb ),
                       chunk_size: int = 100000,
                       list_check_values: Optional[List[str]] = None,
                       value_order: Optional[List[str]] = None,
-                      caption_box_statistics: Optional[List[str]] = None) -> Dict[str, Any]:
+                      caption_box_statistics: Optional[List[str]] = None,
+                      add_usl: bool = True,
+                      add_target: bool = True,
+                      add_lsl: bool = True,
+                      add_nominal: bool = False,
+                      add_tol_upper: bool = False,
+                      add_tol_lower: bool = False,
+                      usl_color: str = "Dark Blue",
+                      target_color: str = "Dark Blue",
+                      lsl_color: str = "Dark Blue",
+                      nominal_color: str = "Dark Blue",
+                      tol_upper_color: str = "Dark Blue",
+                      tol_lower_color: str = "Dark Blue") -> Dict[str, Any]:
         """
         Generate all files (CSV, JSL) with chunked processing support
         
@@ -367,6 +428,18 @@ If( Is Scriptable( gb ),
             list_check_values: Optional list check values
             value_order: Optional value order
             caption_box_statistics: Optional caption box statistics
+            add_usl: Whether to add USL reference line (default: True)
+            add_target: Whether to add Target reference line (default: True)
+            add_lsl: Whether to add LSL reference line (default: True)
+            add_nominal: Whether to add Nominal reference line with value 0 (default: False)
+            add_tol_upper: Whether to add TOL+ reference line (default: False)
+            add_tol_lower: Whether to add TOL- reference line (default: False)
+            usl_color: Color for USL reference line - "Dark Blue", "Dark Red", or "Dark Yellow" (default: "Dark Blue")
+            target_color: Color for Target reference line - "Dark Blue", "Dark Red", or "Dark Yellow" (default: "Dark Blue")
+            lsl_color: Color for LSL reference line - "Dark Blue", "Dark Red", or "Dark Yellow" (default: "Dark Blue")
+            nominal_color: Color for Nominal reference line - "Dark Blue", "Dark Red", or "Dark Yellow" (default: "Dark Blue")
+            tol_upper_color: Color for TOL+ reference line - "Dark Blue", "Dark Red", or "Dark Yellow" (default: "Dark Blue")
+            tol_lower_color: Color for TOL- reference line - "Dark Blue", "Dark Red", or "Dark Yellow" (default: "Dark Blue")
             
         Returns:
             Dict with file generation results
@@ -387,7 +460,19 @@ If( Is Scriptable( gb ),
             jsl_content = self.generate_jsl(df_meta, boundaries, cat_var, color_by,
                                           list_check_values=list_check_values,
                                           value_order=value_order,
-                                          caption_box_statistics=caption_box_statistics)
+                                          caption_box_statistics=caption_box_statistics,
+                                          add_usl=add_usl,
+                                          add_target=add_target,
+                                          add_lsl=add_lsl,
+                                          add_nominal=add_nominal,
+                                          add_tol_upper=add_tol_upper,
+                                          add_tol_lower=add_tol_lower,
+                                          usl_color=usl_color,
+                                          target_color=target_color,
+                                          lsl_color=lsl_color,
+                                          nominal_color=nominal_color,
+                                          tol_upper_color=tol_upper_color,
+                                          tol_lower_color=tol_lower_color)
             
             return {
                 "success": True,

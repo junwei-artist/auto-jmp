@@ -173,6 +173,12 @@ class DuckDB2JMPNode(BaseNode):
                     if table_name == meta_table:
                         continue  # Skip meta table
                     
+                    # Only process the "data" table (case-insensitive)
+                    # Categorical variable settings only apply to the data table
+                    if table_name.lower() != "data":
+                        logger.info(f"Skipping table {table_name} - categorical variable settings only apply to 'data' table")
+                        continue
+                    
                     logger.info(f"Processing table: {table_name}")
                     
                     # Load table (with chunking for large tables)
@@ -184,19 +190,23 @@ class DuckDB2JMPNode(BaseNode):
                     df_data = file_handler.df_data_raw
                     fai_columns = file_handler.fai_columns
                     
-                    # Set categorical variable
+                    # Set categorical variable (only for data table)
                     set_cat_result = file_handler.set_categorical_variable(cat_var)
                     if not set_cat_result.get("success"):
                         logger.warning(f"Failed to set categorical variable for {table_name}: {set_cat_result.get('error')}")
                         continue
                     
+                    # Use the actual categorical variable name found (case-insensitive match)
+                    actual_cat_var = file_handler.selected_cat_var or set_cat_result.get("categorical_variable") or cat_var
+                    
                     # Validate data (using sample if chunked)
-                    validation_result = validator.run_full_validation(df_meta, df_data, cat_var)
+                    validation_result = validator.run_full_validation(df_meta, df_data, actual_cat_var)
                     if not validation_result.get("success"):
                         logger.warning(f"Data validation failed for {table_name}: {validation_result.get('error')}")
                         continue
                     
                     # Process data (using all data from DuckDB for boundaries calculation)
+                    # Use actual_cat_var which was set above
                     is_large = table_result.get("is_chunked", False)
                     if is_large:
                         # For large tables, calculate boundaries from all data in DuckDB
@@ -204,13 +214,13 @@ class DuckDB2JMPNode(BaseNode):
                             df_meta, 
                             df_data,  # Sample for validation only
                             fai_columns, 
-                            cat_var,
+                            actual_cat_var,  # Use actual categorical variable name
                             duckdb_path=str(duckdb_path),
                             table_name=table_name
                         )
                     else:
                         # For small tables, use the loaded data
-                        process_result = data_processor.process_data(df_meta, df_data, fai_columns, cat_var)
+                        process_result = data_processor.process_data(df_meta, df_data, fai_columns, actual_cat_var)
                     
                     if not process_result.get("success"):
                         logger.warning(f"Data processing failed for {table_name}: {process_result.get('error')}")
@@ -221,7 +231,7 @@ class DuckDB2JMPNode(BaseNode):
                         df_meta,
                         df_data if not is_large else None,  # Only pass df_data for small tables
                         process_result["boundaries"],
-                        cat_var,
+                        actual_cat_var,  # Use actual categorical variable name
                         fai_columns,
                         color_by,
                         duckdb_path=str(duckdb_path) if is_large else None,

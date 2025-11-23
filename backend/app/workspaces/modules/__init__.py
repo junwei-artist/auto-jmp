@@ -9,6 +9,7 @@ from app.workspaces.modules.outlier_remover.module import OutlierRemoverNode
 from app.workspaces.modules.outlier_remover_duckdb.module import OutlierRemoverDuckDBNode
 from app.workspaces.modules.excel2jmp.module import Excel2JMPNode
 from app.workspaces.modules.duckdb2jmp.module import DuckDB2JMPNode
+from app.workspaces.modules.duckdb2norminal.module import DuckDB2NorminalNode
 from app.workspaces.engine.registry import registry
 
 # Register modules
@@ -22,4 +23,5 @@ registry.register(OutlierRemoverNode)
 registry.register(OutlierRemoverDuckDBNode)
 registry.register(Excel2JMPNode)
 registry.register(DuckDB2JMPNode)
+registry.register(DuckDB2NorminalNode)
 

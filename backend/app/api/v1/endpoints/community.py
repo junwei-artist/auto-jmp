@@ -1,6 +1,6 @@
 from typing import List, Optional
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, File, UploadFile, Form
 from fastapi.responses import FileResponse
@@ -80,14 +80,19 @@ class CommunityPostResponse(BaseModel):
     tags: Optional[List[str]]
     author_id: Optional[str]
     author_display_name: Optional[str]
+    author_avatar: Optional[str] = None  # NEW: emoji or avatar URL
+    author_role: Optional[str] = None    # NEW: user role/title
     views: int
     likes_count: int
+    comments_count: int = 0              # NEW: number of comments
     is_liked: bool = False
     is_pinned: bool
     is_locked: bool
+    trending: bool = False               # NEW: calculated trending status
     attachments: List[dict] = []
     created_at: str
     updated_at: str
+
 
 
 class CommunityCommentCreate(BaseModel):
@@ -103,6 +108,7 @@ class CommunityCommentResponse(BaseModel):
     content: str
     created_at: str
     updated_at: str
+    attachments: List[dict] = []
     replies: List["CommunityCommentResponse"] = []
 
 
@@ -339,6 +345,25 @@ async def list_posts(
             "file_size": att.file_size,
         })
     
+    # Get comments count for posts
+    from app.models import CommunityComment
+    comments_count_result = await db.execute(
+        select(
+            CommunityComment.post_id,
+            func.count(CommunityComment.id).label('count')
+        ).where(
+            and_(
+                CommunityComment.post_id.in_([uuid.UUID(pid) for pid in post_ids]),
+                CommunityComment.deleted_at.is_(None)
+            )
+        ).group_by(CommunityComment.post_id)
+    )
+    comments_by_post = {str(row.post_id): row.count for row in comments_count_result.all()}
+    
+    # Calculate trending (posts created in last 7 days with high engagement)
+    from datetime import timedelta
+    seven_days_ago = datetime.now(timezone.utc) - timedelta(days=7)
+    
     return [
         CommunityPostResponse(
             id=str(post.id),
@@ -350,11 +375,21 @@ async def list_posts(
             tags=post.tags,
             author_id=str(author.id) if author else None,
             author_display_name=author.display_name if author else None,
+            author_avatar=getattr(author, 'avatar', None) if author else None,  # NEW
+            author_role=getattr(author, 'role', 'Member') if author else 'Member',  # NEW
             views=post.views or 0,
             likes_count=post.likes_count or 0,
+            comments_count=comments_by_post.get(str(post.id), 0),  # NEW
             is_liked=str(post.id) in user_liked_post_ids,
             is_pinned=bool(post.is_pinned),
             is_locked=bool(post.is_locked),
+            trending=(  # NEW: Calculate trending status
+                post.created_at >= seven_days_ago and (
+                    (post.likes_count or 0) > 50 or
+                    (post.views or 0) > 1000 or
+                    comments_by_post.get(str(post.id), 0) > 20
+                )
+            ),
             attachments=attachments_by_post.get(str(post.id), []),
             created_at=post.created_at.isoformat() if post.created_at else "",
             updated_at=post.updated_at.isoformat() if post.updated_at else "",
@@ -429,11 +464,15 @@ async def create_post(
         tags=post.tags,
         author_id=str(current_user.id),
         author_display_name=current_user.display_name,
+        author_avatar=getattr(current_user, 'avatar', None),  # NEW
+        author_role=getattr(current_user, 'role', 'Member'),  # NEW
         views=post.views or 0,
         likes_count=post.likes_count or 0,
+        comments_count=0,  # NEW - no comments yet
         is_liked=False,
         is_pinned=bool(post.is_pinned),
         is_locked=bool(post.is_locked),
+        trending=False,  # NEW - too new to be trending
         attachments=[],
         created_at=post.created_at.isoformat() if post.created_at else "",
         updated_at=post.updated_at.isoformat() if post.updated_at else "",
@@ -493,6 +532,29 @@ async def get_post(
         for att in attachments_result.scalars().all()
     ]
     
+    # Get comments count
+    from app.models import CommunityComment
+    comments_count_result = await db.execute(
+        select(func.count(CommunityComment.id)).where(
+            and_(
+                CommunityComment.post_id == post.id,
+                CommunityComment.deleted_at.is_(None)
+            )
+        )
+    )
+    comments_count = comments_count_result.scalar() or 0
+    
+    # Calculate trending
+    from datetime import timedelta
+    seven_days_ago = datetime.now(timezone.utc) - timedelta(days=7)
+    trending = (
+        post.created_at >= seven_days_ago and (
+            (post.likes_count or 0) > 50 or
+            (post.views or 0) > 1000 or
+            comments_count > 20
+        )
+    )
+    
     return CommunityPostResponse(
         id=str(post.id),
         title=post.title,
@@ -503,11 +565,15 @@ async def get_post(
         tags=post.tags,
         author_id=str(author.id) if author else None,
         author_display_name=author.display_name if author else None,
+        author_avatar=getattr(author, 'avatar', None) if author else None,  # NEW
+        author_role=getattr(author, 'role', 'Member') if author else 'Member',  # NEW
         views=(post.views or 0) + (1 if inc_views else 0),
         likes_count=post.likes_count or 0,
+        comments_count=comments_count,  # NEW
         is_liked=is_liked,
         is_pinned=bool(post.is_pinned),
         is_locked=bool(post.is_locked),
+        trending=trending,  # NEW
         attachments=attachments,
         created_at=post.created_at.isoformat() if post.created_at else "",
         updated_at=post.updated_at.isoformat() if post.updated_at else "",
@@ -606,6 +672,29 @@ async def update_post(
     )
     is_liked = like_result.scalar_one_or_none() is not None
     
+    # Get comments count
+    from app.models import CommunityComment
+    comments_count_result = await db.execute(
+        select(func.count(CommunityComment.id)).where(
+            and_(
+                CommunityComment.post_id == post.id,
+                CommunityComment.deleted_at.is_(None)
+            )
+        )
+    )
+    comments_count = comments_count_result.scalar() or 0
+    
+    # Calculate trending
+    from datetime import timedelta
+    seven_days_ago = datetime.now(timezone.utc) - timedelta(days=7)
+    trending = (
+        post.created_at >= seven_days_ago and (
+            (post.likes_count or 0) > 50 or
+            (post.views or 0) > 1000 or
+            comments_count > 20
+        )
+    )
+    
     return CommunityPostResponse(
         id=str(post.id),
         title=post.title,
@@ -616,11 +705,15 @@ async def update_post(
         tags=post.tags,
         author_id=str(author.id) if author else None,
         author_display_name=author.display_name if author else None,
+        author_avatar=getattr(author, 'avatar', None) if author else None,  # NEW
+        author_role=getattr(author, 'role', 'Member') if author else 'Member',  # NEW
         views=post.views or 0,
         likes_count=post.likes_count or 0,
+        comments_count=comments_count,  # NEW
         is_liked=is_liked,
         is_pinned=bool(post.is_pinned),
         is_locked=bool(post.is_locked),
+        trending=trending,  # NEW
         attachments=attachments,
         created_at=post.created_at.isoformat() if post.created_at else "",
         updated_at=post.updated_at.isoformat() if post.updated_at else "",
@@ -649,7 +742,7 @@ async def delete_post(
         raise HTTPException(status_code=403, detail="You can only delete your own posts")
     
     # Soft delete
-    post.deleted_at = datetime.utcnow()
+    post.deleted_at = datetime.now(timezone.utc)
     await db.commit()
     
     return {"message": "Post deleted successfully"}
@@ -738,9 +831,14 @@ async def upload_post_attachment(
     if post.author_id != current_user.id and not current_user.is_admin:
         raise HTTPException(status_code=403, detail="You can only add attachments to your own posts")
     
-    # Validate file type (images only for now)
-    if not file.content_type or not file.content_type.startswith('image/'):
-        raise HTTPException(status_code=400, detail="Only image files are allowed")
+    # Validate file type - allow common file types
+    from app.core.config import settings
+    allowed_types = settings.ALLOWED_ATTACHMENT_TYPES
+    if not file.content_type or file.content_type not in allowed_types:
+        raise HTTPException(
+            status_code=400, 
+            detail=f"File type '{file.content_type}' not allowed. Allowed types: {', '.join(allowed_types)}"
+        )
     
     # Read file content
     content = await file.read()
@@ -751,7 +849,7 @@ async def upload_post_attachment(
         raise HTTPException(status_code=400, detail=f"File size exceeds limit of {max_size} bytes")
     
     # Generate storage key
-    timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
     file_id = str(uuid.uuid4())[:8]
     safe_filename = "".join(c for c in file.filename if c.isalnum() or c in (' ', '-', '_', '.')).rstrip()
     storage_key = f"community/posts/{post_id}/{timestamp}_{file_id}_{safe_filename}"
@@ -847,6 +945,20 @@ async def list_post_comments(
 
         replies = []
         for reply, reply_user in replies_result.all():
+            # Get attachments for reply
+            reply_attachments_result = await db.execute(
+                select(CommunityAttachment).where(CommunityAttachment.comment_id == reply.id)
+            )
+            reply_attachments = [
+                {
+                    "id": str(att.id),
+                    "filename": att.filename,
+                    "mime_type": att.mime_type,
+                    "file_size": att.file_size,
+                }
+                for att in reply_attachments_result.scalars().all()
+            ]
+            
             replies.append(CommunityCommentResponse(
                 id=str(reply.id),
                 user_id=str(reply_user.id) if reply_user else None,
@@ -855,8 +967,23 @@ async def list_post_comments(
                 content=reply.content,
                 created_at=reply.created_at.isoformat() if reply.created_at else "",
                 updated_at=reply.updated_at.isoformat() if reply.updated_at else "",
+                attachments=reply_attachments,
                 replies=[],
             ))
+
+        # Get attachments for comment
+        comment_attachments_result = await db.execute(
+            select(CommunityAttachment).where(CommunityAttachment.comment_id == comment.id)
+        )
+        comment_attachments = [
+            {
+                "id": str(att.id),
+                "filename": att.filename,
+                "mime_type": att.mime_type,
+                "file_size": att.file_size,
+            }
+            for att in comment_attachments_result.scalars().all()
+        ]
 
         comments.append(CommunityCommentResponse(
             id=str(comment.id),
@@ -866,6 +993,7 @@ async def list_post_comments(
             content=comment.content,
             created_at=comment.created_at.isoformat() if comment.created_at else "",
             updated_at=comment.updated_at.isoformat() if comment.updated_at else "",
+            attachments=comment_attachments,
             replies=replies,
         ))
 
@@ -1020,7 +1148,135 @@ async def delete_post_comment(
         raise HTTPException(status_code=403, detail="You can only delete your own comments")
     
     # Soft delete
-    comment.deleted_at = datetime.utcnow()
+    comment.deleted_at = datetime.now(timezone.utc)
     await db.commit()
     
     return {"message": "Comment deleted"}
+
+
+@router.post("/posts/{post_id}/comments/{comment_id}/attachments")
+async def upload_comment_attachment(
+    post_id: str,
+    comment_id: str,
+    file: UploadFile = File(...),
+    db: AsyncSession = Depends(get_db),
+    current_user: AppUser = Depends(get_current_user)
+):
+    """Upload an attachment to a comment."""
+    # Verify comment exists and belongs to post
+    comment_result = await db.execute(
+        select(CommunityComment).where(
+            and_(
+                CommunityComment.id == uuid.UUID(comment_id),
+                CommunityComment.post_id == uuid.UUID(post_id),
+                CommunityComment.deleted_at.is_(None)
+            )
+        )
+    )
+    comment = comment_result.scalar_one_or_none()
+    
+    if not comment:
+        raise HTTPException(status_code=404, detail="Comment not found")
+    
+    # Check permissions - only comment author or admin can add attachments
+    if comment.user_id != current_user.id and not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="You can only add attachments to your own comments")
+    
+    # Validate file type - allow common file types
+    from app.core.config import settings
+    allowed_types = settings.ALLOWED_ATTACHMENT_TYPES
+    if not file.content_type or file.content_type not in allowed_types:
+        raise HTTPException(
+            status_code=400, 
+            detail=f"File type '{file.content_type}' not allowed. Allowed types: {', '.join(allowed_types)}"
+        )
+    
+    # Read file content
+    content = await file.read()
+    
+    # Check file size (10MB max for comments)
+    max_size = 10 * 1024 * 1024
+    if len(content) > max_size:
+        raise HTTPException(status_code=400, detail=f"File size exceeds limit of {max_size} bytes")
+    
+    # Generate storage key
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+    file_id = str(uuid.uuid4())[:8]
+    safe_filename = "".join(c for c in file.filename if c.isalnum() or c in (' ', '-', '_', '.')).rstrip()
+    storage_key = f"community/comments/{comment_id}/{timestamp}_{file_id}_{safe_filename}"
+    
+    # Save file
+    local_storage.save_file(content, storage_key)
+    
+    # Create attachment record
+    attachment = CommunityAttachment(
+        comment_id=comment.id,
+        post_id=None,  # Comment attachment, not post attachment
+        uploaded_by=current_user.id,
+        filename=file.filename,
+        storage_key=storage_key,
+        file_size=len(content),
+        mime_type=file.content_type
+    )
+    db.add(attachment)
+    await db.commit()
+    await db.refresh(attachment)
+    
+    return {
+        "id": str(attachment.id),
+        "filename": attachment.filename,
+        "mime_type": attachment.mime_type,
+        "file_size": attachment.file_size,
+    }
+
+
+@router.delete("/posts/{post_id}/comments/{comment_id}/attachments/{attachment_id}")
+async def delete_comment_attachment(
+    post_id: str,
+    comment_id: str,
+    attachment_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: AppUser = Depends(get_current_user)
+):
+    """Delete an attachment from a comment."""
+    # Verify comment exists and belongs to post
+    comment_result = await db.execute(
+        select(CommunityComment).where(
+            and_(
+                CommunityComment.id == uuid.UUID(comment_id),
+                CommunityComment.post_id == uuid.UUID(post_id),
+                CommunityComment.deleted_at.is_(None)
+            )
+        )
+    )
+    comment = comment_result.scalar_one_or_none()
+    
+    if not comment:
+        raise HTTPException(status_code=404, detail="Comment not found")
+    
+    # Get attachment
+    attachment_result = await db.execute(
+        select(CommunityAttachment).where(
+            and_(
+                CommunityAttachment.id == uuid.UUID(attachment_id),
+                CommunityAttachment.comment_id == uuid.UUID(comment_id)
+            )
+        )
+    )
+    attachment = attachment_result.scalar_one_or_none()
+    
+    if not attachment:
+        raise HTTPException(status_code=404, detail="Attachment not found")
+    
+    # Check permissions - only comment author or admin can delete
+    if comment.user_id != current_user.id and not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="You can only delete attachments from your own comments")
+    
+    # Delete file
+    local_storage.delete_file(attachment.storage_key)
+    
+    # Delete record
+    await db.delete(attachment)
+    await db.commit()
+    
+    return {"message": "Attachment deleted successfully"}

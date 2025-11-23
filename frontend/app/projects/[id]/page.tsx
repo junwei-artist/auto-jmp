@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -8,7 +8,7 @@ import { Badge } from '@/components/ui/badge'
 import { Alert, AlertDescription } from '@/components/ui/alert-simple'
 import { Switch } from '@/components/ui/switch'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { Loader2, Upload, FileText, BarChart3, Users, Share2, ArrowLeft, Download, Eye, Globe, Lock, Trash2, Settings, MessageSquare, UserPlus, ChevronDown, ChevronRight, Edit2, Check, X, Paperclip, FolderOpen, FileSpreadsheet } from 'lucide-react'
+import { Loader2, Upload, FileText, BarChart3, Users, Share2, ArrowLeft, Download, Eye, Globe, Lock, Trash2, Settings, MessageSquare, UserPlus, ChevronDown, ChevronRight, Edit2, Check, X, Paperclip, FolderOpen, FileSpreadsheet, Play } from 'lucide-react'
 import { useAuth } from '@/lib/auth'
 import { projectApi, runApi } from '@/lib/api'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
@@ -84,6 +84,60 @@ interface RunArtifactWithComments {
   comment_count: number
 }
 
+interface Plugin {
+  id: string
+  name: string
+  description: string
+  icon: JSX.Element
+}
+
+const getPlugins = (t: (key: string) => string): Plugin[] => {
+  // Helper function to get translation with proper fallback
+  const getTranslation = (key: string, fallback: string) => {
+    const translation = t(key)
+    return translation === key ? fallback : translation
+  }
+
+  return [
+    {
+      id: 'excel2boxplotv1',
+      name: getTranslation('plugin.excel2boxplotv1.name', 'Excel to Boxplot V1'),
+      description: getTranslation('plugin.excel2boxplotv1.description', 'Convert Excel files to CSV and JSL scripts with three-checkpoint validation system'),
+      icon: <BarChart3 className="h-8 w-8 text-blue-600" />
+    },
+    {
+      id: 'excel2boxplotv2',
+      name: getTranslation('plugin.excel2boxplotv2.name', 'Excel to Boxplot V2'),
+      description: getTranslation('plugin.excel2boxplotv2.description', 'Excel to CSV/JSL with V2 column mapping'),
+      icon: <BarChart3 className="h-8 w-8 text-indigo-600" />
+    },
+    {
+      id: 'excel2processcapability',
+      name: getTranslation('plugin.excel2processcapability.name', 'Excel to Process Capability'),
+      description: getTranslation('plugin.excel2processcapability.description', 'Convert Excel data to process capability analysis (Cp, Cpk, Pp, Ppk)'),
+      icon: <FileSpreadsheet className="h-8 w-8 text-green-600" />
+    },
+    {
+      id: 'excel2cpkv1',
+      name: getTranslation('plugin.excel2cpkv1.name', 'Excel to CPK V1'),
+      description: getTranslation('plugin.excel2cpkv1.description', 'Convert Excel files to CSV and JSL scripts for Process Capability (CPK) analysis with three-checkpoint validation system'),
+      icon: <BarChart3 className="h-8 w-8 text-purple-600" />
+    },
+    {
+      id: 'excel2commonality',
+      name: getTranslation('plugin.excel2commonality.name', 'Excel to Commonality'),
+      description: getTranslation('plugin.excel2commonality.description', 'Convert Excel files to CSV and JSL scripts for commonality analysis with multi-variable visualization'),
+      icon: <BarChart3 className="h-8 w-8 text-orange-600" />
+    },
+    {
+      id: 'excel2commonality-generic',
+      name: getTranslation('plugin.excel2commonality-generic.name', 'Excel to Commonality (Generic)'),
+      description: getTranslation('plugin.excel2commonality-generic.description', 'Convert Excel files to CSV and JSL scripts for commonality analysis with user-selected categorical variables'),
+      icon: <BarChart3 className="h-8 w-8 text-teal-600" />
+    }
+  ]
+}
+
 export default function ProjectPage() {
   const params = useParams()
   const router = useRouter()
@@ -121,6 +175,10 @@ export default function ProjectPage() {
   const [editTaskNameValue, setEditTaskNameValue] = useState('')
   const [historyLogs, setHistoryLogs] = useState<any[]>([])
   const [historyLogsLoading, setHistoryLogsLoading] = useState(false)
+  const [selectedPlugin, setSelectedPlugin] = useState<string | null>(null)
+
+  // Get available plugins
+  const plugins = useMemo(() => getPlugins(t), [t])
 
   // Fetch server info for public sharing
   useEffect(() => {
@@ -157,6 +215,13 @@ export default function ProjectPage() {
     queryFn: () => projectApi.getProject(projectId),
     enabled: !!user && !!projectId && ready,
   })
+
+  // Set initial selected plugin to project's plugin_name if it exists
+  useEffect(() => {
+    if (project?.plugin_name && !selectedPlugin) {
+      setSelectedPlugin(project.plugin_name)
+    }
+  }, [project?.plugin_name, selectedPlugin])
 
   // Debug logging
   useEffect(() => {
@@ -884,28 +949,67 @@ export default function ProjectPage() {
               </TabsList>
 
               <TabsContent value="analysis" className="space-y-6">
-                {/* Upload / Plugin Section */}
-                {project?.plugin_name ? (
-                  <Card>
-                    <CardHeader>
-                      <CardTitle className="flex items-center">
-                        <Upload className="mr-2 h-5 w-5" />
-                        {t('project.pluginWizard.title')}
-                      </CardTitle>
-                      <CardDescription>
-                        {t('project.pluginWizard.subtitle', { plugin: project.plugin_name })}
-                      </CardDescription>
-                    </CardHeader>
-                    <CardContent>
-                      <Button 
-                        className="w-full"
-                        onClick={() => router.push(`/plugins/${project.plugin_name}/wizard?projectId=${projectId}&plugin=${project.plugin_name}`)}
-                      >
-                        {t('project.pluginWizard.open', { plugin: project.plugin_name })}
-                      </Button>
-                    </CardContent>
-                  </Card>
-                ) : (
+                {/* Plugin Selection Section */}
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center">
+                      <Upload className="mr-2 h-5 w-5" />
+                      {t('project.pluginWizard.title') || 'Select Plugin'}
+                    </CardTitle>
+                    <CardDescription>
+                      {project?.plugin_name 
+                        ? t('project.pluginWizard.subtitle', { plugin: project.plugin_name }) || `Original plugin: ${project.plugin_name}. You can select any plugin to use.`
+                        : 'Select a plugin to start analysis in this project'
+                      }
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-4">
+                      {plugins.map((plugin) => (
+                        <div
+                          key={plugin.id}
+                          onClick={() => setSelectedPlugin(plugin.id)}
+                          className={`p-4 border-2 rounded-lg cursor-pointer transition-all ${
+                            selectedPlugin === plugin.id
+                              ? 'border-blue-500 bg-blue-50'
+                              : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
+                          }`}
+                        >
+                          <div className="flex items-start space-x-3">
+                            <div className="flex-shrink-0">
+                              {plugin.icon}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <h3 className="font-semibold text-sm text-gray-900 mb-1">
+                                {plugin.name}
+                              </h3>
+                              <p className="text-xs text-gray-600 line-clamp-2">
+                                {plugin.description}
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                    <Button 
+                      className="w-full"
+                      onClick={() => {
+                        if (selectedPlugin) {
+                          router.push(`/plugins/${selectedPlugin}/wizard?projectId=${projectId}&plugin=${selectedPlugin}`)
+                        }
+                      }}
+                      disabled={!selectedPlugin}
+                    >
+                      <Play className="mr-2 h-4 w-4" />
+                      {selectedPlugin 
+                        ? `Open ${plugins.find(p => p.id === selectedPlugin)?.name || selectedPlugin} Wizard`
+                        : 'Select a plugin to continue'
+                      }
+                    </Button>
+                  </CardContent>
+                </Card>
+                {/* Legacy Upload Section - Only show if no plugin_name */}
+                {!project?.plugin_name && (
                   <Card>
                     <CardHeader>
                       <CardTitle className="flex items-center">

@@ -12,7 +12,7 @@ from app.core.auth import get_current_user_optional
 from app.core.config import settings
 from app.core.storage import local_storage
 from app.models import AppUser, Artifact, Run, Project
-from sqlalchemy import select
+from sqlalchemy import select, desc
 from sqlalchemy.ext.asyncio import AsyncSession
 
 router = APIRouter()
@@ -177,8 +177,12 @@ async def file_serve_query(
         # For task images, check if they belong to an artifact that the user has access to
         if is_task_image and not current_user:
             # Try to find the artifact in the database
+            # Order by created_at DESC to get the most recent artifact if duplicates exist
             artifact_result = await db.execute(
-                select(Artifact).where(Artifact.storage_key == storage_key)
+                select(Artifact)
+                .where(Artifact.storage_key == storage_key)
+                .order_by(desc(Artifact.created_at))
+                .limit(1)
             )
             artifact = artifact_result.scalar_one_or_none()
             
@@ -245,8 +249,8 @@ async def file_serve_query(
             if candidate.exists():
                 full_path = candidate
             else:
-                # THIRD: Explicit fallback to service files path
-                fixed_backend = Path("/Users/lstech/service/files")
+                # THIRD: Explicit fallback to GitHub path
+                fixed_backend = Path("/Users/lytech/Documents/GitHub/auto-jmp/backend")
                 fixed_candidate = (fixed_backend / task_path).resolve()
                 if fixed_candidate.exists():
                     full_path = fixed_candidate
@@ -353,7 +357,7 @@ async def download_run_zip(
     import tempfile
     import os
     from sqlalchemy.ext.asyncio import AsyncSession
-    from sqlalchemy import select
+    from sqlalchemy import select, desc
     from app.core.database import AsyncSessionLocal
     from app.models import Run, Artifact
     
@@ -432,8 +436,8 @@ async def download_run_zip(
                     if candidate2.exists():
                         full_task_dir = candidate2
                     else:
-                        # FOURTH: Explicit fallback to service files path
-                        fixed_backend = Path("/Users/lstech/service/files")
+                        # FOURTH: Explicit fallback to GitHub path
+                        fixed_backend = Path("/Users/lytech/Documents/GitHub/auto-jmp/backend")
                         candidate3 = (fixed_backend / task_dir_rel).resolve()
                         if candidate3.exists():
                             full_task_dir = candidate3

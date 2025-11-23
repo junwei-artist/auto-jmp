@@ -45,6 +45,7 @@ class Settings(BaseSettings):
     EMAILS_FROM_NAME: Optional[str] = None
     
     # CORS - Allow specific origins for network access
+    # If BACKEND_CORS_ORIGINS is set to ["*"], all origins will be allowed
     BACKEND_CORS_ORIGINS: List[str] = [
         "http://10.5.216.11",
         "http://10.5.216.11:4800",
@@ -53,6 +54,8 @@ class Settings(BaseSettings):
         "http://127.0.0.1:4800",
         "http://localhost:3000",
         "http://localhost:3001",
+        "http://192.168.31.225:4800",  # Add the specific IP origin
+        "http://192.168.31.225",  # Add without port as well
     ]
     
     @field_validator('BACKEND_CORS_ORIGINS', mode='before')
@@ -88,7 +91,7 @@ class Settings(BaseSettings):
     ALLOW_PUBLIC_MEDIA_ACCESS: bool = os.getenv("ALLOW_PUBLIC_MEDIA_ACCESS", "false").lower() == "true"  # Allow direct access to images/attachments without auth
     
     # File Storage Configuration
-    UPLOADS_DIR: str = os.getenv("UPLOADS_DIR", "/Users/lstech/service/files")  # Base directory for all file storage
+    UPLOADS_DIR: str = os.getenv("UPLOADS_DIR", "/Users/lstech/service/files/uploads")  # Uploads directory path
     
     # JMP Configuration
     JMP_TASK_DIR: str = os.getenv("JMP_TASK_DIR", "/tmp/jmp_tasks")

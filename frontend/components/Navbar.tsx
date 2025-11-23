@@ -13,12 +13,12 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { Badge } from '@/components/ui/badge'
-import { 
-  Home, 
-  LayoutDashboard, 
-  FolderKanban, 
-  User, 
-  LogOut, 
+import {
+  Home,
+  LayoutDashboard,
+  FolderKanban,
+  User,
+  LogOut,
   LogIn,
   Settings,
   Menu,
@@ -26,10 +26,10 @@ import {
   Circle,
   Package,
   Workflow,
-  Palette
+  Users,
+  HelpCircle
 } from 'lucide-react'
 import toast from 'react-hot-toast'
-import { useTheme } from '@/lib/theme'
 import { NotificationBell } from '@/components/NotificationCenter'
 import { LanguageSelector } from '@/components/LanguageSelector'
 import { AuthModal } from '@/components/AuthModal'
@@ -39,8 +39,6 @@ export default function Navbar() {
   const pathname = usePathname()
   const { user, logout, isLoading, ready } = useAuth()
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
-  const { theme, setTheme, themes: availableThemes } = useTheme()
-  const [isThemeMenuOpen, setIsThemeMenuOpen] = useState(false)
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false)
 
   // Hide navbar on standalone module pages (e.g., /modules/duckdb2jmp)
@@ -93,8 +91,8 @@ export default function Navbar() {
                     variant={isActive(item.href) ? "default" : "ghost"}
                     size="sm"
                     onClick={() => router.push(item.href)}
-                    className={isActive(item.href) 
-                      ? "bg-gradient-to-r from-indigo-600 to-purple-600 text-white hover:from-indigo-700 hover:to-purple-700" 
+                    className={isActive(item.href)
+                      ? "bg-gradient-to-r from-indigo-600 to-purple-600 text-white hover:from-indigo-700 hover:to-purple-700"
                       : "hover:bg-gray-100"
                     }
                   >
@@ -121,45 +119,34 @@ export default function Navbar() {
             {/* Notification Bell */}
             {user && <NotificationBell />}
 
+            {/* Community Icon */}
+            {user && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => router.push('/community')}
+                className="hover:bg-gray-100"
+                title="Community"
+              >
+                <Users className="h-4 w-4" />
+              </Button>
+            )}
+
+            {/* Help Icon */}
+            {user && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => router.push('/help')}
+                className="hover:bg-gray-100"
+                title="Help"
+              >
+                <HelpCircle className="h-4 w-4" />
+              </Button>
+            )}
+
             {/* Language Selector */}
             <LanguageSelector />
-
-            {/* Theme Switcher */}
-            <div className="relative">
-              <DropdownMenu open={isThemeMenuOpen} onOpenChange={setIsThemeMenuOpen}>
-                <DropdownMenuTrigger asChild>
-                  <Button 
-                    variant="ghost" 
-                    size="sm"
-                    className="hover:bg-gray-100"
-                    title="Change theme"
-                  >
-                    <Palette className="h-4 w-4" />
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-40">
-                  <DropdownMenuLabel>Theme</DropdownMenuLabel>
-                  <DropdownMenuSeparator />
-                  {availableThemes.map((themeOption) => (
-                    <DropdownMenuItem
-                      key={themeOption}
-                      onClick={() => {
-                        setTheme(themeOption)
-                        setIsThemeMenuOpen(false)
-                      }}
-                      className={theme === themeOption ? 'bg-indigo-50' : ''}
-                    >
-                      <div className="flex items-center justify-between w-full">
-                        <span className="capitalize">{themeOption}</span>
-                        {theme === themeOption && (
-                          <Circle className="h-2 w-2 fill-indigo-600 text-indigo-600" />
-                        )}
-                      </div>
-                    </DropdownMenuItem>
-                  ))}
-                </DropdownMenuContent>
-              </DropdownMenu>
-            </div>
 
             {/* User Menu */}
             {user ? (
@@ -255,10 +242,10 @@ export default function Navbar() {
                     router.push(item.href)
                     setIsMobileMenuOpen(false)
                   }}
-                  className={`w-full justify-start ${isActive(item.href) 
-                    ? "bg-gradient-to-r from-indigo-600 to-purple-600 text-white" 
+                  className={`w-full justify-start ${isActive(item.href)
+                    ? "bg-gradient-to-r from-indigo-600 to-purple-600 text-white"
                     : ""
-                  }`}
+                    }`}
                 >
                   <Icon className="h-4 w-4 mr-2" />
                   {item.label}
@@ -266,34 +253,6 @@ export default function Navbar() {
               )
             })}
 
-            {/* Theme Switcher in Mobile Menu */}
-            <div className="pt-2 border-t">
-              <div className="px-2 py-1 text-xs font-semibold text-gray-500 mb-2">Theme</div>
-              <div className="space-y-1">
-                {availableThemes.map((themeOption) => (
-                  <Button
-                    key={themeOption}
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => {
-                      setTheme(themeOption)
-                      setIsMobileMenuOpen(false)
-                    }}
-                    className={`w-full justify-start ${
-                      theme === themeOption ? 'bg-indigo-50 text-indigo-600' : ''
-                    }`}
-                  >
-                    <div className="flex items-center justify-between w-full">
-                      <span className="capitalize">{themeOption}</span>
-                      {theme === themeOption && (
-                        <Circle className="h-2 w-2 fill-indigo-600 text-indigo-600" />
-                      )}
-                    </div>
-                  </Button>
-                ))}
-              </div>
-            </div>
-            
             {!user && (
               <div className="pt-2 space-y-2">
                 <Button
@@ -323,12 +282,11 @@ export default function Navbar() {
           </div>
         )}
       </div>
-      
+
       {/* Auth Modal */}
-      <AuthModal 
-        open={isAuthModalOpen} 
-        onOpenChange={setIsAuthModalOpen}
-        defaultTab="login"
+      <AuthModal
+        isOpen={isAuthModalOpen}
+        onClose={() => setIsAuthModalOpen(false)}
       />
     </nav>
   )

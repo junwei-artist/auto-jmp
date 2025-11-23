@@ -11,6 +11,8 @@ import { apiClient } from '@/lib/api'
 import toast from 'react-hot-toast'
 import Link from 'next/link'
 import NodeEditorView from '@/components/workspace/NodeEditorView'
+import { TopNavBar } from '@/components/TopNavBar'
+import { UniverseBackground } from '@/components/UniverseBackground'
 
 interface Workflow {
   id: string
@@ -105,23 +107,30 @@ export default function WorkflowEditorPage() {
   }
 
   return (
-    <div className="h-screen flex flex-col">
-      <div className="border-b bg-white p-4">
-        <div className="container mx-auto flex items-center justify-between">
+    <div className="h-screen flex flex-col relative overflow-hidden">
+      <UniverseBackground />
+      <TopNavBar />
+      <div className="relative z-10 border-b backdrop-blur-xl bg-white/10 border-white/20 p-4 mt-20">
+        <div className="container mx-auto flex items-center justify-between max-w-screen-2xl">
           <div className="flex items-center space-x-4">
             <Link href="/workflows">
-              <Button variant="ghost" size="sm">
+              <Button variant="ghost" size="sm" className="text-white hover:bg-white/20">
                 <ArrowLeft className="h-4 w-4 mr-2" />
                 Back
               </Button>
             </Link>
             <div>
-              <h1 className="text-xl font-bold">{workflow.name}</h1>
-              <p className="text-sm text-gray-600">{workflow.description || 'No description'}</p>
+              <h1 className="text-xl font-bold text-white">{workflow.name}</h1>
+              <p className="text-sm text-white/70">{workflow.description || 'No description'}</p>
             </div>
           </div>
           <div className="flex items-center space-x-2">
-            <Button variant="outline" onClick={handleExecute} disabled={executeMutation.isPending}>
+            <Button
+              variant="outline"
+              onClick={handleExecute}
+              disabled={executeMutation.isPending}
+              className="border-white/20 bg-white/10 text-white hover:bg-white/20"
+            >
               <Play className="h-4 w-4 mr-2" />
               Execute
             </Button>

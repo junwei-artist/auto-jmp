@@ -30,6 +30,8 @@ META_COLUMN_MAP = {
     "Target": "target",
     "USL": "usl",
     "LSL": "lsl",
+    "TOL+": "tol_upper",
+    "TOL-": "tol_lower",
     "Label": "main_level",
 }
 

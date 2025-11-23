@@ -173,7 +173,7 @@ export default function OutlierRemoverGUI({
       setUploadProgress({ progress: 0, message: 'Uploading...', status: 'uploading' })
       
       const xhr = new XMLHttpRequest()
-      return new Promise((resolve, reject) => {
+      return new Promise<{ storage_key: string; filename: string }>((resolve, reject) => {
         xhr.upload.addEventListener('progress', (e) => {
           if (e.lengthComputable) {
             const progress = Math.round((e.loaded / e.total) * 100)
@@ -225,7 +225,7 @@ export default function OutlierRemoverGUI({
         xhr.send(formData)
       })
     },
-    onSuccess: (data) => {
+    onSuccess: (data: { storage_key: string; filename: string }) => {
       setUploadedFileKey(data.storage_key)
       setFilename(data.filename)
       if (onConfigUpdate) {

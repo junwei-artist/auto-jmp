@@ -63,12 +63,25 @@ export default function DuckDB2JMPGUI({
   const [catVarOrder, setCatVarOrder] = useState<string[]>(node.config?.cat_var_order || [])
   const [tablePage, setTablePage] = useState<number>(1)
   const [csvPage, setCsvPage] = useState<number>(1)
+  const [addUSL, setAddUSL] = useState<boolean>(node.config?.add_usl !== undefined ? node.config.add_usl : true)
+  const [addTarget, setAddTarget] = useState<boolean>(node.config?.add_target !== undefined ? node.config.add_target : true)
+  const [addLSL, setAddLSL] = useState<boolean>(node.config?.add_lsl !== undefined ? node.config.add_lsl : true)
+  const [addNominal, setAddNominal] = useState<boolean>(node.config?.add_nominal !== undefined ? node.config.add_nominal : false)
+  const [addTolUpper, setAddTolUpper] = useState<boolean>(node.config?.add_tol_upper !== undefined ? node.config.add_tol_upper : false)
+  const [addTolLower, setAddTolLower] = useState<boolean>(node.config?.add_tol_lower !== undefined ? node.config.add_tol_lower : false)
+  const [uslColor, setUslColor] = useState<string>(node.config?.usl_color || 'Dark Blue')
+  const [targetColor, setTargetColor] = useState<string>(node.config?.target_color || 'Dark Blue')
+  const [lslColor, setLslColor] = useState<string>(node.config?.lsl_color || 'Dark Blue')
+  const [nominalColor, setNominalColor] = useState<string>(node.config?.nominal_color || 'Dark Blue')
+  const [tolUpperColor, setTolUpperColor] = useState<string>(node.config?.tol_upper_color || 'Dark Blue')
+  const [tolLowerColor, setTolLowerColor] = useState<string>(node.config?.tol_lower_color || 'Dark Blue')
   const rowsPerPage = 20
 
   // Section expand/collapse states
   const [isSettingsExpanded, setIsSettingsExpanded] = useState(true)
   const [isCatVarSettingsExpanded, setIsCatVarSettingsExpanded] = useState(true)
   const [isCaptionBoxExpanded, setIsCaptionBoxExpanded] = useState(true)
+  const [isReferenceLinesExpanded, setIsReferenceLinesExpanded] = useState(true)
   const [isTablesExpanded, setIsTablesExpanded] = useState(true)
   const [isPairsExpanded, setIsPairsExpanded] = useState(true)
 
@@ -212,7 +225,7 @@ export default function DuckDB2JMPGUI({
       } else if (catVarOrder.length === 0) {
         // If no order set yet, try to use saved order from config, otherwise use default
         const savedOrder = node.config?.cat_var_order || []
-        if (savedOrder.length > 0 && savedOrder.every(v => catVarUniqueValues.includes(v))) {
+        if (savedOrder.length > 0 && savedOrder.every((v: string) => catVarUniqueValues.includes(v))) {
           setCatVarOrder(savedOrder)
         } else {
           setCatVarOrder([...catVarUniqueValues])
@@ -446,6 +459,18 @@ export default function DuckDB2JMPGUI({
         formData.append('list_check_values', JSON.stringify(catVarOrder))
         formData.append('value_order', JSON.stringify(catVarOrder))
       }
+      formData.append('add_usl', addUSL.toString())
+      formData.append('add_target', addTarget.toString())
+      formData.append('add_lsl', addLSL.toString())
+      formData.append('add_nominal', addNominal.toString())
+      formData.append('add_tol_upper', addTolUpper.toString())
+      formData.append('add_tol_lower', addTolLower.toString())
+      formData.append('usl_color', uslColor)
+      formData.append('target_color', targetColor)
+      formData.append('lsl_color', lslColor)
+      formData.append('nominal_color', nominalColor)
+      formData.append('tol_upper_color', tolUpperColor)
+      formData.append('tol_lower_color', tolLowerColor)
       return apiClient.post<{
         workflow_id: string
         node_id: string
@@ -460,16 +485,21 @@ export default function DuckDB2JMPGUI({
       refetchPairs()
       toast.success(`Conversion complete! Created ${data.total_pairs} pair(s) from ${data.tables_processed} table(s)`)
       if (data.pairs && data.pairs.length > 0) {
-        // Find the pair in the pairs list
-        const newPair = pairsData?.pairs?.find(p => p.pair_id === data.pairs[0].pair_id) || {
-          pair_id: data.pairs[0].pair_id,
-          table_name: data.pairs[0].table_name,
-          pair_folder: data.pairs[0].pair_folder,
-          csv_path: data.pairs[0].csv_path,
-          jsl_path: data.pairs[0].jsl_path,
-          csv_filename: data.pairs[0].csv_filename,
-          jsl_filename: data.pairs[0].jsl_filename,
-          metadata: data.pairs[0].metadata
+        // Find the pair in the pairs list or use the response data
+        const foundPair = pairsData?.pairs?.find(p => p.pair_id === data.pairs[0].pair_id)
+        const responsePair = data.pairs[0]
+        
+        // Create newPair ensuring it has all required JSLCSVPair properties
+        // Note: foundPair from pairsData doesn't have table_name, so we use responsePair which does
+        const newPair: JSLCSVPair = {
+          pair_id: responsePair.pair_id,
+          table_name: responsePair.table_name || '',
+          pair_folder: foundPair?.pair_folder || responsePair.pair_folder,
+          csv_path: foundPair?.csv_path || responsePair.csv_path,
+          jsl_path: foundPair?.jsl_path || responsePair.jsl_path,
+          csv_filename: foundPair?.csv_filename || responsePair.csv_filename,
+          jsl_filename: foundPair?.jsl_filename || responsePair.jsl_filename,
+          metadata: foundPair?.metadata || responsePair.metadata
         }
         setSelectedPair(newPair)
         setViewMode('processed')
@@ -855,7 +885,19 @@ export default function DuckDB2JMPGUI({
                     color_by: colorBy || undefined,
                     chunk_size: chunkSize,
                     cat_var_order: catVarOrder.length > 0 ? catVarOrder : undefined,
-                    caption_box_statistics: captionBoxStatistics.length > 0 ? captionBoxStatistics.map(s => s.value) : undefined
+                    caption_box_statistics: captionBoxStatistics.length > 0 ? captionBoxStatistics.map(s => s.value) : undefined,
+                    add_usl: addUSL,
+                    add_target: addTarget,
+                    add_lsl: addLSL,
+                    add_nominal: addNominal,
+                    add_tol_upper: addTolUpper,
+                    add_tol_lower: addTolLower,
+                    usl_color: uslColor,
+                    target_color: targetColor,
+                    lsl_color: lslColor,
+                    nominal_color: nominalColor,
+                    tol_upper_color: tolUpperColor,
+                    tol_lower_color: tolLowerColor
                   }
                   if (onConfigUpdate) {
                     onConfigUpdate(config)
@@ -967,6 +1009,213 @@ export default function DuckDB2JMPGUI({
               )}
             </div>
           )}
+
+          {/* Reference Lines Settings */}
+          <div className="rounded-xl border border-white/30 bg-gradient-to-br from-orange-50/50 to-red-50/50 backdrop-blur-sm shadow-md overflow-hidden">
+            <button
+              onClick={() => setIsReferenceLinesExpanded(!isReferenceLinesExpanded)}
+              className="w-full p-5 flex items-center justify-between hover:bg-white/20 transition-colors"
+            >
+              <div className="flex items-center space-x-2">
+                <div className="h-7 w-7 rounded-full bg-gradient-to-br from-orange-400 to-red-500 flex items-center justify-center shadow-md">
+                  <FileText className="h-3.5 w-3.5 text-white" />
+                </div>
+                <h3 className="text-sm font-semibold text-gray-800">Reference Lines</h3>
+              </div>
+              {isReferenceLinesExpanded ? (
+                <ChevronUp className="h-5 w-5 text-gray-600" />
+              ) : (
+                <ChevronDown className="h-5 w-5 text-gray-600" />
+              )}
+            </button>
+            {isReferenceLinesExpanded && (
+              <div className="px-5 pb-5 space-y-4">
+                <p className="text-xs text-gray-600 mb-2">Select which reference lines to include and set their colors</p>
+                
+                <div className="space-y-3">
+                  {/* USL Reference Line */}
+                  <div className="p-3 rounded-xl bg-white/60 backdrop-blur-sm border border-white/40 hover:bg-white/80 transition-all">
+                    <div className="flex items-center space-x-3 mb-2">
+                      <Checkbox
+                        id="add-usl"
+                        checked={addUSL}
+                        onCheckedChange={(checked) => setAddUSL(checked === true)}
+                        className="border-gray-300"
+                      />
+                      <Label htmlFor="add-usl" className="text-xs font-medium text-gray-700 cursor-pointer flex-1">
+                        USL (Upper Specification Limit)
+                      </Label>
+                    </div>
+                    {addUSL && (
+                      <div className="ml-7 mt-2">
+                        <Label htmlFor="usl-color" className="text-xs font-medium text-gray-600 mb-1.5 block">Color</Label>
+                        <Select value={uslColor} onValueChange={setUslColor}>
+                          <SelectTrigger id="usl-color" className="h-8 text-xs rounded-lg bg-white/80 backdrop-blur-sm border-white/40 shadow-sm hover:bg-white/90 transition-all">
+                            <SelectValue placeholder="Select color" />
+                          </SelectTrigger>
+                          <SelectContent className="rounded-xl backdrop-blur-xl bg-white/95 border-white/30 shadow-xl">
+                            <SelectItem value="Dark Blue" className="rounded-lg">Dark Blue</SelectItem>
+                            <SelectItem value="Dark Red" className="rounded-lg">Dark Red</SelectItem>
+                            <SelectItem value="Dark Yellow" className="rounded-lg">Dark Yellow</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    )}
+                  </div>
+                  
+                  {/* Target Reference Line */}
+                  <div className="p-3 rounded-xl bg-white/60 backdrop-blur-sm border border-white/40 hover:bg-white/80 transition-all">
+                    <div className="flex items-center space-x-3 mb-2">
+                      <Checkbox
+                        id="add-target"
+                        checked={addTarget}
+                        onCheckedChange={(checked) => setAddTarget(checked === true)}
+                        className="border-gray-300"
+                      />
+                      <Label htmlFor="add-target" className="text-xs font-medium text-gray-700 cursor-pointer flex-1">
+                        Target
+                      </Label>
+                    </div>
+                    {addTarget && (
+                      <div className="ml-7 mt-2">
+                        <Label htmlFor="target-color" className="text-xs font-medium text-gray-600 mb-1.5 block">Color</Label>
+                        <Select value={targetColor} onValueChange={setTargetColor}>
+                          <SelectTrigger id="target-color" className="h-8 text-xs rounded-lg bg-white/80 backdrop-blur-sm border-white/40 shadow-sm hover:bg-white/90 transition-all">
+                            <SelectValue placeholder="Select color" />
+                          </SelectTrigger>
+                          <SelectContent className="rounded-xl backdrop-blur-xl bg-white/95 border-white/30 shadow-xl">
+                            <SelectItem value="Dark Blue" className="rounded-lg">Dark Blue</SelectItem>
+                            <SelectItem value="Dark Red" className="rounded-lg">Dark Red</SelectItem>
+                            <SelectItem value="Dark Yellow" className="rounded-lg">Dark Yellow</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    )}
+                  </div>
+                  
+                  {/* LSL Reference Line */}
+                  <div className="p-3 rounded-xl bg-white/60 backdrop-blur-sm border border-white/40 hover:bg-white/80 transition-all">
+                    <div className="flex items-center space-x-3 mb-2">
+                      <Checkbox
+                        id="add-lsl"
+                        checked={addLSL}
+                        onCheckedChange={(checked) => setAddLSL(checked === true)}
+                        className="border-gray-300"
+                      />
+                      <Label htmlFor="add-lsl" className="text-xs font-medium text-gray-700 cursor-pointer flex-1">
+                        LSL (Lower Specification Limit)
+                      </Label>
+                    </div>
+                    {addLSL && (
+                      <div className="ml-7 mt-2">
+                        <Label htmlFor="lsl-color" className="text-xs font-medium text-gray-600 mb-1.5 block">Color</Label>
+                        <Select value={lslColor} onValueChange={setLslColor}>
+                          <SelectTrigger id="lsl-color" className="h-8 text-xs rounded-lg bg-white/80 backdrop-blur-sm border-white/40 shadow-sm hover:bg-white/90 transition-all">
+                            <SelectValue placeholder="Select color" />
+                          </SelectTrigger>
+                          <SelectContent className="rounded-xl backdrop-blur-xl bg-white/95 border-white/30 shadow-xl">
+                            <SelectItem value="Dark Blue" className="rounded-lg">Dark Blue</SelectItem>
+                            <SelectItem value="Dark Red" className="rounded-lg">Dark Red</SelectItem>
+                            <SelectItem value="Dark Yellow" className="rounded-lg">Dark Yellow</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    )}
+                  </div>
+                  
+                  {/* Nominal Reference Line */}
+                  <div className="p-3 rounded-xl bg-white/60 backdrop-blur-sm border border-white/40 hover:bg-white/80 transition-all">
+                    <div className="flex items-center space-x-3 mb-2">
+                      <Checkbox
+                        id="add-nominal"
+                        checked={addNominal}
+                        onCheckedChange={(checked) => setAddNominal(checked === true)}
+                        className="border-gray-300"
+                      />
+                      <Label htmlFor="add-nominal" className="text-xs font-medium text-gray-700 cursor-pointer flex-1">
+                        Nominal (Value: 0)
+                      </Label>
+                    </div>
+                    {addNominal && (
+                      <div className="ml-7 mt-2">
+                        <Label htmlFor="nominal-color" className="text-xs font-medium text-gray-600 mb-1.5 block">Color</Label>
+                        <Select value={nominalColor} onValueChange={setNominalColor}>
+                          <SelectTrigger id="nominal-color" className="h-8 text-xs rounded-lg bg-white/80 backdrop-blur-sm border-white/40 shadow-sm hover:bg-white/90 transition-all">
+                            <SelectValue placeholder="Select color" />
+                          </SelectTrigger>
+                          <SelectContent className="rounded-xl backdrop-blur-xl bg-white/95 border-white/30 shadow-xl">
+                            <SelectItem value="Dark Blue" className="rounded-lg">Dark Blue</SelectItem>
+                            <SelectItem value="Dark Red" className="rounded-lg">Dark Red</SelectItem>
+                            <SelectItem value="Dark Yellow" className="rounded-lg">Dark Yellow</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    )}
+                  </div>
+                  
+                  {/* TOL+ Reference Line */}
+                  <div className="p-3 rounded-xl bg-white/60 backdrop-blur-sm border border-white/40 hover:bg-white/80 transition-all">
+                    <div className="flex items-center space-x-3 mb-2">
+                      <Checkbox
+                        id="add-tol-upper"
+                        checked={addTolUpper}
+                        onCheckedChange={(checked) => setAddTolUpper(checked === true)}
+                        className="border-gray-300"
+                      />
+                      <Label htmlFor="add-tol-upper" className="text-xs font-medium text-gray-700 cursor-pointer flex-1">
+                        TOL+ (Tolerance Upper)
+                      </Label>
+                    </div>
+                    {addTolUpper && (
+                      <div className="ml-7 mt-2">
+                        <Label htmlFor="tol-upper-color" className="text-xs font-medium text-gray-600 mb-1.5 block">Color</Label>
+                        <Select value={tolUpperColor} onValueChange={setTolUpperColor}>
+                          <SelectTrigger id="tol-upper-color" className="h-8 text-xs rounded-lg bg-white/80 backdrop-blur-sm border-white/40 shadow-sm hover:bg-white/90 transition-all">
+                            <SelectValue placeholder="Select color" />
+                          </SelectTrigger>
+                          <SelectContent className="rounded-xl backdrop-blur-xl bg-white/95 border-white/30 shadow-xl">
+                            <SelectItem value="Dark Blue" className="rounded-lg">Dark Blue</SelectItem>
+                            <SelectItem value="Dark Red" className="rounded-lg">Dark Red</SelectItem>
+                            <SelectItem value="Dark Yellow" className="rounded-lg">Dark Yellow</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    )}
+                  </div>
+                  
+                  {/* TOL- Reference Line */}
+                  <div className="p-3 rounded-xl bg-white/60 backdrop-blur-sm border border-white/40 hover:bg-white/80 transition-all">
+                    <div className="flex items-center space-x-3 mb-2">
+                      <Checkbox
+                        id="add-tol-lower"
+                        checked={addTolLower}
+                        onCheckedChange={(checked) => setAddTolLower(checked === true)}
+                        className="border-gray-300"
+                      />
+                      <Label htmlFor="add-tol-lower" className="text-xs font-medium text-gray-700 cursor-pointer flex-1">
+                        TOL- (Tolerance Lower)
+                      </Label>
+                    </div>
+                    {addTolLower && (
+                      <div className="ml-7 mt-2">
+                        <Label htmlFor="tol-lower-color" className="text-xs font-medium text-gray-600 mb-1.5 block">Color</Label>
+                        <Select value={tolLowerColor} onValueChange={setTolLowerColor}>
+                          <SelectTrigger id="tol-lower-color" className="h-8 text-xs rounded-lg bg-white/80 backdrop-blur-sm border-white/40 shadow-sm hover:bg-white/90 transition-all">
+                            <SelectValue placeholder="Select color" />
+                          </SelectTrigger>
+                          <SelectContent className="rounded-xl backdrop-blur-xl bg-white/95 border-white/30 shadow-xl">
+                            <SelectItem value="Dark Blue" className="rounded-lg">Dark Blue</SelectItem>
+                            <SelectItem value="Dark Red" className="rounded-lg">Dark Red</SelectItem>
+                            <SelectItem value="Dark Yellow" className="rounded-lg">Dark Yellow</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
 
           {/* Caption Box Statistics Settings */}
           <div className="rounded-xl border border-white/30 bg-gradient-to-br from-cyan-50/50 to-blue-50/50 backdrop-blur-sm shadow-md overflow-hidden">

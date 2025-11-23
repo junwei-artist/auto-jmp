@@ -19,6 +19,8 @@ export { default as Excel2JMPGUI } from './Excel2JMPGUI'
 export { default as DuckDB2JMPEmbedded } from './DuckDB2JMPEmbedded'
 export { default as DuckDB2JMPWizard } from './DuckDB2JMPWizard'
 export { default as DuckDB2JMPGUI } from './DuckDB2JMPGUI'
+export { default as DuckDB2NorminalEmbedded } from './DuckDB2NorminalEmbedded'
+export { default as DuckDB2NorminalGUI } from './DuckDB2NorminalGUI'
 export { default as AndonStatus } from './AndonStatus'
 export type { AndonStatus as AndonStatusType } from './AndonStatus'
 

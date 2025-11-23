@@ -20,19 +20,20 @@ import DuckDBConvertWizard from '@/components/workspace/node-embedded/DuckDBConv
 import DuckDBConvertGUI from '@/components/workspace/node-embedded/DuckDBConvertGUI'
 import Excel2JMPGUI from '@/components/workspace/node-embedded/Excel2JMPGUI'
 import DuckDB2JMPGUI from '@/components/workspace/node-embedded/DuckDB2JMPGUI'
+import DuckDB2NorminalGUI from '@/components/workspace/node-embedded/DuckDB2NorminalGUI'
 
 interface Module {
   module_type: string
   display_name: string
   description: string
-  inputs: Array<{ 
+  inputs: Array<{
     name: string
     type: string
     label: string
     description?: string
     required?: boolean
   }>
-  outputs: Array<{ 
+  outputs: Array<{
     name: string
     type: string
     label: string
@@ -46,12 +47,12 @@ function ModuleRunnerPageContent() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const moduleType = params.moduleType as string
-  
+
   // Read workflow and node from URL params
   const urlWorkflowId = searchParams.get('workflow')
   const urlNodeId = searchParams.get('node')
   const urlFile = searchParams.get('file')  // File path to auto-select
-  
+
   const [wizardOpen, setWizardOpen] = useState(true)
   const [tempWorkflowId, setTempWorkflowId] = useState<string | null>(urlWorkflowId)
   const [tempNodeId, setTempNodeId] = useState<string | null>(urlNodeId)
@@ -86,18 +87,18 @@ function ModuleRunnerPageContent() {
         module_id: moduleType,
         checkpoint_name: moduleType
       })
-      
+
       setTempNodeId(node.id)
       setNodeCreated(true)
-      
+
       // Update URL
       updateUrl(workflowId, node.id)
-      
+
       // Persist to localStorage
       if (typeof window !== 'undefined') {
         localStorage.setItem(getStorageKey('nodeId'), node.id)
       }
-      
+
       toast.success('Node created successfully')
     } catch (error: any) {
       toast.error(`Failed to create node: ${error.message || 'Unknown error'}`)
@@ -117,12 +118,12 @@ function ModuleRunnerPageContent() {
       setTempWorkflowId(data.workflowId)
       setWorkflowSelected(true)
       setShowWorkflowSelector(false)
-      
+
       // Persist to localStorage
       if (typeof window !== 'undefined') {
         localStorage.setItem(getStorageKey('workflowId'), data.workflowId)
       }
-      
+
       // Create node after workflow is created
       await createNodeForWorkflow(data.workflowId)
       // URL will be updated in createNodeForWorkflow
@@ -141,10 +142,10 @@ function ModuleRunnerPageContent() {
     setShowWorkflowSelector(true)
     setShowNodeSelector(false)
     setAvailableNodes([])
-    
+
     // Update URL to remove params
     updateUrl(null, null)
-    
+
     // Clear localStorage
     if (typeof window !== 'undefined') {
       localStorage.removeItem(getStorageKey('workflowId'))
@@ -159,33 +160,33 @@ function ModuleRunnerPageContent() {
         name: `Standalone ${moduleType} - ${file.name}`,
         description: `Temporary workflow for standalone ${moduleType} execution`
       })
-      
+
       // Create node
       const node = await apiClient.post<{ id: string }>(`/v1/workflows/${workflow.id}/nodes`, {
         module_type: moduleType,
         module_id: moduleType,
         checkpoint_name: moduleType
       })
-      
+
       return { workflowId: workflow.id, nodeId: node.id, file }
     },
     onSuccess: async (data) => {
       // Small delay to ensure folder structure is fully created
       await new Promise(resolve => setTimeout(resolve, 100))
-      
+
       try {
         const formData = new FormData()
         formData.append('file', data.file)
-        
+
         await apiClient.post(`/v1/workflows/${data.workflowId}/nodes/${data.nodeId}/upload`, formData)
-        
+
         // Update URL in current window
         updateUrl(data.workflowId, data.nodeId)
-        
+
         // Open in new window/tab
         const newUrl = `/modules/${moduleType}?workflow=${data.workflowId}&node=${data.nodeId}`
         window.open(newUrl, '_blank')
-        
+
         toast.success(`New workflow created and file "${data.file.name}" uploaded to input folder`)
       } catch (error: any) {
         console.error('Failed to upload file:', error)
@@ -205,43 +206,43 @@ function ModuleRunnerPageContent() {
         name: `Standalone ${moduleType} - ${file ? file.name : new Date().toLocaleString()}`,
         description: `Temporary workflow for standalone ${moduleType} execution`
       })
-      
+
       // Create a node in the workflow
       const node = await apiClient.post<{ id: string }>(`/v1/workflows/${workflow.id}/nodes`, {
         module_type: moduleType,
         module_id: moduleType,
         checkpoint_name: moduleType
       })
-      
+
       return { workflowId: workflow.id, nodeId: node.id, file }
     },
     onSuccess: async (data) => {
       setTempWorkflowId(data.workflowId)
       setTempNodeId(data.nodeId)
-      
+
       // Persist to localStorage
       if (typeof window !== 'undefined') {
         localStorage.setItem(getStorageKey('workflowId'), data.workflowId)
         localStorage.setItem(getStorageKey('nodeId'), data.nodeId)
       }
-      
+
       // If a file was provided, upload it to the new workflow/node
       if (data.file) {
         try {
           // Small delay to ensure folder structure is fully created
           await new Promise(resolve => setTimeout(resolve, 100))
-          
+
           const formData = new FormData()
           formData.append('file', data.file)
-          
+
           const uploadResult = await apiClient.post(`/v1/workflows/${data.workflowId}/nodes/${data.nodeId}/upload`, formData)
-          
+
           console.log('File uploaded successfully:', uploadResult)
-          
+
           // Open in new window/tab
           const newUrl = `/modules/${moduleType}?workflow=${data.workflowId}&node=${data.nodeId}`
           window.open(newUrl, '_blank')
-          
+
           toast.success(`New workflow created and file "${data.file.name}" uploaded to input folder`)
         } catch (error: any) {
           console.error('Failed to upload file:', error)
@@ -268,7 +269,7 @@ function ModuleRunnerPageContent() {
             setNodeCreated(true)
             setShowWorkflowSelector(false)
             setShowNodeSelector(false)
-            
+
             // Update localStorage
             if (typeof window !== 'undefined') {
               localStorage.setItem(getStorageKey('workflowId'), urlWorkflowId)
@@ -421,7 +422,7 @@ function ModuleRunnerPageContent() {
     try {
       // Close the dialog
       setShowWorkflowDialog(false)
-      
+
       // Update state
       setTempWorkflowId(workflowId)
       setTempNodeId(nodeId)
@@ -429,16 +430,16 @@ function ModuleRunnerPageContent() {
       setNodeCreated(true)
       setShowWorkflowSelector(false)
       setShowNodeSelector(false)
-      
+
       // Update localStorage
       if (typeof window !== 'undefined') {
         localStorage.setItem(getStorageKey('workflowId'), workflowId)
         localStorage.setItem(getStorageKey('nodeId'), nodeId)
       }
-      
+
       // Update URL - this will trigger a navigation
       updateUrl(workflowId, nodeId)
-      
+
       toast.success('Node and workflow loaded')
     } catch (error: any) {
       toast.error(error.message || 'Failed to load node')
@@ -450,12 +451,12 @@ function ModuleRunnerPageContent() {
     setTempNodeId(nodeId)
     setNodeCreated(true)
     setShowNodeSelector(false)
-    
+
     // Update URL
     if (tempWorkflowId) {
       updateUrl(tempWorkflowId, nodeId)
     }
-    
+
     // Update localStorage
     if (typeof window !== 'undefined') {
       localStorage.setItem(getStorageKey('nodeId'), nodeId)
@@ -490,7 +491,7 @@ function ModuleRunnerPageContent() {
             <h2 className="text-2xl font-semibold text-gray-900 mb-2">Get Started</h2>
             <p className="text-gray-600">Select an existing node or create a new workflow to continue</p>
           </div>
-          
+
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6 max-w-3xl mx-auto">
             {/* Select Existing Node Button */}
             <button
@@ -690,6 +691,17 @@ function ModuleRunnerPageContent() {
             autoSelectFile={urlFile || undefined}
           />
         )
+      case 'duckdb2norminal':
+        return (
+          <DuckDB2NorminalGUI
+            node={tempNode}
+            workflowId={tempWorkflowId}
+            onConfigUpdate={handleConfigUpdate}
+            onProcess={handleProcess}
+            isStandalone={true}
+            autoSelectFile={urlFile || undefined}
+          />
+        )
       default:
         return (
           <Card className="p-8 text-center">
@@ -732,7 +744,7 @@ function ModuleRunnerPageContent() {
             </div>
           </div>
         </div>
-        
+
         {/* Workflow Selector - Now using dialog instead of inline */}
 
         {/* Node Selector */}
@@ -753,23 +765,22 @@ function ModuleRunnerPageContent() {
             </div>
             <div className="space-y-1">
               {availableNodes.map((node) => (
-                  <button
-                    key={node.id}
-                    onClick={() => handleNodeSelectFromSelector(node.id)}
-                    className={`w-full text-left px-3 py-2 rounded-md text-sm hover:bg-gray-100 ${
-                      node.id === tempNodeId ? 'bg-indigo-50 border border-indigo-200' : ''
+                <button
+                  key={node.id}
+                  onClick={() => handleNodeSelectFromSelector(node.id)}
+                  className={`w-full text-left px-3 py-2 rounded-md text-sm hover:bg-gray-100 ${node.id === tempNodeId ? 'bg-indigo-50 border border-indigo-200' : ''
                     }`}
-                  >
-                    <div className="font-medium">
-                      {node.checkpoint_name || `Node ${node.id.slice(0, 8)}`}
-                    </div>
-                    <div className="text-xs text-gray-500">Module: {node.module_type}</div>
-                  </button>
+                >
+                  <div className="font-medium">
+                    {node.checkpoint_name || `Node ${node.id.slice(0, 8)}`}
+                  </div>
+                  <div className="text-xs text-gray-500">Module: {node.module_type}</div>
+                </button>
               ))}
             </div>
           </div>
         )}
-        
+
         {/* Full-screen GUI */}
         <div className="flex-1 min-h-0 overflow-y-auto">
           {renderModuleInterface()}
@@ -801,9 +812,8 @@ function ModuleRunnerPageContent() {
                       return (
                         <div
                           key={node.id}
-                          className={`relative w-full px-4 py-3 rounded-lg border hover:bg-gray-50 transition-all ${
-                            node.id === tempNodeId ? 'bg-indigo-50 border-indigo-200' : 'border-gray-200'
-                          }`}
+                          className={`relative w-full px-4 py-3 rounded-lg border hover:bg-gray-50 transition-all ${node.id === tempNodeId ? 'bg-indigo-50 border-indigo-200' : 'border-gray-200'
+                            }`}
                         >
                           <button
                             onClick={() => handleNodeSelect(node.id, node.workflow_id)}
@@ -941,9 +951,8 @@ function ModuleRunnerPageContent() {
                     return (
                       <div
                         key={node.id}
-                        className={`relative w-full px-4 py-3 rounded-md border hover:bg-gray-50 ${
-                          node.id === tempNodeId ? 'bg-indigo-50 border-indigo-200' : 'border-gray-200'
-                        }`}
+                        className={`relative w-full px-4 py-3 rounded-md border hover:bg-gray-50 ${node.id === tempNodeId ? 'bg-indigo-50 border-indigo-200' : 'border-gray-200'
+                          }`}
                       >
                         <button
                           onClick={() => handleNodeSelect(node.id, node.workflow_id)}
@@ -997,9 +1006,8 @@ function ModuleRunnerPageContent() {
                   <button
                     key={node.id}
                     onClick={() => handleNodeSelectFromSelector(node.id)}
-                    className={`w-full text-left px-4 py-3 rounded-md border hover:bg-gray-50 ${
-                      node.id === tempNodeId ? 'bg-indigo-50 border-indigo-200' : 'border-gray-200'
-                    }`}
+                    className={`w-full text-left px-4 py-3 rounded-md border hover:bg-gray-50 ${node.id === tempNodeId ? 'bg-indigo-50 border-indigo-200' : 'border-gray-200'
+                      }`}
                   >
                     <div className="font-medium">
                       {node.checkpoint_name || `Node ${node.id.slice(0, 8)}`}
@@ -1054,9 +1062,8 @@ function ModuleRunnerPageContent() {
                       return (
                         <div
                           key={node.id}
-                          className={`relative w-full px-4 py-3 rounded-lg border hover:bg-gray-50 transition-all ${
-                            node.id === tempNodeId ? 'bg-indigo-50 border-indigo-200' : 'border-gray-200'
-                          }`}
+                          className={`relative w-full px-4 py-3 rounded-lg border hover:bg-gray-50 transition-all ${node.id === tempNodeId ? 'bg-indigo-50 border-indigo-200' : 'border-gray-200'
+                            }`}
                         >
                           <button
                             onClick={() => handleNodeSelect(node.id, node.workflow_id)}

@@ -87,7 +87,9 @@ class DataProcessor:
         return df_numeric
     
     def compute_axis_params(self, df_meta: pd.DataFrame, df_data_num: pd.DataFrame, 
-                          fai_cols: List[str], main_level: str) -> Dict[str, Any]:
+                          fai_cols: List[str], main_level: str,
+                          add_usl: bool = True, add_target: bool = True, add_lsl: bool = True,
+                          add_tol_upper: bool = False, add_tol_lower: bool = False) -> Dict[str, Any]:
         """
         Compute axis parameters for plotting
         
@@ -96,6 +98,9 @@ class DataProcessor:
             df_data_num: Numeric data DataFrame
             fai_cols: List of FAI columns
             main_level: Main level to compute parameters for
+            add_usl: Whether to include USL in boundary calculation (default: True)
+            add_target: Whether to include Target in boundary calculation (default: True)
+            add_lsl: Whether to include LSL in boundary calculation (default: True)
             
         Returns:
             Dict with axis parameters
@@ -112,14 +117,32 @@ class DataProcessor:
         else:
             group_min = group_max = np.nan
         
-        # Get USL and LSL for this level
+        # Get USL, Target, LSL, TOL+, and TOL- for this level
         lvl_meta = df_meta[df_meta["main_level"] == main_level]
-        usl = self.to_num_series(lvl_meta.get("usl", pd.Series([np.nan]))).max(skipna=True)
-        lsl = self.to_num_series(lvl_meta.get("lsl", pd.Series([np.nan]))).min(skipna=True)
+        usl = self.to_num_series(lvl_meta.get("usl", pd.Series([np.nan]))).max(skipna=True) if add_usl else np.nan
+        target = self.to_num_series(lvl_meta.get("target", pd.Series([np.nan]))).max(skipna=True) if add_target else np.nan
+        lsl = self.to_num_series(lvl_meta.get("lsl", pd.Series([np.nan]))).min(skipna=True) if add_lsl else np.nan
+        tol_upper = self.to_num_series(lvl_meta.get("tol_upper", pd.Series([np.nan]))).max(skipna=True) if add_tol_upper else np.nan
+        tol_lower = self.to_num_series(lvl_meta.get("tol_lower", pd.Series([np.nan]))).min(skipna=True) if add_tol_lower else np.nan
         
-        # Calculate final min/max
-        final_max = np.nanmax([group_max, usl]) if not np.isnan(usl) else group_max
-        final_min = np.nanmin([group_min, lsl]) if not np.isnan(lsl) else group_min
+        # Calculate final min/max including only enabled reference lines
+        values_for_max = [group_max]
+        values_for_min = [group_min]
+        
+        if add_usl and not np.isnan(usl):
+            values_for_max.append(usl)
+        if add_target and not np.isnan(target):
+            values_for_max.append(target)
+            values_for_min.append(target)
+        if add_lsl and not np.isnan(lsl):
+            values_for_min.append(lsl)
+        if add_tol_upper and not np.isnan(tol_upper):
+            values_for_max.append(tol_upper)
+        if add_tol_lower and not np.isnan(tol_lower):
+            values_for_min.append(tol_lower)
+        
+        final_max = np.nanmax(values_for_max) if values_for_max else group_max
+        final_min = np.nanmin(values_for_min) if values_for_min else group_min
         
         # Handle edge cases
         if np.isnan(final_min) and np.isnan(final_max):
@@ -129,8 +152,8 @@ class DataProcessor:
         if np.isnan(final_max):
             final_max = final_min + 1.0
         
-        # Calculate span and margins
-        span_ref = (abs(usl - lsl) if (not np.isnan(usl) and not np.isnan(lsl) and usl != lsl)
+        # Calculate span and margins (only use USL-LSL span if both are enabled)
+        span_ref = (abs(usl - lsl) if (add_usl and add_lsl and not np.isnan(usl) and not np.isnan(lsl) and usl != lsl)
                    else abs(final_max - final_min))
         if not span_ref or np.isnan(span_ref):
             span_ref = 1.0
@@ -165,7 +188,9 @@ class DataProcessor:
     
     def calculate_boundaries_from_duckdb(self, df_meta: pd.DataFrame, duckdb_path: str, 
                                          table_name: str, fai_columns: List[str], 
-                                         cat_var: str) -> Dict[str, Dict[str, Any]]:
+                                         cat_var: str,
+                                         add_usl: bool = True, add_target: bool = True, add_lsl: bool = True,
+                                         add_tol_upper: bool = False, add_tol_lower: bool = False) -> Dict[str, Dict[str, Any]]:
         """
         Calculate boundaries for all main levels using all data from DuckDB
         
@@ -175,6 +200,9 @@ class DataProcessor:
             table_name: Name of the table
             fai_columns: List of FAI columns
             cat_var: Categorical variable name
+            add_usl: Whether to include USL in boundary calculation (default: True)
+            add_target: Whether to include Target in boundary calculation (default: True)
+            add_lsl: Whether to include LSL in boundary calculation (default: True)
             
         Returns:
             Dict with boundaries for each main level
@@ -230,14 +258,32 @@ class DataProcessor:
                     
                     logger.info(f"Calculated min/max from all data for {main_level}: min={group_min}, max={group_max}")
                     
-                    # Get USL and LSL for this level
+                    # Get USL, Target, LSL, TOL+, and TOL- for this level
                     lvl_meta = df_meta[df_meta["main_level"] == main_level]
-                    usl = self.to_num_series(lvl_meta.get("usl", pd.Series([np.nan]))).max(skipna=True)
-                    lsl = self.to_num_series(lvl_meta.get("lsl", pd.Series([np.nan]))).min(skipna=True)
+                    usl = self.to_num_series(lvl_meta.get("usl", pd.Series([np.nan]))).max(skipna=True) if add_usl else np.nan
+                    target = self.to_num_series(lvl_meta.get("target", pd.Series([np.nan]))).max(skipna=True) if add_target else np.nan
+                    lsl = self.to_num_series(lvl_meta.get("lsl", pd.Series([np.nan]))).min(skipna=True) if add_lsl else np.nan
+                    tol_upper = self.to_num_series(lvl_meta.get("tol_upper", pd.Series([np.nan]))).max(skipna=True) if add_tol_upper else np.nan
+                    tol_lower = self.to_num_series(lvl_meta.get("tol_lower", pd.Series([np.nan]))).min(skipna=True) if add_tol_lower else np.nan
                     
-                    # Calculate final min/max including USL and LSL
-                    final_max = np.nanmax([group_max, usl]) if not np.isnan(usl) else group_max
-                    final_min = np.nanmin([group_min, lsl]) if not np.isnan(lsl) else group_min
+                    # Calculate final min/max including only enabled reference lines
+                    values_for_max = [group_max]
+                    values_for_min = [group_min]
+                    
+                    if add_usl and not np.isnan(usl):
+                        values_for_max.append(usl)
+                    if add_target and not np.isnan(target):
+                        values_for_max.append(target)
+                        values_for_min.append(target)
+                    if add_lsl and not np.isnan(lsl):
+                        values_for_min.append(lsl)
+                    if add_tol_upper and not np.isnan(tol_upper):
+                        values_for_max.append(tol_upper)
+                    if add_tol_lower and not np.isnan(tol_lower):
+                        values_for_min.append(tol_lower)
+                    
+                    final_max = np.nanmax(values_for_max) if values_for_max else group_max
+                    final_min = np.nanmin(values_for_min) if values_for_min else group_min
                     
                     # Handle edge cases
                     if np.isnan(final_min) and np.isnan(final_max):
@@ -247,8 +293,8 @@ class DataProcessor:
                     if np.isnan(final_max):
                         final_max = final_min + 1.0
                     
-                    # Calculate span and margins
-                    span_ref = (abs(usl - lsl) if (not np.isnan(usl) and not np.isnan(lsl) and usl != lsl)
+                    # Calculate span and margins (only use USL-LSL span if both are enabled)
+                    span_ref = (abs(usl - lsl) if (add_usl and add_lsl and not np.isnan(usl) and not np.isnan(lsl) and usl != lsl)
                                else abs(final_max - final_min))
                     if not span_ref or np.isnan(span_ref):
                         span_ref = 1.0
@@ -301,7 +347,9 @@ class DataProcessor:
         return boundaries
     
     def calculate_boundaries(self, df_meta: pd.DataFrame, df_data: pd.DataFrame, 
-                           fai_columns: List[str]) -> Dict[str, Dict[str, Any]]:
+                           fai_columns: List[str],
+                           add_usl: bool = True, add_target: bool = True, add_lsl: bool = True,
+                           add_tol_upper: bool = False, add_tol_lower: bool = False) -> Dict[str, Dict[str, Any]]:
         """
         Calculate boundaries for all main levels
         
@@ -309,6 +357,9 @@ class DataProcessor:
             df_meta: Meta DataFrame
             df_data: Data DataFrame (can be a sample for large datasets)
             fai_columns: List of FAI columns
+            add_usl: Whether to include USL in boundary calculation (default: True)
+            add_target: Whether to include Target in boundary calculation (default: True)
+            add_lsl: Whether to include LSL in boundary calculation (default: True)
             
         Returns:
             Dict with boundaries for each main level
@@ -326,7 +377,9 @@ class DataProcessor:
         
         for main_level in main_levels:
             try:
-                params = self.compute_axis_params(df_meta, df_data_num, fai_columns, str(main_level))
+                params = self.compute_axis_params(df_meta, df_data_num, fai_columns, str(main_level),
+                                                add_usl=add_usl, add_target=add_target, add_lsl=add_lsl,
+                                                add_tol_upper=add_tol_upper, add_tol_lower=add_tol_lower)
                 boundaries[str(main_level)] = params
                 logger.info(f"Calculated boundaries for {main_level}: {params}")
             except Exception as e:
@@ -370,7 +423,11 @@ class DataProcessor:
         return meta_clean
     
     def process_data(self, df_meta: pd.DataFrame, df_data: pd.DataFrame, 
-                    fai_columns: List[str], cat_var: str) -> Dict[str, Any]:
+                    fai_columns: List[str], cat_var: str,
+                    duckdb_path: Optional[str] = None,
+                    table_name: Optional[str] = None,
+                    add_usl: bool = True, add_target: bool = True, add_lsl: bool = True,
+                    add_tol_upper: bool = False, add_tol_lower: bool = False) -> Dict[str, Any]:
         """
         Process data for analysis
         
@@ -379,6 +436,11 @@ class DataProcessor:
             df_data: Data DataFrame (can be a sample for large datasets)
             fai_columns: List of FAI columns
             cat_var: Categorical variable
+            duckdb_path: Optional path to DuckDB file (for large datasets)
+            table_name: Optional table name (for large datasets)
+            add_usl: Whether to include USL in boundary calculation (default: True)
+            add_target: Whether to include Target in boundary calculation (default: True)
+            add_lsl: Whether to include LSL in boundary calculation (default: True)
             
         Returns:
             Dict with processing results
@@ -387,8 +449,19 @@ class DataProcessor:
             # Prepare metadata
             meta_clean = self.prepare_metadata(df_meta)
             
-            # Calculate boundaries (using sample data if provided)
-            boundaries = self.calculate_boundaries(meta_clean, df_data, fai_columns)
+            # Calculate boundaries (using sample data if provided, or all data from DuckDB)
+            if duckdb_path and table_name:
+                # For large datasets, calculate boundaries from all data in DuckDB
+                boundaries = self.calculate_boundaries_from_duckdb(
+                    meta_clean, duckdb_path, table_name, fai_columns, cat_var,
+                    add_usl=add_usl, add_target=add_target, add_lsl=add_lsl,
+                    add_tol_upper=add_tol_upper, add_tol_lower=add_tol_lower
+                )
+            else:
+                # For small datasets, use the loaded data
+                boundaries = self.calculate_boundaries(meta_clean, df_data, fai_columns,
+                                                       add_usl=add_usl, add_target=add_target, add_lsl=add_lsl,
+                                                       add_tol_upper=add_tol_upper, add_tol_lower=add_tol_lower)
             
             # Note: For large datasets, we don't store all processed data in memory
             # The file processor will handle chunked processing

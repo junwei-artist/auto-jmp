@@ -116,23 +116,43 @@ async def list_runs(
         )
         runs = result.scalars().all()
     
-    return [
-        RunResponse(
-            id=str(run.id),
-            project_id=str(run.project_id),
-            status=run.status.value,
-            task_name=run.task_name,
-            message=run.message,
-            image_count=run.image_count,
-            created_at=run.created_at,
-            started_at=run.started_at,
-            finished_at=run.finished_at,
-            started_by=str(run.started_by) if run.started_by else None,
-            started_by_email=None,
-            started_by_is_guest=None
+    # Collect unique user IDs from runs
+    user_ids = {run.started_by for run in runs if run.started_by}
+    
+    # Fetch all users in one query
+    user_map = {}
+    if user_ids:
+        user_result = await db.execute(
+            select(AppUser).where(AppUser.id.in_(user_ids))
         )
-        for run in runs
-    ]
+        users = user_result.scalars().all()
+        user_map = {str(user.id): user for user in users}
+    
+    # Build response with user information
+    run_responses = []
+    for run in runs:
+        started_by_user = None
+        if run.started_by:
+            started_by_user = user_map.get(str(run.started_by))
+        
+        run_responses.append(
+            RunResponse(
+                id=str(run.id),
+                project_id=str(run.project_id),
+                status=run.status.value,
+                task_name=run.task_name,
+                message=run.message,
+                image_count=run.image_count,
+                created_at=run.created_at,
+                started_at=run.started_at,
+                finished_at=run.finished_at,
+                started_by=str(run.started_by) if run.started_by else None,
+                started_by_email=started_by_user.email if started_by_user else None,
+                started_by_is_guest=started_by_user.is_guest if started_by_user else None
+            )
+        )
+    
+    return run_responses
 
 async def check_project_access(
     db: AsyncSession, 

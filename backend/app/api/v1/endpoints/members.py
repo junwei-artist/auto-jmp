@@ -196,22 +196,29 @@ async def add_project_member(
     
     # Create membership using raw SQL to handle enum casting
     from sqlalchemy import text
+    from app.core.roles import ensure_default_roles, get_role_id_by_name
+    
+    # Ensure default roles exist
+    await ensure_default_roles(db)
     
     # Map role values to database enum values and role IDs
     role_mapping = {
-        "OWNER": ("OWNER", "00000000-0000-0000-0000-000000000001"),
-        "MEMBER": ("member", "00000000-0000-0000-0000-000000000002"), 
-        "WATCHER": ("watcher", "00000000-0000-0000-0000-000000000003")
+        "OWNER": ("OWNER", "OWNER"),
+        "MEMBER": ("MEMBER", "MEMBER"), 
+        "WATCHER": ("WATCHER", "WATCHER")
     }
     
-    db_role, role_id = role_mapping.get(role.value, (role.value, "00000000-0000-0000-0000-000000000002"))
+    db_role, role_name = role_mapping.get(role.value, (role.value, "MEMBER"))
+    role_id = await get_role_id_by_name(db, role_name)
     
-    await db.execute(text(f"""
+    await db.execute(text("""
         INSERT INTO project_member (project_id, user_id, role, role_id) 
-        VALUES (:project_id, :user_id, '{db_role}'::role, '{role_id}'::uuid)
+        VALUES (:project_id, :user_id, :role, CAST(:role_id AS uuid))
     """), {
         "project_id": project_id,
-        "user_id": member_data.user_id
+        "user_id": member_data.user_id,
+        "role": db_role,
+        "role_id": role_id
     })
     await db.commit()
     
@@ -260,25 +267,32 @@ async def update_project_member_role(
     if not membership:
         raise HTTPException(status_code=404, detail="Membership not found")
     
-    # Update role using raw SQL to handle enum casting
+    # Update role using raw SQL
     from sqlalchemy import text
+    from app.core.roles import ensure_default_roles, get_role_id_by_name
     
-    # Map role values to database enum values and role IDs
+    # Ensure default roles exist
+    await ensure_default_roles(db)
+    
+    # Map role values to database enum values
     role_mapping = {
-        "OWNER": ("OWNER", "00000000-0000-0000-0000-000000000001"),
-        "MEMBER": ("member", "00000000-0000-0000-0000-000000000002"), 
-        "WATCHER": ("watcher", "00000000-0000-0000-0000-000000000003")
+        "OWNER": "OWNER",
+        "MEMBER": "MEMBER", 
+        "WATCHER": "WATCHER"
     }
     
-    db_role, role_id = role_mapping.get(role.value, (role.value, "00000000-0000-0000-0000-000000000002"))
+    db_role = role_mapping.get(role.value, "MEMBER")
+    role_id = await get_role_id_by_name(db, db_role)
     
-    await db.execute(text(f"""
+    await db.execute(text("""
         UPDATE project_member 
-        SET role = '{db_role}'::role, role_id = '{role_id}'::uuid
+        SET role = :role, role_id = CAST(:role_id AS uuid)
         WHERE project_id = :project_id AND user_id = :user_id
     """), {
         "project_id": project_id,
-        "user_id": user_id
+        "user_id": user_id,
+        "role": db_role,
+        "role_id": role_id
     })
     await db.commit()
     

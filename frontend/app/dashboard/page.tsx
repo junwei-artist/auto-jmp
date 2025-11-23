@@ -9,13 +9,13 @@ import { Label } from '@/components/ui/label'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { 
-  Plus, 
-  Upload, 
-  FileText, 
-  BarChart3, 
-  Users, 
-  Share2, 
+import {
+  Plus,
+  Upload,
+  FileText,
+  BarChart3,
+  Users,
+  Share2,
   Settings,
   LogOut,
   User,
@@ -35,15 +35,15 @@ import {
   ChevronLeft,
   ChevronRight
 } from 'lucide-react'
-import { 
-  ProjectStatsSVG, 
-  RunStatsSVG, 
-  ActiveRunsSVG, 
-  EmptyProjectsSVG, 
-  PluginCardSVG, 
-  QuickAnalysisSVG, 
+import {
+  ProjectStatsSVG,
+  RunStatsSVG,
+  ActiveRunsSVG,
+  EmptyProjectsSVG,
+  PluginCardSVG,
+  QuickAnalysisSVG,
   RecentRunsSVG,
-  WelcomeSVG 
+  WelcomeSVG
 } from '@/components/svg/DashboardIllustrations'
 import { useAuth } from '@/lib/auth'
 import { projectApi, runApi } from '@/lib/api'
@@ -91,12 +91,12 @@ export default function DashboardPage() {
   const [newProjectName, setNewProjectName] = useState('')
   const [newProjectDescription, setNewProjectDescription] = useState('')
   const [newProjectIsPublic, setNewProjectIsPublic] = useState(false)
-  
+
   // Search, sort, and view state
   const [searchQuery, setSearchQuery] = useState('')
   const [sortBy, setSortBy] = useState('date-newest')
   const [viewMode, setViewMode] = useState<'card' | 'list'>('card')
-  
+
   // Pagination state
   const [currentPage, setCurrentPage] = useState(1)
   const itemsPerPage = 30
@@ -154,7 +154,7 @@ export default function DashboardPage() {
 
   // Create project mutation
   const createProjectMutation = useMutation({
-    mutationFn: (projectData: { name: string; description?: string; is_public?: boolean }) => 
+    mutationFn: (projectData: { name: string; description?: string; is_public?: boolean }) =>
       projectApi.createProject(projectData),
     onSuccess: () => {
       toast.success('Project created successfully!')
@@ -173,7 +173,7 @@ export default function DashboardPage() {
   const handleCreateProject = (e: React.FormEvent) => {
     e.preventDefault()
     if (!newProjectName.trim()) return
-    
+
     createProjectMutation.mutate({
       name: newProjectName.trim(),
       description: newProjectDescription.trim() || undefined,
@@ -181,29 +181,18 @@ export default function DashboardPage() {
     })
   }
 
-  // Format date and time precisely
+  // Format date and time precisely - always show full date and time
   const formatPreciseTime = (dateString: string) => {
     const date = new Date(dateString)
-    const now = new Date()
-    const diffInMs = now.getTime() - date.getTime()
-    const diffInDays = Math.floor(diffInMs / (1000 * 60 * 60 * 24))
-    
-    // If created today, show time
-    if (diffInDays === 0) {
-      return `Today at ${date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
-    }
-    // If created yesterday, show yesterday
-    else if (diffInDays === 1) {
-      return `Yesterday at ${date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
-    }
-    // If created within the last week, show day and time
-    else if (diffInDays < 7) {
-      return `${date.toLocaleDateString([], { weekday: 'short' })} at ${date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
-    }
-    // Otherwise show full date and time
-    else {
-      return `${date.toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })} at ${date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
-    }
+    return `${date.toLocaleDateString([], { 
+      year: 'numeric', 
+      month: 'short', 
+      day: 'numeric' 
+    })} at ${date.toLocaleTimeString([], { 
+      hour: '2-digit', 
+      minute: '2-digit',
+      hour12: true 
+    })}`
   }
 
   // Filter, sort, and paginate projects
@@ -213,7 +202,7 @@ export default function DashboardPage() {
     // Apply search filter
     if (searchQuery.trim()) {
       const query = searchQuery.toLowerCase()
-      filtered = projects.filter(project => 
+      filtered = projects.filter(project =>
         project.name.toLowerCase().includes(query) ||
         (project.description && project.description.toLowerCase().includes(query))
       )
@@ -286,12 +275,12 @@ export default function DashboardPage() {
   }
 
   // Pagination component
-  const PaginationControls = ({ 
-    currentPage, 
-    totalPages, 
-    totalItems, 
-    itemsPerPage, 
-    onPageChange 
+  const PaginationControls = ({
+    currentPage,
+    totalPages,
+    totalItems,
+    itemsPerPage,
+    onPageChange
   }: {
     currentPage: number
     totalPages: number
@@ -307,7 +296,7 @@ export default function DashboardPage() {
     const getPageNumbers = () => {
       const pages = []
       const maxVisiblePages = 5
-      
+
       if (totalPages <= maxVisiblePages) {
         for (let i = 1; i <= totalPages; i++) {
           pages.push(i)
@@ -335,7 +324,7 @@ export default function DashboardPage() {
           pages.push(totalPages)
         }
       }
-      
+
       return pages
     }
 
@@ -355,7 +344,7 @@ export default function DashboardPage() {
             <ChevronLeft className="h-4 w-4" />
             <span>Previous</span>
           </Button>
-          
+
           <div className="flex items-center space-x-1">
             {getPageNumbers().map((page, index) => (
               <Button
@@ -370,7 +359,7 @@ export default function DashboardPage() {
               </Button>
             ))}
           </div>
-          
+
           <Button
             variant="outline"
             size="sm"
@@ -387,8 +376,8 @@ export default function DashboardPage() {
   }
 
   const renderProjectCard = (project: Project, showDeleteButton: boolean = true) => (
-    <Card 
-      key={project.id} 
+    <Card
+      key={project.id}
       className="cursor-pointer hover:shadow-md transition-shadow"
       onClick={() => router.push(`/projects/${project.id}`)}
     >
@@ -453,7 +442,7 @@ export default function DashboardPage() {
   )
 
   const renderProjectListItem = (project: Project, showDeleteButton: boolean = true) => (
-    <div 
+    <div
       key={project.id}
       className="flex items-center justify-between p-4 border rounded-lg hover:bg-gray-50 cursor-pointer transition-colors"
       onClick={() => router.push(`/projects/${project.id}`)}
@@ -514,60 +503,7 @@ export default function DashboardPage() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* Header */}
-      <header className="bg-white shadow-sm border-b">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between items-center h-16">
-            <div className="flex items-center">
-              <BarChart3 className="h-8 w-8 text-blue-600 mr-3" />
-              <h1 className="text-xl font-semibold text-gray-900">{t('dashboard.title')}</h1>
-            </div>
-            <div className="flex items-center space-x-4">
-              <div className="flex items-center space-x-2">
-                <User className="h-4 w-4 text-gray-500" />
-                <span className="text-sm text-gray-700">
-                  {user.is_guest ? t('auth.guest') : user.email}
-                </span>
-              </div>
-              <Button 
-                variant="ghost" 
-                size="sm"
-                onClick={() => router.push('/community')}
-                className="flex items-center space-x-2"
-              >
-                <span>Community</span>
-              </Button>
-              <Button 
-                variant="ghost" 
-                size="sm"
-                onClick={() => window.open('/help', '_blank')}
-                className="flex items-center space-x-2"
-              >
-                <HelpCircle className="h-4 w-4" />
-                <span>{t('help.title')}</span>
-              </Button>
-              <NotificationBell />
-              <LanguageSelector />
-              {!user.is_guest && (
-                <Button 
-                  variant="outline" 
-                  size="sm" 
-                  onClick={() => router.push('/profile')}
-                >
-                  <Settings className="h-4 w-4 mr-2" />
-                  {t('nav.profile')}
-                </Button>
-              )}
-              <Button variant="outline" size="sm" onClick={logout}>
-                <LogOut className="h-4 w-4 mr-2" />
-                {t('nav.logout')}
-              </Button>
-            </div>
-          </div>
-        </div>
-      </header>
-
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <div className="max-w-screen-2xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {/* Welcome Section */}
         <div className="mb-8">
           <div className="flex items-center space-x-4 mb-4">
@@ -585,7 +521,10 @@ export default function DashboardPage() {
 
         {/* Quick Stats */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-          <Card className="group hover:shadow-lg transition-all duration-300">
+          <Card 
+            className="group hover:shadow-lg transition-all duration-300 cursor-pointer"
+            onClick={() => router.push('/dashboard')}
+          >
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">{t('dashboard.stats.totalProjects')}</CardTitle>
               <ProjectStatsSVG className="w-8 h-8" />
@@ -595,8 +534,11 @@ export default function DashboardPage() {
               <p className="text-xs text-gray-500 mt-1">{t('dashboard.stats.activeProjects')}</p>
             </CardContent>
           </Card>
-          
-          <Card className="group hover:shadow-lg transition-all duration-300">
+
+          <Card 
+            className="group hover:shadow-lg transition-all duration-300 cursor-pointer"
+            onClick={() => router.push('/dashboard/runs')}
+          >
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">{t('dashboard.stats.totalRuns')}</CardTitle>
               <RunStatsSVG className="w-8 h-8" />
@@ -608,8 +550,11 @@ export default function DashboardPage() {
               <p className="text-xs text-gray-500 mt-1">{t('dashboard.stats.totalAnalyses')}</p>
             </CardContent>
           </Card>
-          
-          <Card className="group hover:shadow-lg transition-all duration-300">
+
+          <Card 
+            className="group hover:shadow-lg transition-all duration-300 cursor-pointer"
+            onClick={() => router.push('/dashboard/runs?status=active')}
+          >
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">{t('dashboard.stats.activeRuns')}</CardTitle>
               <ActiveRunsSVG className="w-8 h-8" />
@@ -645,7 +590,7 @@ export default function DashboardPage() {
                 className="pl-10"
               />
             </div>
-            
+
             {/* Sort Dropdown */}
             <Select value={sortBy} onValueChange={setSortBy}>
               <SelectTrigger className="w-full sm:w-48">
@@ -661,7 +606,7 @@ export default function DashboardPage() {
                 <SelectItem value="runs-low">Runs (Low to High)</SelectItem>
               </SelectContent>
             </Select>
-            
+
             {/* View Toggle */}
             <div className="flex border rounded-lg">
               <Button
@@ -686,10 +631,10 @@ export default function DashboardPage() {
           {showCreateProject && (
             <Card className="mb-6">
               <CardHeader>
-              <CardTitle>{t('dashboard.createProject.title')}</CardTitle>
-              <CardDescription>
-                {t('dashboard.createProject.subtitle')}
-              </CardDescription>
+                <CardTitle>{t('dashboard.createProject.title')}</CardTitle>
+                <CardDescription>
+                  {t('dashboard.createProject.subtitle')}
+                </CardDescription>
               </CardHeader>
               <CardContent>
                 <form onSubmit={handleCreateProject} className="space-y-4">
@@ -725,15 +670,15 @@ export default function DashboardPage() {
                     </Label>
                   </div>
                   <div className="flex space-x-2">
-                    <Button 
-                      type="submit" 
+                    <Button
+                      type="submit"
                       disabled={createProjectMutation.isPending}
                     >
                       {createProjectMutation.isPending ? t('dashboard.createProject.creating') : t('dashboard.createProject.create')}
                     </Button>
-                    <Button 
-                      type="button" 
-                      variant="outline" 
+                    <Button
+                      type="button"
+                      variant="outline"
                       onClick={() => setShowCreateProject(false)}
                     >
                       {t('dashboard.createProject.cancel')}
@@ -755,7 +700,7 @@ export default function DashboardPage() {
                 <span>Member Projects ({memberProjects.length})</span>
               </TabsTrigger>
             </TabsList>
-            
+
             <TabsContent value="owned" className="mt-6">
               {(() => {
                 const { projects: paginatedOwnedProjects, totalItems, totalPages } = filterSortAndPaginateProjects(ownedProjects)
@@ -767,7 +712,7 @@ export default function DashboardPage() {
                         {searchQuery ? 'No projects found' : t('dashboard.projects.noProjects.title')}
                       </h3>
                       <p className="text-gray-600 text-center mb-6 max-w-md">
-                        {searchQuery 
+                        {searchQuery
                           ? 'Try adjusting your search terms or filters.'
                           : t('dashboard.projects.noProjects.message')
                         }
@@ -782,12 +727,12 @@ export default function DashboardPage() {
                   </Card>
                 ) : (
                   <>
-                    <div className={viewMode === 'card' 
-                      ? "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6" 
+                    <div className={viewMode === 'card'
+                      ? "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"
                       : "space-y-3"
                     }>
-                      {paginatedOwnedProjects.map((project: Project) => 
-                        viewMode === 'card' 
+                      {paginatedOwnedProjects.map((project: Project) =>
+                        viewMode === 'card'
                           ? renderProjectCard(project, true)
                           : renderProjectListItem(project, true)
                       )}
@@ -803,7 +748,7 @@ export default function DashboardPage() {
                 )
               })()}
             </TabsContent>
-            
+
             <TabsContent value="member" className="mt-6">
               {(() => {
                 const { projects: paginatedMemberProjects, totalItems, totalPages } = filterSortAndPaginateProjects(memberProjects)
@@ -815,7 +760,7 @@ export default function DashboardPage() {
                         {searchQuery ? 'No member projects found' : 'No Member Projects'}
                       </h3>
                       <p className="text-gray-600 text-center mb-6 max-w-md">
-                        {searchQuery 
+                        {searchQuery
                           ? 'Try adjusting your search terms or filters.'
                           : "You haven't been added as a member to any projects yet. Ask project owners to invite you to their projects."
                         }
@@ -824,12 +769,12 @@ export default function DashboardPage() {
                   </Card>
                 ) : (
                   <>
-                    <div className={viewMode === 'card' 
-                      ? "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6" 
+                    <div className={viewMode === 'card'
+                      ? "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"
                       : "space-y-3"
                     }>
-                      {paginatedMemberProjects.map((project: Project) => 
-                        viewMode === 'card' 
+                      {paginatedMemberProjects.map((project: Project) =>
+                        viewMode === 'card'
                           ? renderProjectCard(project, false)
                           : renderProjectListItem(project, false)
                       )}
@@ -852,7 +797,7 @@ export default function DashboardPage() {
         <div>
           <h3 className="text-lg font-semibold text-gray-900 mb-6">{t('dashboard.plugins.title')}</h3>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <Card 
+            <Card
               className="cursor-pointer hover:shadow-lg transition-all duration-300 group border-purple-200 bg-gradient-to-br from-purple-50 to-pink-50"
               onClick={() => router.push('/plugins')}
             >
@@ -890,7 +835,7 @@ export default function DashboardPage() {
               </CardContent>
             </Card>
 
-            <Card 
+            <Card
               className="cursor-pointer hover:shadow-lg transition-all duration-300 group border-red-200 bg-gradient-to-br from-red-50 to-orange-50"
               onClick={() => router.push('/plugins/excel2boxplotv1')}
             >

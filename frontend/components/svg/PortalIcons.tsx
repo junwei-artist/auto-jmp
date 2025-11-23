@@ -1,142 +1,146 @@
 import React from 'react'
 
-// Dashboard Icon - JMP Visualization
+// Dashboard Icon - Glass Panel with Vibrant Chart
 export const DashboardIconSVG = ({ className = "w-20 h-20" }: { className?: string }) => (
   <svg className={className} viewBox="0 0 200 200" fill="none" xmlns="http://www.w3.org/2000/svg">
-    {/* Background circle */}
-    <circle cx="100" cy="100" r="90" fill="#EFF6FF" stroke="#3B82F6" strokeWidth="2"/>
-    
-    {/* Dashboard frame */}
-    <rect x="50" y="50" width="100" height="100" rx="8" fill="white" stroke="#3B82F6" strokeWidth="2"/>
-    
-    {/* Chart bars */}
-    <rect x="65" y="120" width="12" height="20" fill="#3B82F6" rx="2"/>
-    <rect x="85" y="110" width="12" height="30" fill="#10B981" rx="2"/>
-    <rect x="105" y="100" width="12" height="40" fill="#8B5CF6" rx="2"/>
-    <rect x="125" y="115" width="12" height="25" fill="#F59E0B" rx="2"/>
-    
-    {/* Grid lines */}
-    <line x1="50" y1="90" x2="150" y2="90" stroke="#E2E8F0" strokeWidth="1"/>
-    <line x1="50" y1="110" x2="150" y2="110" stroke="#E2E8F0" strokeWidth="1"/>
-    <line x1="50" y1="130" x2="150" y2="130" stroke="#E2E8F0" strokeWidth="1"/>
-    
-    {/* Data points */}
-    <circle cx="70" cy="80" r="3" fill="#3B82F6"/>
-    <circle cx="90" cy="75" r="3" fill="#10B981"/>
-    <circle cx="110" cy="70" r="3" fill="#8B5CF6"/>
-    <circle cx="130" cy="85" r="3" fill="#F59E0B"/>
-    
-    {/* Connection line */}
-    <path d="M70 80L90 75L110 70L130 85" stroke="#3B82F6" strokeWidth="2" strokeDasharray="3 3" fill="none"/>
+    <defs>
+      <linearGradient id="dashBg" x1="0" y1="0" x2="200" y2="200">
+        <stop offset="0%" stopColor="#60A5FA" stopOpacity="0.2" />
+        <stop offset="100%" stopColor="#3B82F6" stopOpacity="0.1" />
+      </linearGradient>
+      <linearGradient id="dashGlass" x1="50" y1="50" x2="150" y2="150">
+        <stop offset="0%" stopColor="white" stopOpacity="0.4" />
+        <stop offset="100%" stopColor="white" stopOpacity="0.1" />
+      </linearGradient>
+      <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
+        <feGaussianBlur stdDeviation="5" result="blur" />
+        <feComposite in="SourceGraphic" in2="blur" operator="over" />
+      </filter>
+    </defs>
+
+    {/* Background Glow */}
+    <circle cx="100" cy="100" r="80" fill="url(#dashBg)" filter="url(#glow)" />
+
+    {/* Main Glass Panel */}
+    <rect x="40" y="40" width="120" height="120" rx="24" fill="url(#dashGlass)" stroke="white" strokeWidth="1.5" strokeOpacity="0.5" />
+
+    {/* Chart Elements */}
+    <path d="M60 130 L60 130" stroke="#3B82F6" strokeWidth="12" strokeLinecap="round" />
+    <path d="M85 130 L85 100" stroke="#10B981" strokeWidth="12" strokeLinecap="round" />
+    <path d="M110 130 L110 80" stroke="#F59E0B" strokeWidth="12" strokeLinecap="round" />
+    <path d="M135 130 L135 110" stroke="#8B5CF6" strokeWidth="12" strokeLinecap="round" />
+
+    {/* Floating Data Line */}
+    <path d="M55 100 Q85 70 110 75 T145 90" stroke="white" strokeWidth="3" strokeLinecap="round" filter="url(#glow)" />
+    <circle cx="110" cy="75" r="4" fill="white" />
   </svg>
 )
 
-// Workspaces Icon - Task Organization
+// Workspaces Icon - Stacked Glass Folders
 export const WorkspacesIconSVG = ({ className = "w-20 h-20" }: { className?: string }) => (
   <svg className={className} viewBox="0 0 200 200" fill="none" xmlns="http://www.w3.org/2000/svg">
-    {/* Background circle */}
-    <circle cx="100" cy="100" r="90" fill="#F0FDF4" stroke="#10B981" strokeWidth="2"/>
-    
-    {/* Folder structure */}
-    <rect x="60" y="70" width="50" height="40" rx="4" fill="#10B981" opacity="0.8"/>
-    <rect x="60" y="70" width="50" height="12" rx="4" fill="#059669"/>
-    <rect x="65" y="78" width="20" height="2" fill="white" opacity="0.8"/>
-    <rect x="65" y="82" width="15" height="2" fill="white" opacity="0.6"/>
-    
-    {/* Second folder */}
-    <rect x="90" y="85" width="50" height="40" rx="4" fill="#3B82F6" opacity="0.8"/>
-    <rect x="90" y="85" width="50" height="12" rx="4" fill="#2563EB"/>
-    <rect x="95" y="93" width="20" height="2" fill="white" opacity="0.8"/>
-    <rect x="95" y="97" width="15" height="2" fill="white" opacity="0.6"/>
-    
-    {/* Third folder */}
-    <rect x="50" y="100" width="50" height="40" rx="4" fill="#8B5CF6" opacity="0.8"/>
-    <rect x="50" y="100" width="50" height="12" rx="4" fill="#7C3AED"/>
-    <rect x="55" y="108" width="20" height="2" fill="white" opacity="0.8"/>
-    <rect x="55" y="112" width="15" height="2" fill="white" opacity="0.6"/>
-    
-    {/* Tags/Labels */}
-    <circle cx="75" cy="60" r="4" fill="#10B981"/>
-    <circle cx="105" cy="75" r="4" fill="#3B82F6"/>
-    <circle cx="65" cy="90" r="4" fill="#8B5CF6"/>
+    <defs>
+      <linearGradient id="folder1" x1="0" y1="0" x2="0" y2="100%">
+        <stop offset="0%" stopColor="#34D399" stopOpacity="0.8" />
+        <stop offset="100%" stopColor="#059669" stopOpacity="0.8" />
+      </linearGradient>
+      <linearGradient id="folder2" x1="0" y1="0" x2="0" y2="100%">
+        <stop offset="0%" stopColor="#60A5FA" stopOpacity="0.9" />
+        <stop offset="100%" stopColor="#2563EB" stopOpacity="0.9" />
+      </linearGradient>
+      <filter id="dropShadow" x="-20%" y="-20%" width="140%" height="140%">
+        <feDropShadow dx="0" dy="4" stdDeviation="4" floodOpacity="0.2" />
+      </filter>
+    </defs>
+
+    {/* Back Folder */}
+    <path d="M50 70 H90 L100 80 H150 V130 A10 10 0 0 1 140 140 H60 A10 10 0 0 1 50 130 V70 Z" fill="url(#folder1)" transform="translate(0, -10)" opacity="0.6" />
+
+    {/* Front Folder */}
+    <path d="M40 90 H80 L90 100 H160 V150 A12 12 0 0 1 148 162 H52 A12 12 0 0 1 40 150 V90 Z" fill="url(#folder2)" filter="url(#dropShadow)" />
+
+    {/* Folder Highlight */}
+    <path d="M42 92 H78 L88 102 H158" stroke="white" strokeWidth="2" strokeOpacity="0.4" fill="none" />
+
+    {/* User Icon on Folder */}
+    <circle cx="100" cy="130" r="12" fill="white" fillOpacity="0.2" />
   </svg>
 )
 
-// Workflows Icon - Node Automation
+// Workflows Icon - Glowing Connected Nodes
 export const WorkflowsIconSVG = ({ className = "w-20 h-20" }: { className?: string }) => (
   <svg className={className} viewBox="0 0 200 200" fill="none" xmlns="http://www.w3.org/2000/svg">
-    {/* Background circle */}
-    <circle cx="100" cy="100" r="90" fill="#FDF4FF" stroke="#8B5CF6" strokeWidth="2"/>
-    
-    {/* Central node */}
-    <circle cx="100" cy="100" r="20" fill="#8B5CF6" opacity="0.8"/>
-    <circle cx="100" cy="100" r="12" fill="white"/>
-    
-    {/* Connected nodes */}
-    <circle cx="50" cy="70" r="15" fill="#3B82F6" opacity="0.8"/>
-    <circle cx="50" cy="70" r="8" fill="white"/>
-    
-    <circle cx="150" cy="70" r="15" fill="#10B981" opacity="0.8"/>
-    <circle cx="150" cy="70" r="8" fill="white"/>
-    
-    <circle cx="50" cy="130" r="15" fill="#F59E0B" opacity="0.8"/>
-    <circle cx="50" cy="130" r="8" fill="white"/>
-    
-    <circle cx="150" cy="130" r="15" fill="#EF4444" opacity="0.8"/>
-    <circle cx="150" cy="130" r="8" fill="white"/>
-    
-    {/* Connection lines with arrows */}
-    <path d="M65 77L85 90" stroke="#8B5CF6" strokeWidth="2" fill="none" markerEnd="url(#arrowhead)"/>
-    <path d="M135 77L115 90" stroke="#8B5CF6" strokeWidth="2" fill="none" markerEnd="url(#arrowhead)"/>
-    <path d="M65 123L85 110" stroke="#8B5CF6" strokeWidth="2" fill="none" markerEnd="url(#arrowhead)"/>
-    <path d="M135 123L115 110" stroke="#8B5CF6" strokeWidth="2" fill="none" markerEnd="url(#arrowhead)"/>
-    
-    {/* Arrow marker definition */}
     <defs>
-      <marker id="arrowhead" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto">
-        <polygon points="0 0, 10 3, 0 6" fill="#8B5CF6"/>
-      </marker>
+      <radialGradient id="nodeGlow" cx="50%" cy="50%" r="50%">
+        <stop offset="0%" stopColor="#A78BFA" stopOpacity="1" />
+        <stop offset="100%" stopColor="#7C3AED" stopOpacity="0" />
+      </radialGradient>
+      <filter id="neon" x="-50%" y="-50%" width="200%" height="200%">
+        <feGaussianBlur stdDeviation="2" result="coloredBlur" />
+        <feMerge>
+          <feMergeNode in="coloredBlur" />
+          <feMergeNode in="SourceGraphic" />
+        </feMerge>
+      </filter>
     </defs>
-    
-    {/* Data flow indicators */}
-    <circle cx="70" cy="85" r="2" fill="#8B5CF6" opacity="0.6"/>
-    <circle cx="130" cy="85" r="2" fill="#8B5CF6" opacity="0.6"/>
-    <circle cx="70" cy="115" r="2" fill="#8B5CF6" opacity="0.6"/>
-    <circle cx="130" cy="115" r="2" fill="#8B5CF6" opacity="0.6"/>
+
+    {/* Connections */}
+    <path d="M60 140 C60 100 140 100 140 60" stroke="#C4B5FD" strokeWidth="4" strokeLinecap="round" strokeDasharray="8 8" />
+    <path d="M60 60 C100 60 100 140 140 140" stroke="#C4B5FD" strokeWidth="4" strokeLinecap="round" />
+
+    {/* Nodes */}
+    <circle cx="60" cy="60" r="15" fill="#8B5CF6" filter="url(#neon)" />
+    <circle cx="60" cy="60" r="6" fill="white" />
+
+    <circle cx="140" cy="60" r="15" fill="#EC4899" filter="url(#neon)" />
+    <circle cx="140" cy="60" r="6" fill="white" />
+
+    <circle cx="60" cy="140" r="15" fill="#10B981" filter="url(#neon)" />
+    <circle cx="60" cy="140" r="6" fill="white" />
+
+    <circle cx="140" cy="140" r="15" fill="#F59E0B" filter="url(#neon)" />
+    <circle cx="140" cy="140" r="6" fill="white" />
+
+    {/* Moving Particle (Simulated) */}
+    <circle cx="100" cy="100" r="4" fill="white" filter="url(#neon)" />
   </svg>
 )
 
-// Modules Icon - Data Analysis Functions
+// Modules Icon - 3D Floating Block
 export const ModulesIconSVG = ({ className = "w-20 h-20" }: { className?: string }) => (
   <svg className={className} viewBox="0 0 200 200" fill="none" xmlns="http://www.w3.org/2000/svg">
-    {/* Background circle */}
-    <circle cx="100" cy="100" r="90" fill="#FEF3C7" stroke="#F59E0B" strokeWidth="2"/>
-    
-    {/* Module boxes */}
-    <rect x="50" y="60" width="35" height="35" rx="4" fill="#3B82F6" opacity="0.8"/>
-    <rect x="50" y="60" width="35" height="8" rx="4" fill="#2563EB"/>
-    <circle cx="67.5" cy="77.5" r="4" fill="white"/>
-    
-    <rect x="115" y="60" width="35" height="35" rx="4" fill="#10B981" opacity="0.8"/>
-    <rect x="115" y="60" width="35" height="8" rx="4" fill="#059669"/>
-    <rect x="120" y="75" width="8" height="8" rx="1" fill="white"/>
-    <rect x="132" y="75" width="8" height="8" rx="1" fill="white"/>
-    <rect x="120" y="82" width="20" height="4" rx="1" fill="white" opacity="0.8"/>
-    
-    <rect x="50" y="105" width="35" height="35" rx="4" fill="#8B5CF6" opacity="0.8"/>
-    <rect x="50" y="105" width="35" height="8" rx="4" fill="#7C3AED"/>
-    <path d="M60 120L67.5 127.5L75 120" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" fill="none"/>
-    
-    <rect x="115" y="105" width="35" height="35" rx="4" fill="#EF4444" opacity="0.8"/>
-    <rect x="115" y="105" width="35" height="8" rx="4" fill="#DC2626"/>
-    <circle cx="132.5" cy="122.5" r="6" fill="white" opacity="0.3"/>
-    <circle cx="132.5" cy="122.5" r="3" fill="white"/>
-    
-    {/* Connection lines */}
-    <path d="M85 77.5L110 77.5" stroke="#F59E0B" strokeWidth="2" strokeDasharray="3 3" fill="none"/>
-    <path d="M85 122.5L110 122.5" stroke="#F59E0B" strokeWidth="2" strokeDasharray="3 3" fill="none"/>
-    <path d="M67.5 95L67.5 100" stroke="#F59E0B" strokeWidth="2" strokeDasharray="3 3" fill="none"/>
-    <path d="M132.5 95L132.5 100" stroke="#F59E0B" strokeWidth="2" strokeDasharray="3 3" fill="none"/>
+    <defs>
+      <linearGradient id="cubeTop" x1="0" y1="0" x2="0" y2="100%">
+        <stop offset="0%" stopColor="#FCD34D" />
+        <stop offset="100%" stopColor="#F59E0B" />
+      </linearGradient>
+      <linearGradient id="cubeLeft" x1="0" y1="0" x2="0" y2="100%">
+        <stop offset="0%" stopColor="#F59E0B" />
+        <stop offset="100%" stopColor="#D97706" />
+      </linearGradient>
+      <linearGradient id="cubeRight" x1="0" y1="0" x2="0" y2="100%">
+        <stop offset="0%" stopColor="#FBBF24" />
+        <stop offset="100%" stopColor="#B45309" />
+      </linearGradient>
+    </defs>
+
+    <g transform="translate(100, 100)">
+      {/* Main Cube */}
+      <path d="M0 -40 L35 -20 V20 L0 40 L-35 20 V-20 Z" fill="#F59E0B" opacity="0.2" />
+
+      {/* Top Face */}
+      <path d="M0 -30 L-30 -15 L0 0 L30 -15 Z" fill="url(#cubeTop)" />
+
+      {/* Left Face */}
+      <path d="M-30 -15 V25 L0 40 V0 Z" fill="url(#cubeLeft)" />
+
+      {/* Right Face */}
+      <path d="M30 -15 V25 L0 40 V0 Z" fill="url(#cubeRight)" />
+
+      {/* Floating Elements */}
+      <rect x="-45" y="-50" width="15" height="15" rx="4" fill="#FCD34D" opacity="0.8" />
+      <rect x="30" y="10" width="12" height="12" rx="3" fill="#FCD34D" opacity="0.6" />
+      <circle cx="0" cy="-50" r="4" fill="#FCD34D" />
+    </g>
   </svg>
 )
-
